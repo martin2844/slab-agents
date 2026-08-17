@@ -174,7 +174,7 @@ function CreateAutomation({
             </div>
           </div>
           <DialogFooter className="mt-6">
-            <Button disabled={saving || !agentId}>
+            <Button type="submit" disabled={saving || !agentId}>
               {saving ? "Scheduling…" : "Create automation"}
             </Button>
           </DialogFooter>
