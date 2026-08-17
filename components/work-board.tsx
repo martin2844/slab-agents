@@ -635,7 +635,7 @@ function IssueDialog({
                   placeholder="Add context or an update…"
                   required
                 />
-                <Button size="icon" aria-label="Add comment">
+                <Button type="submit" size="icon" aria-label="Add comment">
                   <Check />
                 </Button>
               </form>
