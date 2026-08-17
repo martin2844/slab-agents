@@ -1,0 +1,235 @@
+import "server-only";
+
+import { getSetting } from "@/lib/settings";
+import type { Agent, Message, Thread } from "@/lib/types";
+import { POSTHOG_AGENT_PROMPT } from "@/lib/integrations/catalog";
+import { getAgentPostHogMcp } from "@/lib/integrations/service";
+
+export type RunnerEvent = {
+  id: number;
+  type:
+    | "run.started"
+    | "thread.created"
+    | "assistant.delta"
+    | "assistant.completed"
+    | "tool.started"
+    | "tool.completed"
+    | "approval.required"
+    | "approval.resolved"
+    | "usage.updated"
+    | "run.completed"
+    | "run.failed"
+    | "run.cancelled";
+  runId: string;
+  timestamp: string;
+  data: Record<string, unknown>;
+};
+
+const terminalEvents = new Set<RunnerEvent["type"]>([
+  "run.completed",
+  "run.failed",
+  "run.cancelled",
+]);
+
+const runnerUrl = () => getSetting("runner_url").replace(/\/$/, "");
+
+function runnerHeaders(headers: Record<string, string> = {}) {
+  const token = process.env.RUNNER_TOKEN?.trim();
+  return {
+    ...headers,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+async function runnerError(response: Response) {
+  const body = await response.json().catch(() => null);
+  const message =
+    body &&
+    typeof body === "object" &&
+    "error" in body &&
+    body.error &&
+    typeof body.error === "object" &&
+    "message" in body.error
+      ? String(body.error.message)
+      : `Runner returned ${response.status}`;
+  return new Error(message);
+}
+
+function parseEventBlock(block: string): RunnerEvent | null {
+  const data = block
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart())
+    .join("\n");
+  if (!data || data === "[DONE]") return null;
+  try {
+    return JSON.parse(data) as RunnerEvent;
+  } catch {
+    return null;
+  }
+}
+
+async function* parseEventStream(
+  response: Response,
+): AsyncGenerator<RunnerEvent> {
+  if (!response.body) throw new Error("Runner returned an empty event stream.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    buffer = blocks.pop() ?? "";
+    for (const block of blocks) {
+      const event = parseEventBlock(block);
+      if (event) yield event;
+    }
+    if (done) break;
+  }
+  const event = parseEventBlock(buffer);
+  if (event) yield event;
+}
+
+async function* streamRunnerEvents(runId: string) {
+  let lastEventId = 0;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch(
+      `${runnerUrl()}/runs/${encodeURIComponent(runId)}/events`,
+      {
+        headers: runnerHeaders({
+          Accept: "text/event-stream",
+          ...(lastEventId ? { "Last-Event-ID": String(lastEventId) } : {}),
+        }),
+        cache: "no-store",
+      },
+    );
+    if (!response.ok) throw await runnerError(response);
+    for await (const event of parseEventStream(response)) {
+      if (event.id <= lastEventId) continue;
+      lastEventId = event.id;
+      yield event;
+      if (terminalEvents.has(event.type)) return;
+    }
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+    }
+  }
+  throw new Error("Runner event stream ended before the run completed.");
+}
+
+export async function startRunnerRun(input: {
+  runId: string;
+  agent: Agent;
+  thread: Thread;
+  messages: Message[];
+  prompt: string;
+}) {
+  const contextMessages =
+    input.messages.at(-1)?.role === "user" &&
+    input.messages.at(-1)?.body === input.prompt
+      ? input.messages.slice(0, -1)
+      : input.messages;
+  const workApiKey = getSetting("work_api_key");
+  const docsApiKey = getSetting("docs_api_key");
+  const posthogMcp = getAgentPostHogMcp(input.agent.id);
+  const response = await fetch(`${runnerUrl()}/runs`, {
+    method: "POST",
+    headers: runnerHeaders({
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    }),
+    body: JSON.stringify({
+      runId: input.runId,
+      agent: {
+        id: input.agent.id,
+        name: input.agent.name,
+        role: input.agent.role,
+        instructions: [
+          input.agent.instructions,
+          ...(posthogMcp ? [POSTHOG_AGENT_PROMPT] : []),
+        ].join("\n\n"),
+        fullAccess: input.agent.fullAccess,
+      },
+      runtime: {
+        type: input.agent.runtime,
+        model: input.agent.model === "default" ? null : input.agent.model,
+      },
+      thread: { runtimeThreadId: input.thread.runtimeThreadId },
+      message: input.prompt,
+      context: input.thread.runtimeThreadId
+        ? []
+        : contextMessages
+            .filter(({ role }) => role === "user" || role === "assistant")
+            .slice(-12)
+            .map(({ role, body }) => ({ role, body })),
+      mcpServers: [
+        {
+          name: "work",
+          url: getSetting("work_mcp_url"),
+          ...(workApiKey ? { credentials: { bearerToken: workApiKey } } : {}),
+        },
+        {
+          name: "docs",
+          url: getSetting("docs_mcp_url"),
+          ...(docsApiKey ? { credentials: { bearerToken: docsApiKey } } : {}),
+        },
+        ...(posthogMcp ? [posthogMcp] : []),
+      ],
+      cwd: null,
+    }),
+    cache: "no-store",
+  });
+  if (!response.ok) throw await runnerError(response);
+  const acknowledgement = (await response.json()) as {
+    runId?: string;
+    status?: string;
+  };
+  if (acknowledgement.runId !== input.runId) {
+    throw new Error("Runner acknowledged a different run identifier.");
+  }
+  return streamRunnerEvents(input.runId);
+}
+
+export async function resolveRunnerApproval(
+  runId: string,
+  approvalId: string,
+  decision: "approve" | "deny",
+) {
+  const response = await fetch(
+    `${runnerUrl()}/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(approvalId)}`,
+    {
+      method: "POST",
+      headers: runnerHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ decision }),
+    },
+  );
+  if (!response.ok) throw await runnerError(response);
+  return response.json().catch(() => ({ ok: true }));
+}
+
+export async function testRunner() {
+  const response = await fetch(`${runnerUrl()}/health`, {
+    headers: runnerHeaders(),
+    signal: AbortSignal.timeout(5_000),
+    cache: "no-store",
+  });
+  if (!response.ok) throw await runnerError(response);
+  return response.json().catch(() => ({ status: "ok" }));
+}
+
+export async function testCodexRuntime() {
+  const response = await fetch(`${runnerUrl()}/runtimes`, {
+    headers: runnerHeaders(),
+    signal: AbortSignal.timeout(5_000),
+    cache: "no-store",
+  });
+  if (!response.ok) throw await runnerError(response);
+  const payload = (await response.json()) as {
+    data?: { id?: string; available?: boolean }[];
+  };
+  const codex = payload.data?.find((runtime) => runtime.id === "codex");
+  if (!codex) throw new Error("Runner did not report the Codex runtime.");
+  if (!codex.available) throw new Error("Codex is not available in Runner.");
+  return codex;
+}

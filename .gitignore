@@ -15,10 +15,15 @@
 
 # next.js
 /.next/
+/.next-dev/
+/.next-check/
 /out/
 
 # production
 /build
+
+# local orchestration state
+/.data/
 
 # misc
 .DS_Store
@@ -39,3 +44,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.gstack/

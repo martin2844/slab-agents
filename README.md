@@ -1,36 +1,169 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Slab Agent Workspace
 
-## Getting Started
+A local, single-user control plane for shared work between humans and Codex agents.
 
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```text
+Slab       = what needs to be done
+Slab Docs  = what the company knows
+Next.js    = who acts and when
+Runner     = how an agent executes
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The browser only communicates with Next.js. Slab MCP, Slab Docs MCP, SQLite, and Runner credentials are server-side concerns.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Requirements
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Node.js 22+
+- A Slab MCP endpoint
+- A Slab Docs MCP endpoint
+- Slab Runner bound to loopback when using agent chat or automations
 
-## Learn More
+## Configuration
 
-To learn more about Next.js, take a look at the following resources:
+The existing `.env` keys are used as initial server-side defaults:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```dotenv
+TRACKER_API_KEY=...
+DOCS_API_KEY=...
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# Optional overrides
+WORK_MCP_URL=http://127.0.0.1:6969/mcp
+DOCS_MCP_URL=http://127.0.0.1:6980/mcp
+RUNNER_URL=http://127.0.0.1:6990
+SLAB_WORKSPACE_DB=.data/slab-workspace.db
+```
 
-## Deploy on Vercel
+URLs and replacement credentials can also be saved from Settings. Stored credentials are never returned by the API; the browser receives only `*ApiKeyConfigured` booleans.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Run locally
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+With `slab`, `slab-docs`, `slab-runner`, and `slab-agents` checked out as
+sibling directories, start the complete local stack with one command:
+
+```bash
+npm run stack:dev
+```
+
+This reuses healthy Work and Docs instances when they already exist; otherwise
+it starts them through Docker Compose on loopback. It then supervises Runner and
+the Next.js control plane in the current terminal. Press `Ctrl+C` to stop the two
+host processes; Docker services use their configured restart policy and remain
+available.
+
+To run only the control plane when its dependencies are already active:
+
+```bash
+npm install
+npm run dev
+```
+
+Open [http://127.0.0.1:3009](http://127.0.0.1:3009). Both development and
+production scripts bind Next.js to loopback so the unauthenticated local
+control plane is never exposed to the LAN.
+
+For a production-mode local run:
+
+```bash
+npm run build
+npm start
+```
+
+During active development, keep `npm run dev` running and use
+`npm run build:check` for production verification. Development, verification,
+and production use separate Next.js output directories so an open browser tab
+cannot receive assets from a partially replaced build. Stop `npm start` before
+running a new production `npm run build`.
+
+Knex migrations run automatically before dev, build, and start.
+
+## Database lifecycle
+
+The workspace DB contains orchestration state only: agents, threads, messages, runs, run events, approvals, automations, settings, and Knex migration metadata. It does not mirror Slab issues or Slab Docs documents.
+
+```bash
+npm run migrate:latest
+npm run migrate:make -- add_something
+npm run migrate:rollback
+```
+
+An optional COO development seed is available without affecting normal startup:
+
+```bash
+SLAB_SEED_EXAMPLE_AGENT=true npm run seed:run
+```
+
+## Runner HTTP contract
+
+The workspace expects a loopback Runner with these endpoints.
+
+### Health
+
+```http
+GET /health
+```
+
+### Start or resume a run
+
+```http
+POST /runs
+Content-Type: application/json
+```
+
+Runner acknowledges the run immediately with `202 Accepted`. Next.js then opens
+the normalized event stream separately:
+
+```http
+GET /runs/:runId/events
+Accept: text/event-stream
+```
+
+The request includes:
+
+- `run_id`, `runtime`, and optional `model`;
+- stable agent identity (`name`, `role`, `instructions`);
+- `runtime_thread_id` when continuing a conversation;
+- minimal recent context only when creating or rehydrating a runtime thread;
+- server-side Work and Docs MCP configuration.
+
+The Runner stream uses the normalized Slab protocol. Supported events include:
+
+```text
+run.started
+thread.created        { runtimeThreadId }
+assistant.delta       { delta }
+assistant.completed   { message }
+tool.started
+tool.completed
+approval.required     { approvalId, command, ... }
+approval.resolved
+usage.updated
+run.completed
+run.failed            { error }
+run.cancelled
+```
+
+Token deltas are streamed but not persisted. Significant events and completed assistant messages are persisted. If a stored runtime thread returns a 404/thread-not-found error, the workspace clears that mapping and retries with recent product conversation context.
+
+### Resolve an approval
+
+```http
+POST /runs/:runId/approvals/:approvalId
+Content-Type: application/json
+
+{ "decision": "approve" | "deny" }
+```
+
+## Quality checks
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build:check
+```
+
+## MVP limits
+
+- Automations run only while the Next.js process is alive.
+- No login, multi-tenancy, RBAC, durable jobs, missed-job recovery, or agent-to-agent chat.
+- Runner is restricted to `localhost`, `127.0.0.1`, or `::1`.

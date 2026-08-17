@@ -1,0 +1,52 @@
+import { z } from "zod";
+import { apiError } from "@/lib/api";
+import { repository } from "@/lib/repository";
+
+export const runtime = "nodejs";
+const schema = z.object({
+  name: z.string().min(2).optional(),
+  role: z.string().min(2).optional(),
+  instructions: z.string().min(10).optional(),
+  model: z.string().min(1).optional(),
+  enabled: z.boolean().optional(),
+  fullAccess: z.boolean().optional(),
+});
+export async function GET(
+  _request: Request,
+  ctx: RouteContext<"/api/agents/[id]">,
+) {
+  const { id } = await ctx.params;
+  const agent = repository.getAgent(id);
+  if (!agent)
+    return Response.json({ error: "Agent not found" }, { status: 404 });
+  return Response.json({
+    data: {
+      agent,
+      quickActions: repository.listAgentQuickActions(agent.id),
+      threads: repository.listThreads(agent.id),
+      automations: repository
+        .listAutomations()
+        .filter((a) => a.agentId === agent.id),
+      runs: repository
+        .listRuns()
+        .filter((r) => r.agentId === agent.id)
+        .slice(0, 10),
+    },
+  });
+}
+export async function PATCH(
+  request: Request,
+  ctx: RouteContext<"/api/agents/[id]">,
+) {
+  try {
+    const { id } = await ctx.params;
+    const agent = repository.updateAgent(
+      id,
+      schema.parse(await request.json()),
+    );
+    if (!agent) throw new Error("Agent not found");
+    return Response.json({ data: agent });
+  } catch (error) {
+    return apiError(error);
+  }
+}
