@@ -9,6 +9,13 @@ type RemoteIssue = Omit<Issue, "status"> & {
   status: "new" | "in_progress" | "done";
 };
 
+type IssueMutationResult = Pick<RemoteIssue, "id" | "key" | "status"> & {
+  updated_at: string;
+  changed_fields: string[];
+};
+
+type CommentMutationResult = Omit<Comment, "body">;
+
 function connection() {
   return {
     url: getSetting("work_mcp_url"),
@@ -35,10 +42,14 @@ export const WorkClient = {
     normalizeIssue(
       await callMcpTool<RemoteIssue>(connection(), "get_issue", { key }),
     ),
-  createIssue: async (input: Record<string, unknown>) =>
-    normalizeIssue(
-      await callMcpTool<RemoteIssue>(connection(), "create_issue", input),
-    ),
+  createIssue: async (input: Record<string, unknown>) => {
+    const created = await callMcpTool<IssueMutationResult>(
+      connection(),
+      "create_issue",
+      input,
+    );
+    return WorkClient.getIssue(created.key);
+  },
   updateIssue: async (key: string, input: Record<string, unknown>) => {
     const requestedStatus = input.status as Issue["status"] | undefined;
     let nextInput = input;
@@ -58,21 +69,27 @@ export const WorkClient = {
         ),
       };
     }
-    return normalizeIssue(
-      await callMcpTool<RemoteIssue>(connection(), "update_issue", {
-        key,
-        ...nextInput,
-      }),
+    const updated = await callMcpTool<IssueMutationResult>(
+      connection(),
+      "update_issue",
+      { key, ...nextInput },
     );
+    return WorkClient.getIssue(updated.key);
   },
   listComments: (key: string) =>
     callMcpTool<Comment[]>(connection(), "list_comments", { issue_key: key }),
-  addComment: (key: string, author: string, body: string) =>
-    callMcpTool<Comment>(connection(), "add_comment", {
+  addComment: async (key: string, author: string, body: string) => {
+    const comment = await callMcpTool<CommentMutationResult>(
+      connection(),
+      "add_comment",
+      {
       issue_key: key,
       author,
       body,
-    }),
+      },
+    );
+    return { ...comment, body };
+  },
   listLinks: (key: string) =>
     callMcpTool<Record<string, unknown>>(connection(), "list_links", {
       issue_key: key,

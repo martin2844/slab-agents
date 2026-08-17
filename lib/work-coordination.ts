@@ -12,6 +12,7 @@ type TriggerType =
 const state = globalThis as unknown as {
   slabWorkCoordinator?: NodeJS.Timeout;
   slabWorkCoordinatorBusy?: boolean;
+  slabWorkCoordinatorTick?: () => Promise<void>;
 };
 
 function identifier(value: string | null | undefined) {
@@ -158,7 +159,7 @@ async function triggerAgent(input: {
       commentId: input.comment?.id ?? null,
     });
     repository.completeWorkCoordinationEvent(eventId, { runId: run.id });
-    void executeAutomationRun(run.id, prompt);
+    void executeAutomationRun(run.id, prompt, input.type);
     return "handled" as const;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -292,11 +293,14 @@ export async function tickWorkCoordination() {
   }
 }
 
+state.slabWorkCoordinatorTick = tickWorkCoordination;
+
 export function startWorkCoordinator() {
+  state.slabWorkCoordinatorTick = tickWorkCoordination;
   if (state.slabWorkCoordinator) return;
-  void tickWorkCoordination();
+  void state.slabWorkCoordinatorTick();
   state.slabWorkCoordinator = setInterval(
-    () => void tickWorkCoordination(),
+    () => void state.slabWorkCoordinatorTick?.(),
     15_000,
   );
   state.slabWorkCoordinator.unref();

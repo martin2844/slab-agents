@@ -6,6 +6,7 @@ import { repository } from "@/lib/repository";
 import { getPublicSettings } from "@/lib/settings";
 import { INTEGRATION_CATALOG } from "@/lib/integrations/catalog";
 import { externalServiceUrl, getSetupStatus } from "@/lib/setup";
+import { buildRunContextProfile } from "@/lib/run-context-profile";
 import type {
   AgentDetailData,
   AutomationsData,
@@ -111,12 +112,14 @@ export function getRunsPageData(): RunsData {
 export function getRunDetailPageData(id: string): RunDetailData | null {
   const run = repository.getRun(id);
   if (!run) return null;
+  const events = repository.listRunEvents(id);
   return {
     run,
-    events: repository.listRunEvents(id),
+    events,
     approvals: repository
       .listApprovals()
       .filter((approval) => approval.runId === id),
+    contextProfile: buildRunContextProfile(run, events),
   };
 }
 

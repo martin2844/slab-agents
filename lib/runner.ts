@@ -5,11 +5,19 @@ import { repository } from "@/lib/repository";
 import type { Agent, Message, Thread } from "@/lib/types";
 import { POSTHOG_AGENT_PROMPT } from "@/lib/integrations/catalog";
 import { getAgentPostHogMcp } from "@/lib/integrations/service";
+import { inspectMcpDefinitions } from "@/lib/mcp/client";
+import {
+  measureJson,
+  measureText,
+  type ContextComponent,
+  type ControlPlaneContextProfile,
+} from "@/lib/run-context-profile";
 
 export type RunnerEvent = {
   id: number;
   type:
     | "run.started"
+    | "context.bootstrap"
     | "thread.created"
     | "assistant.delta"
     | "assistant.completed"
@@ -150,6 +158,89 @@ export async function startRunnerRun(input: {
   const workApiKey = getSetting("work_api_key");
   const docsApiKey = getSetting("docs_api_key");
   const posthogMcp = getAgentPostHogMcp(input.agent.id);
+  const workInstructions = workCoordinationContext();
+  const integrationInstructions = posthogMcp ? POSTHOG_AGENT_PROMPT : "";
+  const instructionParts = [
+    input.agent.instructions,
+    workInstructions,
+    ...(integrationInstructions ? [integrationInstructions] : []),
+  ];
+  const combinedInstructions = instructionParts.join("\n\n");
+  const context = input.thread.runtimeThreadId
+    ? []
+    : contextMessages
+        .filter(({ role }) => role === "user" || role === "assistant")
+        .slice(-12)
+        .map(({ role, body }) => ({ role, body }));
+  const mcpServers = [
+    {
+      name: "work" as const,
+      url: getSetting("work_mcp_url"),
+      ...(workApiKey ? { credentials: { bearerToken: workApiKey } } : {}),
+    },
+    {
+      name: "docs" as const,
+      url: getSetting("docs_mcp_url"),
+      ...(docsApiKey ? { credentials: { bearerToken: docsApiKey } } : {}),
+    },
+    ...(posthogMcp ? [posthogMcp] : []),
+  ];
+  const components: ContextComponent[] = [
+    {
+      key: "agent_instructions",
+      label: "Agent instructions",
+      ...measureText(input.agent.instructions),
+    },
+    {
+      key: "work_coordination_instructions",
+      label: "Control-plane Work coordination instructions",
+      ...measureText(workInstructions),
+    },
+    {
+      key: "integration_instructions",
+      label: "Integration instructions",
+      ...measureText(integrationInstructions),
+    },
+    {
+      key: "initial_user_input",
+      label: "Initial user / task input",
+      ...measureText(input.prompt),
+    },
+    {
+      key: "rehydrated_conversation_context",
+      label: `Rehydrated product conversation (${context.length} messages)`,
+      ...measureText(
+        context
+          .map(({ role, body }) => `${role.toUpperCase()}: ${body}`)
+          .join("\n\n"),
+      ),
+    },
+    {
+      key: "mcp_server_configuration",
+      label: "MCP server configuration",
+      ...measureJson(mcpServers),
+    },
+  ];
+  const contextProfile = Promise.all(
+    mcpServers.map((server) => {
+      const token = server.credentials?.bearerToken;
+      return inspectMcpDefinitions(server.name, {
+        url: server.url,
+        headers: token
+          ? {
+              Authorization: `Bearer ${token}`,
+              "X-API-Key": token,
+            }
+          : {},
+      });
+    }),
+  ).then((mcpDefinitions): ControlPlaneContextProfile => ({
+    estimator: "characters_divided_by_4",
+    capturedAt: new Date().toISOString(),
+    instructionBundle: measureText(combinedInstructions),
+    components,
+    mcpServers: mcpDefinitions,
+  }));
   const response = await fetch(`${runnerUrl()}/runs`, {
     method: "POST",
     headers: runnerHeaders({
@@ -162,11 +253,7 @@ export async function startRunnerRun(input: {
         id: input.agent.id,
         name: input.agent.name,
         role: input.agent.role,
-        instructions: [
-          input.agent.instructions,
-          workCoordinationContext(),
-          ...(posthogMcp ? [POSTHOG_AGENT_PROMPT] : []),
-        ].join("\n\n"),
+        instructions: combinedInstructions,
         fullAccess: input.agent.fullAccess,
       },
       runtime: {
@@ -175,25 +262,8 @@ export async function startRunnerRun(input: {
       },
       thread: { runtimeThreadId: input.thread.runtimeThreadId },
       message: input.prompt,
-      context: input.thread.runtimeThreadId
-        ? []
-        : contextMessages
-            .filter(({ role }) => role === "user" || role === "assistant")
-            .slice(-12)
-            .map(({ role, body }) => ({ role, body })),
-      mcpServers: [
-        {
-          name: "work",
-          url: getSetting("work_mcp_url"),
-          ...(workApiKey ? { credentials: { bearerToken: workApiKey } } : {}),
-        },
-        {
-          name: "docs",
-          url: getSetting("docs_mcp_url"),
-          ...(docsApiKey ? { credentials: { bearerToken: docsApiKey } } : {}),
-        },
-        ...(posthogMcp ? [posthogMcp] : []),
-      ],
+      context,
+      mcpServers,
       cwd: null,
     }),
     cache: "no-store",
@@ -206,7 +276,10 @@ export async function startRunnerRun(input: {
   if (acknowledgement.runId !== input.runId) {
     throw new Error("Runner acknowledged a different run identifier.");
   }
-  return streamRunnerEvents(input.runId);
+  return {
+    events: streamRunnerEvents(input.runId),
+    contextProfile,
+  };
 }
 
 export async function resolveRunnerApproval(

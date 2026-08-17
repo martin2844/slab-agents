@@ -7,6 +7,7 @@ import { executeAutomationRun } from "@/lib/run-service";
 const state = globalThis as unknown as {
   slabScheduler?: NodeJS.Timeout;
   slabSchedulerBusy?: boolean;
+  slabSchedulerTick?: () => Promise<void>;
 };
 
 function due(cronExpression: string, lastRunAt: string | null, current: Date) {
@@ -54,9 +55,15 @@ export async function tickScheduler() {
   }
 }
 
+state.slabSchedulerTick = tickScheduler;
+
 export function startScheduler() {
+  state.slabSchedulerTick = tickScheduler;
   if (state.slabScheduler) return;
-  void tickScheduler();
-  state.slabScheduler = setInterval(() => void tickScheduler(), 30_000);
+  void state.slabSchedulerTick();
+  state.slabScheduler = setInterval(
+    () => void state.slabSchedulerTick?.(),
+    30_000,
+  );
   state.slabScheduler.unref();
 }

@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { RunContextUsage } from "@/components/run-context-usage";
 import type { RunDetailData } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
 export function RunDetail({ data }: { data: RunDetailData }) {
@@ -11,7 +12,7 @@ export function RunDetail({ data }: { data: RunDetailData }) {
       <PageHeader
         eyebrow="Run detail"
         title={data.run.id.slice(0, 12)}
-        description="Significant events are persisted; token deltas are intentionally omitted."
+        description="Inspect model-call usage, context growth, tool payload weight, and the persisted event trail."
         actions={
           <Button variant="outline" asChild>
             <Link href="/runs">
@@ -21,11 +22,23 @@ export function RunDetail({ data }: { data: RunDetailData }) {
           </Button>
         }
       />
-      <div className="grid gap-8 xl:grid-cols-[1fr_20rem]">
-        <section>
+      <RunContextUsage profile={data.contextProfile} />
+      <div className="mt-10 grid gap-8 xl:grid-cols-[1fr_20rem]">
+        <section className="min-w-0" aria-labelledby="persisted-events-title">
+          <div className="mb-5">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Debug log
+            </p>
+            <h2
+              id="persisted-events-title"
+              className="mt-1 text-xl font-semibold"
+            >
+              Persisted events
+            </h2>
+          </div>
           <div className="relative ml-2 border-l pl-8">
             {data.events.map((event, index) => (
-              <article key={event.id} className="relative pb-8">
+              <article key={event.id} className="relative min-w-0 pb-8">
                 <span
                   className={`absolute -left-[2.28rem] top-1 size-3 rounded-full ring-4 ring-background ${event.type.includes("failed") ? "bg-destructive" : event.type.includes("completed") ? "bg-emerald-600" : "bg-primary"}`}
                 />
@@ -38,7 +51,7 @@ export function RunDetail({ data }: { data: RunDetailData }) {
                   </time>
                 </div>
                 {Object.keys(event.payload).length > 0 && (
-                  <pre className="mt-3 overflow-auto border bg-muted/50 p-3 font-mono text-xs leading-5">
+                  <pre className="mt-3 max-w-full overflow-auto border bg-muted/50 p-3 font-mono text-xs leading-5">
                     {JSON.stringify(event.payload, null, 2)}
                   </pre>
                 )}

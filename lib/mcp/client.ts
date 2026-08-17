@@ -2,8 +2,16 @@ import "server-only";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import {
+  measureJson,
+  type McpServerDefinitionMetric,
+} from "@/lib/run-context-profile";
 
 export type McpConnection = { url: string; apiKey: string };
+export type McpInspectionConnection = {
+  url: string;
+  headers: Record<string, string>;
+};
 
 function parseTextResult(rawResult: Awaited<ReturnType<Client["callTool"]>>) {
   const result = rawResult as {
@@ -70,6 +78,48 @@ export async function testMcp(connection: McpConnection) {
     await client.connect(transport);
     const tools = await client.listTools();
     return { ok: true, tools: tools.tools.map((tool) => tool.name) };
+  } finally {
+    clearTimeout(timeout);
+    await client.close().catch(() => undefined);
+  }
+}
+
+export async function inspectMcpDefinitions(
+  server: string,
+  connection: McpInspectionConnection,
+): Promise<McpServerDefinitionMetric> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  const client = new Client({
+    name: "slab-agent-workspace-profiler",
+    version: "0.1.0",
+  });
+  const transport = new StreamableHTTPClientTransport(new URL(connection.url), {
+    requestInit: { headers: connection.headers, signal: controller.signal },
+  });
+  try {
+    await client.connect(transport);
+    const response = await client.listTools();
+    const total = measureJson(response.tools);
+    return {
+      server,
+      ...total,
+      toolCount: response.tools.length,
+      tools: response.tools
+        .map((tool) => ({ name: tool.name, ...measureJson(tool) }))
+        .sort((a, b) => b.approxTokens - a.approxTokens),
+      success: true,
+    };
+  } catch {
+    return {
+      server,
+      bytes: 0,
+      approxTokens: 0,
+      toolCount: 0,
+      tools: [],
+      success: false,
+      error: "MCP tools/list probe failed.",
+    };
   } finally {
     clearTimeout(timeout);
     await client.close().catch(() => undefined);

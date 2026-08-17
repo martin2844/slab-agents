@@ -3,6 +3,16 @@ import "server-only";
 import { repository } from "@/lib/repository";
 import { startRunnerRun, type RunnerEvent } from "@/lib/runner";
 
+export type RunSource =
+  | "chat"
+  | "operating_loop"
+  | "automation"
+  | "assignment"
+  | "resumed"
+  | "review_requested"
+  | "blocked"
+  | "mention";
+
 function runtimeFailure(data: Record<string, unknown>) {
   const error = data.error;
   if (error && typeof error === "object") {
@@ -26,7 +36,11 @@ function browserEvent(
   return { type, runId: event.runId, ...data };
 }
 
-export async function* executeRun(input: { runId: string; prompt: string }) {
+export async function* executeRun(input: {
+  runId: string;
+  prompt: string;
+  source?: RunSource;
+}) {
   const run = repository.getRun(input.runId);
   if (!run || !run.threadId) throw new Error("Run or thread not found.");
   const agent = repository.getAgent(run.agentId);
@@ -35,7 +49,8 @@ export async function* executeRun(input: { runId: string; prompt: string }) {
 
   repository.updateRun(run.id, "running");
   repository.addRunEvent(run.id, "run_started", {
-    source: run.automationId ? "automation" : "chat",
+    source:
+      input.source ?? (run.automationId ? "automation" : "chat"),
   });
   yield { type: "run_started", runId: run.id };
 
@@ -43,23 +58,42 @@ export async function* executeRun(input: { runId: string; prompt: string }) {
   let runnerRunId = run.id;
   let runtimeThreadId = thread.runtimeThreadId;
   let completed = false;
+  const contextProfilePersistence: Promise<void>[] = [];
+  let modelCallIndex = 0;
 
   try {
     const messages = repository.listMessages(thread.id);
     for (let attempt = 0; attempt < 2 && !completed; attempt += 1) {
-      const events = await startRunnerRun({
+      const runner = await startRunnerRun({
         runId: runnerRunId,
         agent,
         thread: { ...thread, runtimeThreadId },
         messages,
         prompt: input.prompt,
       });
+      contextProfilePersistence.push(
+        runner.contextProfile.then((profile) => {
+          repository.addRunEvent(run.id, "run_context_profile", {
+            ...profile,
+            attempt: attempt + 1,
+            runnerRunId,
+          });
+        }),
+      );
       let rehydrateThread = false;
 
-      for await (const event of events) {
+      for await (const event of runner.events) {
         const { data } = event;
         if (event.type === "run.started") {
           repository.addRunEvent(run.id, "runner_run_started", {
+            runnerRunId: event.runId,
+          });
+          continue;
+        }
+        if (event.type === "context.bootstrap") {
+          repository.addRunEvent(run.id, "runtime_context_bootstrap", {
+            ...data,
+            attempt: attempt + 1,
             runnerRunId: event.runId,
           });
           continue;
@@ -128,14 +162,26 @@ export async function* executeRun(input: { runId: string; prompt: string }) {
           continue;
         }
         if (event.type === "usage.updated") {
+          modelCallIndex += 1;
+          const usage = {
+            ...data,
+            runnerCallIndex: data.callIndex,
+            callIndex: modelCallIndex,
+            runnerRunId: event.runId,
+            attempt: attempt + 1,
+          };
           const status = repository.getRun(run.id)?.status ?? "running";
-          repository.updateRun(run.id, status, { usage: data });
-          repository.addRunEvent(run.id, "usage_updated", data);
+          repository.updateRun(run.id, status, { usage });
+          repository.addRunEvent(run.id, "usage_updated", usage);
           continue;
         }
         if (event.type === "tool.started" || event.type === "tool.completed") {
           const type = event.type.replace(".", "_");
-          repository.addRunEvent(run.id, type, data);
+          repository.addRunEvent(run.id, type, {
+            ...data,
+            runnerRunId: event.runId,
+            attempt: attempt + 1,
+          });
           yield browserEvent(type, event);
           continue;
         }
@@ -181,6 +227,7 @@ export async function* executeRun(input: { runId: string; prompt: string }) {
     }
 
     if (!completed) throw new Error("Runner could not rehydrate the thread.");
+    await Promise.all(contextProfilePersistence);
     if (assistantBody) {
       repository.addMessage(thread.id, run.id, "assistant", assistantBody);
     }
@@ -198,8 +245,12 @@ export async function* executeRun(input: { runId: string; prompt: string }) {
   }
 }
 
-export async function executeAutomationRun(runId: string, prompt: string) {
-  for await (const event of executeRun({ runId, prompt })) {
+export async function executeAutomationRun(
+  runId: string,
+  prompt: string,
+  source: RunSource = "automation",
+) {
+  for await (const event of executeRun({ runId, prompt, source })) {
     void event; /* persist all events; no browser consumer */
   }
 }

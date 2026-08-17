@@ -45,7 +45,7 @@ export async function POST(request: Request) {
       runtime: agent.runtime,
     });
     repository.addMessage(thread.id, run.id, "user", input.prompt);
-    void executeAutomationRun(run.id, input.prompt);
+    void executeAutomationRun(run.id, input.prompt, "operating_loop");
 
     return Response.json(
       {

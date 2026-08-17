@@ -54,6 +54,8 @@ import type {
   DocsPageData,
   Document,
   DocumentRevision,
+  DocumentSearchResult,
+  DocumentSummary,
   SetupStatus,
 } from "@/lib/types";
 type Detail = DocsDetail;
@@ -64,7 +66,7 @@ function CreateDocument({
   label = "New document",
   variant = "default",
 }: {
-  documents: Document[];
+  documents: DocumentSummary[];
   onCreated: (doc: Document) => void;
   label?: string;
   variant?: "default" | "outline";
@@ -171,7 +173,7 @@ function Tree({
   onSelect,
   depth = 0,
 }: {
-  documents: Document[];
+  documents: DocumentSummary[];
   parentId?: string | null;
   selected: string | null;
   onSelect: (id: string) => void;
@@ -208,7 +210,7 @@ function Tree({
 }
 
 export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
-  const [documents, setDocuments] = useState<Document[] | null>(
+  const [documents, setDocuments] = useState<DocumentSummary[] | null>(
       initialData.documents,
     ),
     [selected, setSelected] = useState<string | null>(initialData.selected),
@@ -219,7 +221,9 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
     [body, setBody] = useState(initialData.detail?.document.body ?? ""),
     [title, setTitle] = useState(initialData.detail?.document.title ?? ""),
     [revision, setRevision] = useState<DocumentRevision | null>(null),
-    [searchResults, setSearchResults] = useState<Document[] | null>(null),
+    [searchResults, setSearchResults] = useState<
+      DocumentSearchResult[] | null
+    >(null),
     [searching, setSearching] = useState(false),
     [testing, setTesting] = useState(false),
     skipInitialDetailLoad = useRef(true);
@@ -250,7 +254,7 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
     }
     setSearching(true);
     const timeout = window.setTimeout(() => {
-      api<Document[]>(`/api/docs?q=${encodeURIComponent(q)}`)
+      api<DocumentSearchResult[]>(`/api/docs?q=${encodeURIComponent(q)}`)
         .then(setSearchResults)
         .catch((e) => setError(e.message))
         .finally(() => setSearching(false));
@@ -368,7 +372,7 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
               </div>
             ) : (
               <Tree
-                documents={visibleDocuments}
+                documents={documents ?? []}
                 selected={selected}
                 onSelect={setSelected}
               />

@@ -1,3 +1,5 @@
+import type { RunContextProfile } from "@/lib/run-context-profile";
+
 export type Agent = {
   id: string;
   name: string;
@@ -145,6 +147,30 @@ export type Document = {
   updated_at: string;
 };
 
+export type DocumentSummary = Pick<
+  Document,
+  | "id"
+  | "slug"
+  | "title"
+  | "parent_id"
+  | "tags"
+  | "archived_at"
+  | "created_at"
+  | "updated_at"
+>;
+
+export type DocumentSearchResult = Pick<
+  Document,
+  "id" | "slug" | "title" | "tags" | "updated_at"
+> & {
+  excerpt: string;
+  score: number;
+};
+
+export type DocumentMutationResult = DocumentSummary & {
+  changed_fields: string[];
+};
+
 export type DocumentRevision = {
   id?: string;
   document_id?: string;
@@ -209,6 +235,7 @@ export type RunDetailData = {
   run: Run;
   events: RunEvent[];
   approvals: Approval[];
+  contextProfile: RunContextProfile;
 };
 
 export type AutomationsData = {
@@ -231,7 +258,7 @@ export type DocsDetail = {
 };
 
 export type DocsPageData = {
-  documents: Document[];
+  documents: DocumentSummary[];
   selected: string | null;
   detail: DocsDetail | null;
   error: string;

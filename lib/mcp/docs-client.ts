@@ -2,7 +2,13 @@ import "server-only";
 
 import { callMcpTool, testMcp } from "@/lib/mcp/client";
 import { getSetting } from "@/lib/settings";
-import type { Document, DocumentRevision } from "@/lib/types";
+import type {
+  Document,
+  DocumentMutationResult,
+  DocumentRevision,
+  DocumentSearchResult,
+  DocumentSummary,
+} from "@/lib/types";
 
 function connection() {
   return {
@@ -19,7 +25,7 @@ function unwrap<T>(value: { data?: T } | T): T {
 export const DocsClient = {
   list: async (input: Record<string, unknown> = {}) =>
     unwrap(
-      await callMcpTool<{ data: Document[] } | Document[]>(
+      await callMcpTool<{ data: DocumentSummary[] } | DocumentSummary[]>(
         connection(),
         "list_docs",
         { archived: false, limit: 100, offset: 0, ...input },
@@ -27,10 +33,12 @@ export const DocsClient = {
     ),
   search: async (q: string) =>
     unwrap(
-      await callMcpTool<{ data: Document[] } | Document[]>(
+      await callMcpTool<
+        { data: DocumentSearchResult[] } | DocumentSearchResult[]
+      >(
         connection(),
         "search_docs",
-        { q, limit: 50, offset: 0 },
+        { query: q, limit: 50 },
       ),
     ),
   get: async (id: string) =>
@@ -41,25 +49,35 @@ export const DocsClient = {
         { id },
       ),
     ),
-  create: async (input: Record<string, unknown>) =>
-    unwrap(
-      await callMcpTool<{ data: Document } | Document>(
+  create: async (input: Record<string, unknown>) => {
+    const created = unwrap(
+      await callMcpTool<
+        { data: DocumentMutationResult } | DocumentMutationResult
+      >(
         connection(),
         "create_doc",
         input,
       ),
-    ),
-  update: async (id: string, input: Record<string, unknown>) =>
-    unwrap(
-      await callMcpTool<{ data: Document } | Document>(
+    );
+    return DocsClient.get(created.id);
+  },
+  update: async (id: string, input: Record<string, unknown>) => {
+    const updated = unwrap(
+      await callMcpTool<
+        { data: DocumentMutationResult } | DocumentMutationResult
+      >(
         connection(),
         "update_doc",
         { id, ...input },
       ),
-    ),
+    );
+    return DocsClient.get(updated.id);
+  },
   archive: async (id: string) =>
     unwrap(
-      await callMcpTool<{ data: Document } | Document>(
+      await callMcpTool<
+        { data: DocumentMutationResult } | DocumentMutationResult
+      >(
         connection(),
         "archive_doc",
         { id },
