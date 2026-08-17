@@ -80,6 +80,7 @@ export type Automation = {
   prompt: string;
   enabled: boolean;
   lastRunAt: string | null;
+  lastRunId: string | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -1,6 +1,15 @@
 "use client";
 import { useState } from "react";
-import { Clock3, LoaderCircle, Play, Plus, Sparkles, Zap } from "lucide-react";
+import Link from "next/link";
+import {
+  ArrowUpRight,
+  Clock3,
+  LoaderCircle,
+  Play,
+  Plus,
+  Sparkles,
+  Zap,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,7 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { api } from "@/lib/client-api";
-import type { Agent, Automation, AutomationsData } from "@/lib/types";
+import type { Agent, Automation, AutomationsData, Run } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
 function CreateAutomation({
   agents,
@@ -215,12 +224,18 @@ export function AutomationsView({
   async function runNow(item: Automation) {
     setRunningId(item.id);
     try {
-      await api(`/api/automations/${item.id}/run`, { method: "POST" });
+      const run = await api<Run>(`/api/automations/${item.id}/run`, {
+        method: "POST",
+      });
       setAutomations(
         (current) =>
           current?.map((automation) =>
             automation.id === item.id
-              ? { ...automation, lastRunAt: new Date().toISOString() }
+              ? {
+                  ...automation,
+                  lastRunAt: new Date().toISOString(),
+                  lastRunId: run.id,
+                }
               : automation,
           ) ?? null,
       );
@@ -300,11 +315,21 @@ export function AutomationsView({
                     <Clock3 className="size-4" />
                     {item.cronExpression ?? "Manual"}
                   </p>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {item.lastRunAt
-                      ? `Last ran ${formatDateTime(item.lastRunAt)}`
-                      : "Never run"}
-                  </p>
+                  {item.lastRunAt && item.lastRunId ? (
+                    <Link
+                      href={`/runs/${item.lastRunId}`}
+                      className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      Last ran {formatDateTime(item.lastRunAt)}
+                      <ArrowUpRight className="size-3" />
+                    </Link>
+                  ) : (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {item.lastRunAt
+                        ? `Last ran ${formatDateTime(item.lastRunAt)}`
+                        : "Never run"}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button

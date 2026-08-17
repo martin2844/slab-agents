@@ -100,6 +100,7 @@ function mapAutomation(row: Row): Automation {
     prompt: String(row.prompt),
     enabled: bool(row.enabled),
     lastRunAt: row.last_run_at ? String(row.last_run_at) : null,
+    lastRunId: row.last_run_id ? String(row.last_run_id) : null,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
@@ -684,7 +685,11 @@ export const repository = {
     return (
       db
         .prepare(
-          "SELECT a.*, g.name agent_name FROM automations a JOIN agents g ON g.id=a.agent_id ORDER BY a.enabled DESC,a.name",
+          `SELECT a.*, g.name agent_name,
+            (SELECT r.id FROM runs r WHERE r.automation_id=a.id ORDER BY r.rowid DESC LIMIT 1) last_run_id
+           FROM automations a
+           JOIN agents g ON g.id=a.agent_id
+           ORDER BY a.enabled DESC,a.name`,
         )
         .all() as Row[]
     ).map(mapAutomation);
@@ -692,7 +697,11 @@ export const repository = {
   getAutomation(id: string) {
     const row = db
       .prepare(
-        "SELECT a.*, g.name agent_name FROM automations a JOIN agents g ON g.id=a.agent_id WHERE a.id=?",
+        `SELECT a.*, g.name agent_name,
+          (SELECT r.id FROM runs r WHERE r.automation_id=a.id ORDER BY r.rowid DESC LIMIT 1) last_run_id
+         FROM automations a
+         JOIN agents g ON g.id=a.agent_id
+         WHERE a.id=?`,
       )
       .get(id) as Row | undefined;
     return row ? mapAutomation(row) : null;
