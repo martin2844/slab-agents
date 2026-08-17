@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bug,
+  Bot,
   Check,
   ChevronRight,
   CircleDot,
@@ -43,6 +44,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { api } from "@/lib/client-api";
 import { formatDateTime } from "@/lib/utils";
 import type {
+  Agent,
   Comment,
   Issue,
   IssuePriority,
@@ -55,6 +57,8 @@ import type {
 const columns: { key: IssueStatus; label: string; caption: string }[] = [
   { key: "new", label: "New", caption: "Ready to be picked up" },
   { key: "in_progress", label: "In progress", caption: "Actively moving" },
+  { key: "blocked", label: "Blocked", caption: "Waiting on a dependency" },
+  { key: "review", label: "Review", caption: "Needs a decision" },
   { key: "done", label: "Done", caption: "Closed work" },
 ];
 const priorityTone: Record<IssuePriority, string> = {
@@ -88,9 +92,11 @@ function draftFromIssue(issue: Issue): IssueDraft {
 
 function CreateIssue({
   projectKey,
+  agents,
   onCreated,
 }: {
   projectKey: string;
+  agents: Agent[];
   onCreated: (issue: Issue) => void;
 }) {
   const [open, setOpen] = useState(false),
@@ -199,6 +205,27 @@ function CreateIssue({
             <label className="grid gap-2 text-sm font-semibold">
               Assignee
               <Input name="assignee" placeholder="Person or agent" />
+              {agents.length > 0 && (
+                <span className="flex flex-wrap gap-1.5">
+                  {agents.map((agent) => (
+                    <Button
+                      key={agent.id}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs font-normal"
+                      onClick={(event) => {
+                        const form = event.currentTarget.closest("form");
+                        const input = form?.elements.namedItem("assignee");
+                        if (input instanceof HTMLInputElement)
+                          input.value = agent.slug;
+                      }}
+                    >
+                      {agent.name} · {agent.slug}
+                    </Button>
+                  ))}
+                </span>
+              )}
             </label>
           </div>
           <DialogFooter className="mt-6">
@@ -214,10 +241,12 @@ function CreateIssue({
 
 function IssueDialog({
   issueKey,
+  agents,
   onClose,
   onUpdated,
 }: {
   issueKey: string | null;
+  agents: Agent[];
   onClose: () => void;
   onUpdated: (issue: Issue) => void;
 }) {
@@ -443,6 +472,28 @@ function IssueDialog({
                     }
                     placeholder="Unassigned"
                   />
+                  {agents.length > 0 && (
+                    <span className="flex flex-wrap gap-1.5">
+                      {agents.map((agent) => (
+                        <Button
+                          key={agent.id}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs font-normal normal-case tracking-normal"
+                          onClick={() =>
+                            setDraft((current) =>
+                              current
+                                ? { ...current, assignee: agent.slug }
+                                : current,
+                            )
+                          }
+                        >
+                          {agent.name}
+                        </Button>
+                      ))}
+                    </span>
+                  )}
                 </label>
               </div>
               <div className="grid gap-6 lg:grid-cols-2">
@@ -717,6 +768,7 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
             </Button>
             <CreateIssue
               projectKey={projectKey}
+              agents={initialData.agents}
               onCreated={(issue) => setIssues((v) => [issue, ...(v ?? [])])}
             />
           </>
@@ -738,6 +790,16 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
             ))}
           </SelectContent>
         </Select>
+      </div>
+      <div className="mb-6 flex flex-col justify-between gap-3 border-y bg-muted/35 px-4 py-3 text-sm sm:flex-row sm:items-center">
+        <span className="flex items-center gap-2 font-semibold">
+          <Bot className="size-4" />
+          Agent routing is active
+        </span>
+        <p className="text-muted-foreground">
+          Assign an enabled agent slug to start work automatically. Mention an
+          agent in a comment, such as <code>@coo</code>, to request input.
+        </p>
       </div>
       {error && <ErrorState message={error} />}{" "}
       {!projects && !error && <LoadingState />}
@@ -787,7 +849,7 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
       )}
       {loadingIssues && <LoadingState label="Loading issues" />}
       {projects && projects.length > 0 && issues && !loadingIssues && (
-        <div className="grid gap-4 xl:grid-cols-3">
+        <div className="grid grid-cols-[repeat(5,minmax(17rem,1fr))] gap-4 overflow-x-auto pb-3">
           {columns.map((column) => (
             <section
               key={column.key}
@@ -862,6 +924,7 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
       )}
       <IssueDialog
         issueKey={selected}
+        agents={initialData.agents}
         onClose={() => setSelected(null)}
         onUpdated={replace}
       />

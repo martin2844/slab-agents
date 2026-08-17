@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { WorkClient } from "@/lib/mcp/work-client";
+import { tickWorkCoordination } from "@/lib/work-coordination";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const createSchema = z.object({
@@ -23,14 +24,11 @@ export async function GET(request: Request) {
 }
 export async function POST(request: Request) {
   try {
-    return Response.json(
-      {
-        data: await WorkClient.createIssue(
-          createSchema.parse(await request.json()),
-        ),
-      },
-      { status: 201 },
+    const issue = await WorkClient.createIssue(
+      createSchema.parse(await request.json()),
     );
+    void tickWorkCoordination();
+    return Response.json({ data: issue }, { status: 201 });
   } catch (error) {
     return apiError(error);
   }

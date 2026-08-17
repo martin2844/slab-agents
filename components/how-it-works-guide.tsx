@@ -74,7 +74,8 @@ function DiagramNode({
     <div
       className={cn(
         "relative min-w-0 border p-4",
-        tone === "primary" && "border-primary bg-primary text-primary-foreground",
+        tone === "primary" &&
+          "border-primary bg-primary text-primary-foreground",
         tone === "muted" && "bg-muted/70",
         tone === "dark" && "border-foreground bg-foreground text-background",
         tone === "default" && "bg-card",
@@ -194,7 +195,9 @@ function Step({
   return (
     <li className="grid gap-4 border-t py-6 md:grid-cols-[3rem_13rem_1fr_12rem] md:items-start">
       <span className="font-mono text-xs text-primary">{number}</span>
-      <p className="font-heading text-xl font-semibold leading-tight">{title}</p>
+      <p className="font-heading text-xl font-semibold leading-tight">
+        {title}
+      </p>
       <p className="text-sm leading-6 text-muted-foreground">{description}</p>
       <div className="flex items-start gap-2 text-xs font-semibold">
         <Check className="mt-0.5 size-4 shrink-0 text-emerald-700" />
@@ -221,7 +224,8 @@ function SequenceRow({
       <p className="text-sm font-bold">{actor}</p>
       <p className="text-sm leading-6 text-muted-foreground">{action}</p>
       <p className="text-xs leading-5 text-muted-foreground sm:col-start-3 lg:col-start-auto">
-        <span className="font-semibold text-foreground">Recorded:</span> {stored}
+        <span className="font-semibold text-foreground">Recorded:</span>{" "}
+        {stored}
       </p>
     </li>
   );
@@ -329,25 +333,25 @@ export function HowItWorksGuide() {
                 </span>
               </div>
               <div className="grid gap-3 md:grid-cols-3">
-                  <DiagramNode
-                    eyebrow="Remote"
-                    title="Slab Work"
-                    detail="Projects, issues, status, priority, comments, relationships, and blockers via MCP / HTTP."
-                    icon={FolderKanban}
-                  />
-                  <DiagramNode
-                    eyebrow="Remote"
-                    title="Slab Docs"
-                    detail="Documents, hierarchy, Markdown, search, archive state, and revisions via MCP / HTTP."
-                    icon={FileText}
-                  />
-                  <DiagramNode
-                    eyebrow="Loopback"
-                    title="Slab Runner"
-                    detail="Starts Codex, resumes runtime threads, exposes tools, streams events, and handles approvals."
-                    icon={TerminalSquare}
-                    tone="dark"
-                  />
+                <DiagramNode
+                  eyebrow="Remote"
+                  title="Slab Work"
+                  detail="Projects, issues, status, priority, comments, relationships, and blockers via MCP / HTTP."
+                  icon={FolderKanban}
+                />
+                <DiagramNode
+                  eyebrow="Remote"
+                  title="Slab Docs"
+                  detail="Documents, hierarchy, Markdown, search, archive state, and revisions via MCP / HTTP."
+                  icon={FileText}
+                />
+                <DiagramNode
+                  eyebrow="Loopback"
+                  title="Slab Runner"
+                  detail="Starts Codex, resumes runtime threads, exposes tools, streams events, and handles approvals."
+                  icon={TerminalSquare}
+                  tone="dark"
+                />
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-t pt-4 text-xs text-muted-foreground">
                 <span className="flex items-center gap-2">
@@ -367,25 +371,29 @@ export function HowItWorksGuide() {
                 {
                   name: "Slab",
                   role: "What needs to happen",
-                  detail: "The operational ledger. It owns work state and collaboration around execution.",
+                  detail:
+                    "The operational ledger. It owns work state and collaboration around execution.",
                   icon: FolderKanban,
                 },
                 {
                   name: "Slab Docs",
                   role: "What the company knows",
-                  detail: "The knowledge base. It owns context, decisions, plans, standards, and historical documentation.",
+                  detail:
+                    "The knowledge base. It owns context, decisions, plans, standards, and historical documentation.",
                   icon: BookOpenText,
                 },
                 {
                   name: "Next.js",
                   role: "Who acts and when",
-                  detail: "The control plane. It owns local agents, threads, runs, approvals, settings, and schedules.",
+                  detail:
+                    "The control plane. It owns local agents, threads, runs, approvals, settings, and schedules.",
                   icon: Workflow,
                 },
                 {
                   name: "Runner",
                   role: "How the agent executes",
-                  detail: "The execution bridge. It turns an agent definition and prompt into a live Codex run.",
+                  detail:
+                    "The execution bridge. It turns an agent definition and prompt into a live Codex run.",
                   icon: Code2,
                 },
               ].map((item) => (
@@ -649,6 +657,81 @@ export function HowItWorksGuide() {
                 </p>
               </div>
             </div>
+
+            <div className="mt-14 border-t-2 border-foreground pt-6">
+              <p className="text-xs font-bold uppercase tracking-[.16em] text-muted-foreground">
+                Work-driven coordination
+              </p>
+              <h3 className="mt-3 max-w-3xl font-heading text-3xl font-semibold">
+                Agents coordinate through the work item, not a private chat.
+              </h3>
+              <p className="mt-4 max-w-3xl text-sm leading-6 text-muted-foreground">
+                Assigning an issue to an enabled agent slug creates a local Run.
+                The agent reads the authoritative issue and Docs, records its
+                result as a Work comment, and moves the issue to a meaningful
+                state. Review and blocked states wake the COO; removing either
+                state resumes the assigned agent.
+              </p>
+              <div className="mt-8 flex flex-col items-stretch lg:flex-row lg:items-center">
+                <DiagramNode
+                  eyebrow="Direction"
+                  title="COO delegates"
+                  detail="Creates one concrete issue with an assignee slug and definition of done."
+                  icon={Bot}
+                  className="lg:flex-1"
+                />
+                <FlowArrow label="assigns" />
+                <DiagramNode
+                  eyebrow="Source of truth"
+                  title="Work item"
+                  detail="Owns status, priority, description, comments, relationships, and evidence."
+                  icon={FolderKanban}
+                  tone="primary"
+                  className="lg:flex-1"
+                />
+                <FlowArrow label="wakes" />
+                <DiagramNode
+                  eyebrow="Execution"
+                  title="Sales acts"
+                  detail="Reads Work and Docs, performs the task, comments the result, and changes state."
+                  icon={Zap}
+                  tone="dark"
+                  className="lg:flex-1"
+                />
+                <FlowArrow label="review / block" />
+                <DiagramNode
+                  eyebrow="Decision"
+                  title="COO reviews"
+                  detail="Approves to done, gives feedback to resume Sales, or asks Martin for one decision."
+                  icon={ShieldCheck}
+                  tone="muted"
+                  className="lg:flex-1"
+                />
+              </div>
+              <div className="mt-8 grid gap-px border bg-border sm:grid-cols-3">
+                {[
+                  [
+                    "Assignment",
+                    "assignee = sales starts Sales once and maps the issue to a persistent agent thread.",
+                  ],
+                  [
+                    "Semantic state",
+                    "review and blocked use adapter-owned labels while Slab keeps its native three-state model.",
+                  ],
+                  [
+                    "Mentions",
+                    "A new @coo or @sales comment starts the mentioned agent with the issue as its operating context.",
+                  ],
+                ].map(([title, detail]) => (
+                  <div key={title} className="bg-card p-5">
+                    <p className="text-sm font-semibold">{title}</p>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      {detail}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </section>
 
           <section id="agents" className="scroll-mt-24">
@@ -659,8 +742,9 @@ export function HowItWorksGuide() {
             >
               <p>
                 Agents are first-class control-plane resources, but they are not
-                daemons. They wake up only for a user message, a manual run, or
-                an automation.
+                daemons. They wake up for a user message, a manual run, an
+                automation, or a structured Work event such as an assignment,
+                review, blocker, resumed task, or mention.
               </p>
             </SectionHeading>
             <div className="mt-10 flex flex-col items-stretch lg:flex-row lg:items-center">
@@ -697,14 +781,31 @@ export function HowItWorksGuide() {
                 </h3>
                 <div className="mt-4 border-y">
                   {[
-                    ["Role", "The operating lens: COO, Sales, Finance, Product, or another function."],
-                    ["Instructions", "Durable behavioral guidance applied to every execution."],
-                    ["Runtime", "Codex in the MVP, with the model designed to expand later."],
-                    ["Enabled", "A local safety switch that prevents new executions without deleting history."],
+                    [
+                      "Role",
+                      "The operating lens: COO, Sales, Finance, Product, or another function.",
+                    ],
+                    [
+                      "Instructions",
+                      "Durable behavioral guidance applied to every execution.",
+                    ],
+                    [
+                      "Runtime",
+                      "Codex in the MVP, with the model designed to expand later.",
+                    ],
+                    [
+                      "Enabled",
+                      "A local safety switch that prevents new executions without deleting history.",
+                    ],
                   ].map(([label, detail]) => (
-                    <div key={label} className="grid gap-2 border-t py-4 first:border-t-0 sm:grid-cols-[8rem_1fr]">
+                    <div
+                      key={label}
+                      className="grid gap-2 border-t py-4 first:border-t-0 sm:grid-cols-[8rem_1fr]"
+                    >
                       <strong className="text-sm">{label}</strong>
-                      <span className="text-sm leading-6 text-muted-foreground">{detail}</span>
+                      <span className="text-sm leading-6 text-muted-foreground">
+                        {detail}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -715,14 +816,31 @@ export function HowItWorksGuide() {
                 </h3>
                 <div className="mt-4 border-y">
                   {[
-                    ["Conversation", "The persistent Codex thread, or bounded message rehydration when recovery is needed."],
-                    ["Company knowledge", "Slab Docs tools, queried when the task needs policies, plans, OKRs, or historical context."],
-                    ["Operational state", "Slab Work tools, queried when the task needs projects, issues, priorities, blockers, or comments."],
-                    ["No memory service", "There is no Honcho, vector memory, or semantic memory layer in this MVP."],
+                    [
+                      "Conversation",
+                      "The persistent Codex thread, or bounded message rehydration when recovery is needed.",
+                    ],
+                    [
+                      "Company knowledge",
+                      "Slab Docs tools, queried when the task needs policies, plans, OKRs, or historical context.",
+                    ],
+                    [
+                      "Operational state",
+                      "Slab Work tools, queried when the task needs projects, issues, priorities, blockers, or comments.",
+                    ],
+                    [
+                      "No memory service",
+                      "There is no Honcho, vector memory, or semantic memory layer in this MVP.",
+                    ],
                   ].map(([label, detail]) => (
-                    <div key={label} className="grid gap-2 border-t py-4 first:border-t-0 sm:grid-cols-[9rem_1fr]">
+                    <div
+                      key={label}
+                      className="grid gap-2 border-t py-4 first:border-t-0 sm:grid-cols-[9rem_1fr]"
+                    >
                       <strong className="text-sm">{label}</strong>
-                      <span className="text-sm leading-6 text-muted-foreground">{detail}</span>
+                      <span className="text-sm leading-6 text-muted-foreground">
+                        {detail}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -757,10 +875,16 @@ export function HowItWorksGuide() {
                       <span className="mx-auto grid size-10 place-items-center rounded-full bg-foreground text-background">
                         <Icon className="size-4" />
                       </span>
-                      <p className="mt-3 text-xs font-bold uppercase tracking-wider">{label as string}</p>
-                      <p className="mt-1 text-[0.65rem] text-muted-foreground">{detail as string}</p>
+                      <p className="mt-3 text-xs font-bold uppercase tracking-wider">
+                        {label as string}
+                      </p>
+                      <p className="mt-1 text-[0.65rem] text-muted-foreground">
+                        {detail as string}
+                      </p>
                     </div>
-                    {index < 4 && <ArrowRight className="size-5 shrink-0 text-muted-foreground" />}
+                    {index < 4 && (
+                      <ArrowRight className="size-5 shrink-0 text-muted-foreground" />
+                    )}
                   </div>
                 ))}
               </div>
@@ -769,15 +893,31 @@ export function HowItWorksGuide() {
             <div className="mt-8 grid gap-px overflow-hidden border bg-border sm:grid-cols-2 lg:grid-cols-3">
               {[
                 ["run_started", "A queued Run has entered execution."],
-                ["tool_started", "Codex began a meaningful Work, Docs, or local tool call."],
-                ["tool_completed", "The tool returned or failed with inspectable output metadata."],
+                [
+                  "tool_started",
+                  "Codex began a meaningful Work, Docs, or local tool call.",
+                ],
+                [
+                  "tool_completed",
+                  "The tool returned or failed with inspectable output metadata.",
+                ],
                 ["approval_required", "Runner paused for a human decision."],
-                ["assistant_message", "The final assistant body is ready to persist."],
-                ["run_completed / failed", "The terminal outcome and error context are recorded."],
+                [
+                  "assistant_message",
+                  "The final assistant body is ready to persist.",
+                ],
+                [
+                  "run_completed / failed",
+                  "The terminal outcome and error context are recorded.",
+                ],
               ].map(([event, detail]) => (
                 <div key={event} className="bg-card p-4">
-                  <code className="font-mono text-xs font-semibold text-primary">{event}</code>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{detail}</p>
+                  <code className="font-mono text-xs font-semibold text-primary">
+                    {event}
+                  </code>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    {detail}
+                  </p>
                 </div>
               ))}
             </div>
@@ -793,19 +933,24 @@ export function HowItWorksGuide() {
                     The agent pauses. The human decides.
                   </h3>
                   <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                    Runner emits approval.required with the proposed action. Next
-                    persists a pending Approval and marks the Run as
+                    Runner emits approval.required with the proposed action.
+                    Next persists a pending Approval and marks the Run as
                     waiting_approval. Approve or Deny is posted back to Runner.
                     The local record moves through resolving to approved or
-                    denied, preventing duplicate decisions from racing each other.
+                    denied, preventing duplicate decisions from racing each
+                    other.
                   </p>
                   <div className="mt-6 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
                     <Badge variant="outline">Pending</Badge>
                     <ArrowRight className="hidden size-4 sm:block" />
                     <Badge variant="outline">Resolving</Badge>
                     <ArrowRight className="hidden size-4 sm:block" />
-                    <Badge className="bg-emerald-700 text-white">Approved</Badge>
-                    <span className="text-center text-xs text-muted-foreground">or</span>
+                    <Badge className="bg-emerald-700 text-white">
+                      Approved
+                    </Badge>
+                    <span className="text-center text-xs text-muted-foreground">
+                      or
+                    </span>
                     <Badge variant="destructive">Denied</Badge>
                   </div>
                 </div>
@@ -864,18 +1009,18 @@ export function HowItWorksGuide() {
                 <h3 className="font-heading text-2xl font-semibold">Cron</h3>
                 <p className="mt-3 text-sm leading-6 text-muted-foreground">
                   The local scheduler evaluates the cron expression in the
-                  computer&apos;s timezone. Weekly OKR review is the default starter
-                  template.
+                  computer&apos;s timezone. Weekly OKR review is the default
+                  starter template.
                 </p>
               </div>
             </div>
             <div className="mt-8 flex gap-3 border-l-2 border-primary bg-muted/45 p-5">
               <Laptop className="mt-0.5 size-5 shrink-0 text-primary" />
               <p className="text-sm leading-6 text-muted-foreground">
-                <strong className="text-foreground">MVP limitation:</strong> cron
-                jobs only fire while this Next.js application is running. There
-                is no missed-job replay, durable queue, clustering, distributed
-                lock, or remote scheduler yet.
+                <strong className="text-foreground">MVP limitation:</strong>{" "}
+                cron jobs only fire while this Next.js application is running.
+                There is no missed-job replay, durable queue, clustering,
+                distributed lock, or remote scheduler yet.
               </p>
             </div>
             <Button className="mt-6" variant="outline" asChild>
@@ -971,7 +1116,10 @@ export function HowItWorksGuide() {
                     "Slab Docs hierarchy or revisions",
                     "A vector index or semantic memory store",
                   ].map((item) => (
-                    <div key={item} className="flex gap-3 py-3 text-sm text-muted-foreground">
+                    <div
+                      key={item}
+                      className="flex gap-3 py-3 text-sm text-muted-foreground"
+                    >
                       <X className="mt-0.5 size-4 shrink-0" />
                       {item}
                     </div>
@@ -982,14 +1130,28 @@ export function HowItWorksGuide() {
 
             <div className="mt-8 grid gap-px overflow-hidden border bg-border sm:grid-cols-3">
               {[
-                [ShieldCheck, "Single user", "No login or multi-tenant account model in the MVP."],
-                [LockKeyhole, "Server-side secrets", "Credentials are accepted by Next routes and withheld from client payloads."],
-                [Network, "Loopback Runner", "Runner URLs are validated to localhost, 127.0.0.1, or ::1."],
+                [
+                  ShieldCheck,
+                  "Single user",
+                  "No login or multi-tenant account model in the MVP.",
+                ],
+                [
+                  LockKeyhole,
+                  "Server-side secrets",
+                  "Credentials are accepted by Next routes and withheld from client payloads.",
+                ],
+                [
+                  Network,
+                  "Loopback Runner",
+                  "Runner URLs are validated to localhost, 127.0.0.1, or ::1.",
+                ],
               ].map(([Icon, title, detail]) => (
                 <div className="bg-card p-5" key={title as string}>
                   <Icon className="size-5 text-primary" />
                   <p className="mt-5 font-semibold">{title as string}</p>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{detail as string}</p>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    {detail as string}
+                  </p>
                 </div>
               ))}
             </div>
@@ -1014,19 +1176,58 @@ export function HowItWorksGuide() {
                   <span>Recovery</span>
                 </div>
                 {[
-                  ["Missing MCP config", "Setup shows Missing config; Work or Docs cannot be tested.", "Add the URL and API key in Settings, then run the check again."],
-                  ["MCP unavailable", "The view shows a connection error and keeps an actionable empty state.", "Test the connection, refresh the source, or open the remote product."],
-                  ["Runner offline", "The run fails with a persisted error; existing threads and messages remain.", "Start Runner on loopback, verify Codex, and send a new message."],
-                  ["Codex unavailable", "Runner can be healthy while runtime verification fails separately.", "Repair the Codex installation or Runner adapter, then rerun setup checks."],
-                  ["Approval pending", "The thread displays the requested action with Approve and Deny controls.", "Make an explicit decision; duplicate resolution attempts are rejected safely."],
-                  ["Runtime thread missing", "The product keeps the conversation while recreating runtime continuity.", "A new Codex thread is created and recent product messages rehydrate context."],
-                  ["Browser reload", "Completed messages remain; an in-flight stream may reconnect through persisted Run state.", "Open the thread or Runs view to inspect current state and continue."],
-                  ["Next app stopped", "The UI, scheduler, and local orchestration are unavailable.", "Restart npm run dev or npm start. Remote Work and Docs remain authoritative."],
+                  [
+                    "Missing MCP config",
+                    "Setup shows Missing config; Work or Docs cannot be tested.",
+                    "Add the URL and API key in Settings, then run the check again.",
+                  ],
+                  [
+                    "MCP unavailable",
+                    "The view shows a connection error and keeps an actionable empty state.",
+                    "Test the connection, refresh the source, or open the remote product.",
+                  ],
+                  [
+                    "Runner offline",
+                    "The run fails with a persisted error; existing threads and messages remain.",
+                    "Start Runner on loopback, verify Codex, and send a new message.",
+                  ],
+                  [
+                    "Codex unavailable",
+                    "Runner can be healthy while runtime verification fails separately.",
+                    "Repair the Codex installation or Runner adapter, then rerun setup checks.",
+                  ],
+                  [
+                    "Approval pending",
+                    "The thread displays the requested action with Approve and Deny controls.",
+                    "Make an explicit decision; duplicate resolution attempts are rejected safely.",
+                  ],
+                  [
+                    "Runtime thread missing",
+                    "The product keeps the conversation while recreating runtime continuity.",
+                    "A new Codex thread is created and recent product messages rehydrate context.",
+                  ],
+                  [
+                    "Browser reload",
+                    "Completed messages remain; an in-flight stream may reconnect through persisted Run state.",
+                    "Open the thread or Runs view to inspect current state and continue.",
+                  ],
+                  [
+                    "Next app stopped",
+                    "The UI, scheduler, and local orchestration are unavailable.",
+                    "Restart npm run dev or npm start. Remote Work and Docs remain authoritative.",
+                  ],
                 ].map(([failure, visible, recovery]) => (
-                  <div key={failure} className="grid grid-cols-[12rem_1fr_1fr] gap-6 border-b px-4 py-4 text-sm last:border-b-0">
+                  <div
+                    key={failure}
+                    className="grid grid-cols-[12rem_1fr_1fr] gap-6 border-b px-4 py-4 text-sm last:border-b-0"
+                  >
                     <strong>{failure}</strong>
-                    <span className="leading-6 text-muted-foreground">{visible}</span>
-                    <span className="leading-6 text-muted-foreground">{recovery}</span>
+                    <span className="leading-6 text-muted-foreground">
+                      {visible}
+                    </span>
+                    <span className="leading-6 text-muted-foreground">
+                      {recovery}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -1057,6 +1258,7 @@ export function HowItWorksGuide() {
                     "Codex agents through local Slab Runner",
                     "Persistent threads, messages, runs, events, and approvals",
                     "Manual and cron automations",
+                    "Work assignment, review, blocked, resume, and mention triggers",
                     "Server-side secrets and loopback execution",
                   ].map((item) => (
                     <div key={item} className="flex gap-3 py-3 text-sm">
@@ -1073,13 +1275,16 @@ export function HowItWorksGuide() {
                 <div className="mt-3 divide-y border-y">
                   {[
                     "SaaS, accounts, organizations, multi-tenancy, or RBAC",
-                    "Agent-to-agent conversations and delegation loops",
+                    "Direct agent-to-agent chats and autonomous delegation loops",
                     "Honcho, vector memory, or semantic search",
                     "Gmail, Calendar, CRM, analytics, and arbitrary MCP marketplace",
                     "Durable distributed jobs, webhooks, and remote triggers",
                     "Billing, token budgets, and visual workflow builders",
                   ].map((item) => (
-                    <div key={item} className="flex gap-3 py-3 text-sm text-muted-foreground">
+                    <div
+                      key={item}
+                      className="flex gap-3 py-3 text-sm text-muted-foreground"
+                    >
                       <CircleDot className="mt-0.5 size-4 shrink-0" />
                       {item}
                     </div>

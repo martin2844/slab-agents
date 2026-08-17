@@ -421,6 +421,123 @@ export const repository = {
     return this.getAgent(current.id);
   },
 
+  getWorkCoordinationItem(issueKey: string) {
+    return db
+      .prepare("SELECT * FROM work_coordination_items WHERE issue_key=?")
+      .get(issueKey) as Row | undefined;
+  },
+  upsertWorkCoordinationItem(input: {
+    issueKey: string;
+    projectKey: string;
+    assignee: string | null;
+    semanticStatus: string;
+    remoteUpdatedAt: string | null;
+    labels: string[];
+  }) {
+    const timestamp = now();
+    db.prepare(
+      `INSERT INTO work_coordination_items
+        (issue_key,project_key,assignee,semantic_status,remote_updated_at,labels_json,first_seen_at,last_seen_at)
+       VALUES (?,?,?,?,?,?,?,?)
+       ON CONFLICT(issue_key) DO UPDATE SET
+        project_key=excluded.project_key,
+        assignee=excluded.assignee,
+        semantic_status=excluded.semantic_status,
+        remote_updated_at=excluded.remote_updated_at,
+        labels_json=excluded.labels_json,
+        last_seen_at=excluded.last_seen_at`,
+    ).run(
+      input.issueKey,
+      input.projectKey,
+      input.assignee,
+      input.semanticStatus,
+      input.remoteUpdatedAt,
+      JSON.stringify(input.labels),
+      timestamp,
+      timestamp,
+    );
+  },
+  claimWorkCoordinationEvent(input: {
+    dedupeKey: string;
+    issueKey: string;
+    type: "assignment" | "resumed" | "review_requested" | "blocked" | "mention";
+    agentId: string;
+    commentId?: string | null;
+  }) {
+    const id = randomUUID();
+    const timestamp = now();
+    const result = db
+      .prepare(
+        `INSERT OR IGNORE INTO work_coordination_events
+          (id,dedupe_key,issue_key,type,agent_id,comment_id,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        id,
+        input.dedupeKey,
+        input.issueKey,
+        input.type,
+        input.agentId,
+        input.commentId ?? null,
+        timestamp,
+        timestamp,
+      );
+    return result.changes > 0 ? id : null;
+  },
+  completeWorkCoordinationEvent(
+    id: string,
+    input: { runId?: string; error?: string },
+  ) {
+    db.prepare(
+      "UPDATE work_coordination_events SET run_id=?,error=?,updated_at=? WHERE id=?",
+    ).run(input.runId ?? null, input.error ?? null, now(), id);
+  },
+  hasSeenWorkComment(commentId: string) {
+    return Boolean(
+      db
+        .prepare(
+          "SELECT comment_id FROM work_coordination_comments WHERE comment_id=?",
+        )
+        .get(commentId),
+    );
+  },
+  rememberWorkComment(issueKey: string, commentId: string) {
+    return (
+      db
+        .prepare(
+          "INSERT OR IGNORE INTO work_coordination_comments (comment_id,issue_key,first_seen_at) VALUES (?,?,?)",
+        )
+        .run(commentId, issueKey, now()).changes > 0
+    );
+  },
+  getWorkAgentThread(issueKey: string, agentId: string) {
+    const row = db
+      .prepare(
+        `SELECT t.* FROM work_agent_threads w
+         JOIN threads t ON t.id=w.thread_id
+         WHERE w.issue_key=? AND w.agent_id=?`,
+      )
+      .get(issueKey, agentId) as Row | undefined;
+    return row ? mapThread(row) : null;
+  },
+  getOrCreateWorkAgentThread(issueKey: string, agentId: string, title: string) {
+    const existing = this.getWorkAgentThread(issueKey, agentId);
+    if (existing) return existing;
+    const thread = this.createThread(agentId, title);
+    db.prepare(
+      "INSERT INTO work_agent_threads (issue_key,agent_id,thread_id,created_at) VALUES (?,?,?,?)",
+    ).run(issueKey, agentId, thread.id, now());
+    return thread;
+  },
+  getActiveRunForThread(threadId: string) {
+    const row = db
+      .prepare(
+        "SELECT * FROM runs WHERE thread_id=? AND status IN ('queued','running','waiting_approval') ORDER BY rowid DESC LIMIT 1",
+      )
+      .get(threadId) as Row | undefined;
+    return row ? mapRun(row) : null;
+  },
+
   listThreads(agentId: string) {
     return (
       db

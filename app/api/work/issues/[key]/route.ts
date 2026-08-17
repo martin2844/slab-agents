@@ -1,10 +1,13 @@
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { WorkClient } from "@/lib/mcp/work-client";
+import { tickWorkCoordination } from "@/lib/work-coordination";
 const updateSchema = z.object({
   title: z.string().min(2).optional(),
   description: z.string().nullable().optional(),
-  status: z.enum(["new", "in_progress", "done"]).optional(),
+  status: z
+    .enum(["new", "in_progress", "blocked", "review", "done"])
+    .optional(),
   priority: z.enum(["critical", "high", "medium", "low"]).optional(),
   type: z.enum(["epic", "story", "task", "bug"]).optional(),
   assignee: z.string().nullable().optional(),
@@ -32,12 +35,12 @@ export async function PATCH(
 ) {
   try {
     const { key } = await ctx.params;
-    return Response.json({
-      data: await WorkClient.updateIssue(
-        key,
-        updateSchema.parse(await request.json()),
-      ),
-    });
+    const issue = await WorkClient.updateIssue(
+      key,
+      updateSchema.parse(await request.json()),
+    );
+    void tickWorkCoordination();
+    return Response.json({ data: issue });
   } catch (error) {
     return apiError(error);
   }

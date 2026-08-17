@@ -102,7 +102,7 @@ export type Project = {
   updated_at?: string;
 };
 
-export type IssueStatus = "new" | "in_progress" | "done";
+export type IssueStatus = "new" | "in_progress" | "blocked" | "review" | "done";
 export type IssuePriority = "critical" | "high" | "medium" | "low";
 
 export type Issue = {
@@ -220,6 +220,7 @@ export type WorkPageData = {
   projects: Project[];
   projectKey: string;
   issues: Issue[];
+  agents: Agent[];
   error: string;
   externalUrl: string | null;
 };

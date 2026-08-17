@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getSetting } from "@/lib/settings";
+import { repository } from "@/lib/repository";
 import type { Agent, Message, Thread } from "@/lib/types";
 import { POSTHOG_AGENT_PROMPT } from "@/lib/integrations/catalog";
 import { getAgentPostHogMcp } from "@/lib/integrations/service";
@@ -32,6 +33,22 @@ const terminalEvents = new Set<RunnerEvent["type"]>([
 ]);
 
 const runnerUrl = () => getSetting("runner_url").replace(/\/$/, "");
+
+function workCoordinationContext() {
+  const agents = repository
+    .listAgents()
+    .filter((agent) => agent.enabled)
+    .map((agent) => `- ${agent.name}: assignee slug \`${agent.slug}\``)
+    .join("\n");
+  return [
+    "Work coordination in this local control plane:",
+    agents || "- No other enabled agents are currently registered.",
+    "Assigning a Work item to an enabled agent slug starts that agent automatically.",
+    "Work comments can mention an agent by slug (for example @coo or @sales) to request its input.",
+    "Use Work items and comments—not direct agent messages—for delegation, execution, review, and operational decisions.",
+    'Slab supports new, in_progress, and done natively. Represent review as in_progress + label "status:review", and blocked as in_progress + label "status:blocked". Remove those labels when leaving the semantic state.',
+  ].join("\n");
+}
 
 function runnerHeaders(headers: Record<string, string> = {}) {
   const token = process.env.RUNNER_TOKEN?.trim();
@@ -147,6 +164,7 @@ export async function startRunnerRun(input: {
         role: input.agent.role,
         instructions: [
           input.agent.instructions,
+          workCoordinationContext(),
           ...(posthogMcp ? [POSTHOG_AGENT_PROMPT] : []),
         ].join("\n\n"),
         fullAccess: input.agent.fullAccess,

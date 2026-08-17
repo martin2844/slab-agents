@@ -1,0 +1,303 @@
+import "server-only";
+
+import { repository } from "@/lib/repository";
+import { executeAutomationRun } from "@/lib/run-service";
+import { WorkClient } from "@/lib/mcp/work-client";
+import type { Agent, Comment, Issue } from "@/lib/types";
+import { mentionHandles } from "@/lib/work-status";
+
+type TriggerType =
+  "assignment" | "resumed" | "review_requested" | "blocked" | "mention";
+
+const state = globalThis as unknown as {
+  slabWorkCoordinator?: NodeJS.Timeout;
+  slabWorkCoordinatorBusy?: boolean;
+};
+
+function identifier(value: string | null | undefined) {
+  return value?.trim().replace(/^@/, "").toLocaleLowerCase() ?? "";
+}
+
+export function resolveAgent(
+  agents: Agent[],
+  value: string | null | undefined,
+) {
+  const target = identifier(value);
+  if (!target) return null;
+  return (
+    agents.find(
+      (agent) =>
+        identifier(agent.id) === target ||
+        identifier(agent.slug) === target ||
+        identifier(agent.name) === target,
+    ) ?? null
+  );
+}
+
+export function mentionedAgents(agents: Agent[], comment: Comment) {
+  const handles = mentionHandles(comment.body);
+  return agents.filter(
+    (agent) =>
+      handles.some(
+        (handle) =>
+          handle === identifier(agent.slug) ||
+          handle === identifier(agent.name),
+      ) && identifier(comment.author) !== identifier(agent.slug),
+  );
+}
+
+function eventToken(issue: Issue) {
+  return (
+    issue.updated_at ?? `${issue.status}:${(issue.labels ?? []).join(",")}`
+  );
+}
+
+export function coordinationPrompt(input: {
+  type: TriggerType;
+  issue: Issue;
+  agent: Agent;
+  comment?: Comment;
+}) {
+  const { type, issue, agent, comment } = input;
+  const statusConvention = [
+    "Work only exposes new, in_progress, and done as native states.",
+    'For semantic review, use remote status in_progress and label "status:review".',
+    'For semantic blocked, use remote status in_progress and label "status:blocked".',
+    "Remove those semantic labels when they no longer apply.",
+  ].join(" ");
+
+  if (type === "review_requested") {
+    return [
+      `El work item ${issue.key} (${issue.title}) solicita revisión del COO.`,
+      "Leé el issue completo, su definición de terminado, relaciones y comentarios.",
+      "Evaluá el trabajo entregado sin rehacer el trabajo del agente asignado.",
+      "Si cumple, dejá un comentario breve de aprobación y marcá el issue done.",
+      'Si no cumple, dejá feedback concreto, remové "status:review", mantenelo in_progress y conservá o devolvé el assignee original.',
+      "Toda conclusión operativa debe quedar registrada como comentario en Work; no alcanza con responder solamente en este thread.",
+      statusConvention,
+    ].join("\n\n");
+  }
+
+  if (type === "blocked") {
+    return [
+      `El work item ${issue.key} (${issue.title}) fue marcado blocked por ${issue.assignee ?? "su agente asignado"}.`,
+      "Leé el issue completo, sus relaciones, comentarios y documentación relevante.",
+      "Determiná si el bloqueo puede resolverse con información o criterio ya disponible.",
+      'Si podés resolverlo, comentá la decisión, remové "status:blocked" y devolvé el item a in_progress para el agente asignado.',
+      "Si requiere una decisión de Martin o información externa, dejá una solicitud breve y precisa en el issue y mantenelo blocked.",
+      "No inventes una decisión ni ejecutes el trabajo comercial que corresponde al agente asignado.",
+      statusConvention,
+    ].join("\n\n");
+  }
+
+  if (type === "mention" && comment) {
+    return [
+      `${comment.author} mencionó a ${agent.name} en ${issue.key} (${issue.title}).`,
+      `Comentario: ${comment.body}`,
+      "Leé el issue completo, los comentarios y la documentación relevante antes de responder.",
+      `Respondé en ${issue.key} mediante un comentario y actualizá el estado sólo si corresponde. No respondas únicamente en este thread.`,
+      statusConvention,
+    ].join("\n\n");
+  }
+
+  if (type === "resumed") {
+    return [
+      `El work item ${issue.key} (${issue.title}) volvió a in_progress después de una revisión o bloqueo.`,
+      "Leé los comentarios y cambios más recientes para entender la decisión o el feedback recibido.",
+      "Retomá únicamente el trabajo pendiente, documentá el nuevo resultado en Work y actualizá su estado semántico al terminar.",
+      "No repitas análisis ya registrado salvo que el nuevo contexto lo vuelva necesario.",
+      statusConvention,
+    ].join("\n\n");
+  }
+
+  return [
+    `Te asignaron el work item ${issue.key}: ${issue.title}.`,
+    "Leé el issue completo, sus comentarios y relaciones antes de actuar.",
+    "Consultá Docs para validar información relevante y evitá inventar datos.",
+    "Ejecutá el resultado solicitado y registrá avances y resultado final como comentarios en Work, usando tu slug como author.",
+    "Marcá in_progress al comenzar. Al terminar, usá done si el resultado no requiere decisión adicional; si requiere criterio humano o del COO, solicitá review; si no podés continuar, marcá blocked y explicá exactamente qué falta.",
+    "No alcanza con responder en este thread: el work item es la fuente de verdad.",
+    statusConvention,
+  ].join("\n\n");
+}
+
+async function triggerAgent(input: {
+  type: TriggerType;
+  issue: Issue;
+  agent: Agent;
+  dedupeKey: string;
+  comment?: Comment;
+}) {
+  const thread = repository.getOrCreateWorkAgentThread(
+    input.issue.key,
+    input.agent.id,
+    `${input.issue.key} · ${input.issue.title}`,
+  );
+  if (repository.getActiveRunForThread(thread.id)) return "deferred" as const;
+
+  const eventId = repository.claimWorkCoordinationEvent({
+    dedupeKey: input.dedupeKey,
+    issueKey: input.issue.key,
+    type: input.type,
+    agentId: input.agent.id,
+    commentId: input.comment?.id,
+  });
+  if (!eventId) return "handled" as const;
+
+  try {
+    const prompt = coordinationPrompt(input);
+    const run = repository.createRun({
+      agentId: input.agent.id,
+      threadId: thread.id,
+      runtime: input.agent.runtime,
+    });
+    repository.addMessage(thread.id, run.id, "user", prompt);
+    repository.addRunEvent(run.id, "work_coordination_triggered", {
+      issueKey: input.issue.key,
+      trigger: input.type,
+      commentId: input.comment?.id ?? null,
+    });
+    repository.completeWorkCoordinationEvent(eventId, { runId: run.id });
+    void executeAutomationRun(run.id, prompt);
+    return "handled" as const;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    repository.completeWorkCoordinationEvent(eventId, { error: message });
+    console.error(`[work-coordination] ${input.issue.key}:`, error);
+    return "handled" as const;
+  }
+}
+
+async function inspectIssue(projectKey: string, issue: Issue, agents: Agent[]) {
+  const previous = repository.getWorkCoordinationItem(issue.key);
+  const assignedAgent = resolveAgent(agents, issue.assignee);
+  const assigneeChanged =
+    !previous ||
+    identifier(previous.assignee as string | null) !==
+      identifier(issue.assignee);
+
+  if (
+    assignedAgent?.enabled &&
+    assigneeChanged &&
+    (issue.status === "new" || issue.status === "in_progress")
+  ) {
+    await triggerAgent({
+      type: "assignment",
+      issue,
+      agent: assignedAgent,
+      dedupeKey: `assignment:${issue.key}:${assignedAgent.id}:${eventToken(issue)}`,
+    });
+  }
+
+  const resumed =
+    assignedAgent?.enabled &&
+    issue.status === "in_progress" &&
+    (String(previous?.semantic_status) === "blocked" ||
+      String(previous?.semantic_status) === "review");
+  if (resumed && assignedAgent) {
+    await triggerAgent({
+      type: "resumed",
+      issue,
+      agent: assignedAgent,
+      dedupeKey: `resumed:${issue.key}:${assignedAgent.id}:${eventToken(issue)}`,
+    });
+  }
+
+  const reviewer = resolveAgent(agents, "coo");
+  if (
+    reviewer?.enabled &&
+    issue.status === "review" &&
+    reviewer.id !== assignedAgent?.id
+  ) {
+    await triggerAgent({
+      type: "review_requested",
+      issue,
+      agent: reviewer,
+      dedupeKey: `review:${issue.key}:${reviewer.id}:${eventToken(issue)}`,
+    });
+  }
+
+  if (
+    reviewer?.enabled &&
+    issue.status === "blocked" &&
+    reviewer.id !== assignedAgent?.id
+  ) {
+    await triggerAgent({
+      type: "blocked",
+      issue,
+      agent: reviewer,
+      dedupeKey: `blocked:${issue.key}:${reviewer.id}:${eventToken(issue)}`,
+    });
+  }
+
+  let comments: Comment[] = [];
+  try {
+    comments = await WorkClient.listComments(issue.key);
+  } catch (error) {
+    console.error(`[work-coordination] comments ${issue.key}:`, error);
+  }
+
+  for (const comment of comments) {
+    if (repository.hasSeenWorkComment(comment.id)) continue;
+    if (!previous) {
+      repository.rememberWorkComment(issue.key, comment.id);
+      continue;
+    }
+    const targets = mentionedAgents(agents, comment);
+    let deferred = false;
+    for (const target of targets) {
+      const coveredByStateEvent =
+        target.id === reviewer?.id &&
+        (issue.status === "blocked" || issue.status === "review");
+      if (coveredByStateEvent) continue;
+      const result = await triggerAgent({
+        type: "mention",
+        issue,
+        agent: target,
+        comment,
+        dedupeKey: `mention:${comment.id}:${target.id}`,
+      });
+      deferred ||= result === "deferred";
+    }
+    if (!deferred) repository.rememberWorkComment(issue.key, comment.id);
+  }
+
+  repository.upsertWorkCoordinationItem({
+    issueKey: issue.key,
+    projectKey,
+    assignee: issue.assignee ?? null,
+    semanticStatus: issue.status,
+    remoteUpdatedAt: issue.updated_at ?? null,
+    labels: issue.labels ?? [],
+  });
+}
+
+export async function tickWorkCoordination() {
+  if (state.slabWorkCoordinatorBusy) return;
+  state.slabWorkCoordinatorBusy = true;
+  try {
+    const agents = repository.listAgents();
+    if (!agents.some((agent) => agent.enabled)) return;
+    const projects = await WorkClient.listProjects();
+    for (const project of projects) {
+      const issues = await WorkClient.listIssues(project.key);
+      await Promise.all(
+        issues.map((issue) => inspectIssue(project.key, issue, agents)),
+      );
+    }
+  } catch (error) {
+    console.error("[work-coordination] poll failed:", error);
+  } finally {
+    state.slabWorkCoordinatorBusy = false;
+  }
+}
+
+export function startWorkCoordinator() {
+  if (state.slabWorkCoordinator) return;
+  void tickWorkCoordination();
+  state.slabWorkCoordinator = setInterval(
+    () => void tickWorkCoordination(),
+    15_000,
+  );
+  state.slabWorkCoordinator.unref();
+}

@@ -38,11 +38,19 @@ export async function getOverviewPageData(): Promise<OverviewData> {
         projects.map((project) => WorkClient.listIssues(project.key)),
       )
     ).flat();
+    const relationshipBlocked = await WorkClient.getBlockedIssues();
+    const blockedKeys = new Set([
+      ...relationshipBlocked.map((issue) => issue.key),
+      ...issues
+        .filter((issue) => issue.status === "blocked")
+        .map((issue) => issue.key),
+    ]);
     work = {
       open: issues.filter((issue) => issue.status !== "done").length,
-      inProgress: issues.filter((issue) => issue.status === "in_progress")
-        .length,
-      blocked: (await WorkClient.getBlockedIssues()).length,
+      inProgress: issues.filter(
+        (issue) => issue.status === "in_progress" || issue.status === "review",
+      ).length,
+      blocked: blockedKeys.size,
       connected: true,
     };
   } catch {
@@ -133,12 +141,20 @@ export async function getWorkPageData(): Promise<WorkPageData> {
     const projects = await WorkClient.listProjects();
     const projectKey = projects[0]?.key ?? "";
     const issues = projectKey ? await WorkClient.listIssues(projectKey) : [];
-    return { projects, projectKey, issues, error: "", externalUrl };
+    return {
+      projects,
+      projectKey,
+      issues,
+      agents: repository.listAgents().filter((agent) => agent.enabled),
+      error: "",
+      externalUrl,
+    };
   } catch (error) {
     return {
       projects: [],
       projectKey: "",
       issues: [],
+      agents: repository.listAgents().filter((agent) => agent.enabled),
       error: errorMessage(error),
       externalUrl,
     };
