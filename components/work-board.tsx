@@ -229,7 +229,7 @@ function CreateIssue({
             </label>
           </div>
           <DialogFooter className="mt-6">
-            <Button disabled={saving}>
+            <Button type="submit" disabled={saving}>
               {saving ? "Creating…" : "Create issue"}
             </Button>
           </DialogFooter>
