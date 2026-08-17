@@ -123,6 +123,7 @@ export function OverviewKickstart({
           agentId: agentId === "coo-default" ? undefined : agentId,
           prompt,
           title: "First operating loop",
+          mode: "review",
         }),
       });
       setOpen(false);

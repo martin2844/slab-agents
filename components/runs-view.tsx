@@ -131,8 +131,10 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
                         {run.id.slice(0, 16)}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Agent {run.agentId.slice(0, 8)}
-                        {run.automationId ? " · Automation" : " · Conversation"}
+                        Agent {run.agentId.slice(0, 8)} ·{" "}
+                        {run.mode.replaceAll("_", " ")} ·{" "}
+                        {run.trigger.replaceAll("_", " ")}
+                        {run.issueKey ? ` · ${run.issueKey}` : ""}
                       </p>
                     </div>
                     <StatusBadge status={run.status} />

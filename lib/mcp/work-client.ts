@@ -10,6 +10,7 @@ type RemoteIssue = Omit<Issue, "status"> & {
 };
 
 type IssueMutationResult = Pick<RemoteIssue, "id" | "key" | "status"> & {
+  version: number;
   updated_at: string;
   changed_fields: string[];
 };

@@ -3,6 +3,7 @@ import { apiError } from "@/lib/api";
 import { WorkClient } from "@/lib/mcp/work-client";
 import { tickWorkCoordination } from "@/lib/work-coordination";
 const updateSchema = z.object({
+  expected_version: z.number().int().positive(),
   title: z.string().min(2).optional(),
   description: z.string().nullable().optional(),
   status: z

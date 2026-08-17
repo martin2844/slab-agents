@@ -7,6 +7,18 @@ import { RunContextUsage } from "@/components/run-context-usage";
 import type { RunDetailData } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
 export function RunDetail({ data }: { data: RunDetailData }) {
+  const skipped = [...data.events]
+    .reverse()
+    .find((event) => event.type === "run_skipped");
+  const runtimeStarted = data.events.some(
+    (event) => event.type === "runner_run_started",
+  );
+  const skipReason =
+    data.run.trigger === "blocked"
+      ? "Trigger is stale. The issue is no longer blocked."
+      : data.run.trigger === "assignment"
+        ? "Trigger is stale. The issue is no longer assigned to this agent or no longer requires assignment work."
+        : "The Work condition that created this run is no longer current.";
   return (
     <>
       <PageHeader
@@ -22,7 +34,47 @@ export function RunDetail({ data }: { data: RunDetailData }) {
           </Button>
         }
       />
-      <RunContextUsage profile={data.contextProfile} />
+      {skipped && (
+        <section className="mb-6 border border-stone-400/40 bg-stone-500/5 p-5">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Control-plane decision
+          </p>
+          <h2 className="mt-1 text-lg font-semibold">
+            Skipped — stale Work trigger
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            {skipReason} Runner was not invoked.
+          </p>
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-xs text-muted-foreground">Runtime started</dt>
+              <dd className="mt-1 font-medium">{runtimeStarted ? "Yes" : "No"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Model calls</dt>
+              <dd className="mt-1 font-mono font-medium">0</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Runtime tokens</dt>
+              <dd className="mt-1 font-mono font-medium">0</dd>
+            </div>
+          </dl>
+          <pre className="mt-4 max-w-full overflow-auto border bg-background/70 p-3 font-mono text-xs leading-5">
+            {JSON.stringify(
+              {
+                expected: skipped.payload.expectedCondition,
+                observed: skipped.payload.observedState,
+              },
+              null,
+              2,
+            )}
+          </pre>
+        </section>
+      )}
+      <RunContextUsage
+        profile={data.contextProfile}
+        runtimeSkipped={Boolean(skipped)}
+      />
       <div className="mt-10 grid gap-8 xl:grid-cols-[1fr_20rem]">
         <section className="min-w-0" aria-labelledby="persisted-events-title">
           <div className="mb-5">
@@ -70,6 +122,30 @@ export function RunDetail({ data }: { data: RunDetailData }) {
             <div className="mt-2">
               <StatusBadge status={data.run.status} />
             </div>
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Trigger
+            </p>
+            <p className="mt-2 text-sm capitalize">
+              {data.run.trigger.replaceAll("_", " ")}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Execution mode
+            </p>
+            <p className="mt-2 text-sm capitalize">
+              {data.run.mode.replaceAll("_", " ")}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Associated issue
+            </p>
+            <p className="mt-2 font-mono text-sm">
+              {data.run.issueKey ?? "None"}
+            </p>
           </div>
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">

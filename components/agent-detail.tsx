@@ -226,6 +226,7 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
                 label="Run now"
                 icon={Play}
                 variant="default"
+                defaultMode="review"
               />
               {quickActions.map((action) => (
                 <AgentRunDialog

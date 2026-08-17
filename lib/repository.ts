@@ -82,6 +82,10 @@ function mapRun(row: Row): Run {
     agentId: String(row.agent_id),
     threadId: row.thread_id ? String(row.thread_id) : null,
     automationId: row.automation_id ? String(row.automation_id) : null,
+    trigger: row.trigger as Run["trigger"],
+    mode: row.mode as Run["mode"],
+    issueKey: row.issue_key ? String(row.issue_key) : null,
+    runInstructions: String(row.run_instructions ?? ""),
     status: row.status as RunStatus,
     runtime: String(row.runtime),
     startedAt: row.started_at ? String(row.started_at) : null,
@@ -98,6 +102,7 @@ function mapAutomation(row: Row): Automation {
     agentName: row.agent_name ? String(row.agent_name) : undefined,
     cronExpression: row.cron_expression ? String(row.cron_expression) : null,
     prompt: String(row.prompt),
+    mode: row.mode as Automation["mode"],
     enabled: bool(row.enabled),
     lastRunAt: row.last_run_at ? String(row.last_run_at) : null,
     lastRunId: row.last_run_id ? String(row.last_run_id) : null,
@@ -576,6 +581,14 @@ export const repository = {
         .all(threadId) as Row[]
     ).map(mapMessage);
   },
+  getRunInput(runId: string) {
+    const row = db
+      .prepare(
+        "SELECT * FROM messages WHERE run_id=? AND role='user' ORDER BY rowid DESC LIMIT 1",
+      )
+      .get(runId) as Row | undefined;
+    return row ? mapMessage(row) : null;
+  },
   addMessage(
     threadId: string,
     runId: string | null,
@@ -597,10 +610,14 @@ export const repository = {
     threadId?: string | null;
     automationId?: string | null;
     runtime?: string;
+    trigger: Run["trigger"];
+    mode: Run["mode"];
+    issueKey?: string | null;
+    runInstructions: string;
   }) {
     const id = randomUUID();
     db.prepare(
-      "INSERT INTO runs (id,agent_id,thread_id,automation_id,status,runtime) VALUES (?,?,?,?,?,?)",
+      "INSERT INTO runs (id,agent_id,thread_id,automation_id,status,runtime,trigger,mode,issue_key,run_instructions) VALUES (?,?,?,?,?,?,?,?,?,?)",
     ).run(
       id,
       input.agentId,
@@ -608,6 +625,10 @@ export const repository = {
       input.automationId ?? null,
       "queued",
       input.runtime ?? "codex",
+      input.trigger,
+      input.mode,
+      input.issueKey ?? null,
+      input.runInstructions,
     );
     return this.getRun(id)!;
   },
@@ -636,7 +657,7 @@ export const repository = {
     const run = this.getRun(id);
     if (!run) return null;
     const started = run.startedAt ?? (status !== "queued" ? now() : null);
-    const completed = ["completed", "failed", "cancelled"].includes(status)
+    const completed = ["completed", "failed", "skipped", "cancelled"].includes(status)
       ? now()
       : null;
     db.prepare(
@@ -711,18 +732,20 @@ export const repository = {
     agentId: string;
     cronExpression: string | null;
     prompt: string;
+    mode: Automation["mode"];
     enabled: boolean;
   }) {
     const id = randomUUID(),
       timestamp = now();
     db.prepare(
-      "INSERT INTO automations (id,name,agent_id,cron_expression,prompt,enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+      "INSERT INTO automations (id,name,agent_id,cron_expression,prompt,mode,enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
     ).run(
       id,
       input.name,
       input.agentId,
       input.cronExpression,
       input.prompt,
+      input.mode,
       input.enabled ? 1 : 0,
       timestamp,
       timestamp,
@@ -735,6 +758,7 @@ export const repository = {
       name: string;
       cronExpression: string | null;
       prompt: string;
+      mode: Automation["mode"];
       enabled: boolean;
       lastRunAt: string | null;
     }>,
@@ -742,13 +766,14 @@ export const repository = {
     const current = this.getAutomation(id);
     if (!current) return null;
     db.prepare(
-      "UPDATE automations SET name=?,cron_expression=?,prompt=?,enabled=?,last_run_at=?,updated_at=? WHERE id=?",
+      "UPDATE automations SET name=?,cron_expression=?,prompt=?,mode=?,enabled=?,last_run_at=?,updated_at=? WHERE id=?",
     ).run(
       input.name ?? current.name,
       input.cronExpression === undefined
         ? current.cronExpression
         : input.cronExpression,
       input.prompt ?? current.prompt,
+      input.mode ?? current.mode,
       (input.enabled ?? current.enabled) ? 1 : 0,
       input.lastRunAt === undefined ? current.lastRunAt : input.lastRunAt,
       now(),

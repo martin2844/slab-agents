@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { repository } from "@/lib/repository";
-import { executeRun } from "@/lib/run-service";
+import { createRunExecution, executeRun } from "@/lib/run-service";
 import { apiError } from "@/lib/api";
 
 export const runtime = "nodejs";
@@ -17,20 +17,18 @@ export async function POST(request: Request) {
     const agent = repository.getAgent(thread.agentId);
     if (!agent) throw new Error("Agent not found");
     if (!agent.enabled) throw new Error("This agent is disabled.");
-    const run = repository.createRun({
+    const run = createRunExecution({
       agentId: agent.id,
       threadId,
-      runtime: agent.runtime,
+      trigger: "chat",
+      mode: "chat",
+      prompt: message,
     });
-    repository.addMessage(threadId, run.id, "user", message);
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          for await (const event of executeRun({
-            runId: run.id,
-            prompt: message,
-          })) {
+          for await (const event of executeRun({ runId: run.id })) {
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
             );

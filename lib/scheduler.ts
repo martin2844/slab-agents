@@ -2,7 +2,7 @@ import "server-only";
 
 import { CronExpressionParser } from "cron-parser";
 import { repository } from "@/lib/repository";
-import { executeAutomationRun } from "@/lib/run-service";
+import { startAutomationRun } from "@/lib/run-service";
 
 const state = globalThis as unknown as {
   slabScheduler?: NodeJS.Timeout;
@@ -32,20 +32,7 @@ export async function tickScheduler() {
       try {
         if (!due(automation.cronExpression, automation.lastRunAt, current))
           continue;
-        const agent = repository.getAgent(automation.agentId);
-        if (!agent?.enabled) continue;
-        const thread = repository.createThread(agent.id, automation.name);
-        const run = repository.createRun({
-          agentId: agent.id,
-          threadId: thread.id,
-          automationId: automation.id,
-          runtime: agent.runtime,
-        });
-        repository.addMessage(thread.id, run.id, "user", automation.prompt);
-        repository.updateAutomation(automation.id, {
-          lastRunAt: current.toISOString(),
-        });
-        void executeAutomationRun(run.id, automation.prompt);
+        startAutomationRun(automation.id, "automation", current);
       } catch (error) {
         console.error(`[scheduler] ${automation.name}:`, error);
       }

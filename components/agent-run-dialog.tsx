@@ -15,9 +15,17 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/client-api";
 import type { Agent } from "@/lib/types";
+import type { AutomationMode } from "@/lib/run-execution";
 
 export function AgentRunDialog({
   agent,
@@ -26,6 +34,7 @@ export function AgentRunDialog({
   defaultPrompt = "",
   variant = "outline",
   size = "default",
+  defaultMode = "task",
 }: {
   agent: Agent;
   label: string;
@@ -33,10 +42,12 @@ export function AgentRunDialog({
   defaultPrompt?: string;
   variant?: "default" | "outline";
   size?: "default" | "sm";
+  defaultMode?: AutomationMode;
 }) {
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState(defaultPrompt);
   const [allowWorkCreation, setAllowWorkCreation] = useState(true);
+  const [mode, setMode] = useState<AutomationMode>(defaultMode);
   const [running, setRunning] = useState(false);
 
   function changeOpen(next: boolean) {
@@ -45,6 +56,7 @@ export function AgentRunDialog({
     if (next) {
       setPrompt(defaultPrompt);
       setAllowWorkCreation(true);
+      setMode(defaultMode);
     }
   }
 
@@ -69,11 +81,14 @@ export function AgentRunDialog({
           agentId: agent.id,
           prompt: executionPrompt,
           title,
+          mode,
         }),
       });
       window.location.assign(result.href);
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Could not start run");
+      toast.error(
+        cause instanceof Error ? cause.message : "Could not start run",
+      );
       setRunning(false);
     }
   }
@@ -101,6 +116,26 @@ export function AgentRunDialog({
             </DialogDescription>
           </DialogHeader>
           <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
+            <label className="mb-4 grid gap-2 text-sm font-semibold">
+              Execution mode
+              <Select
+                value={mode}
+                onValueChange={(value) => setMode(value as AutomationMode)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="review">Operational review</SelectItem>
+                  <SelectItem value="task">Specific task</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-xs font-normal leading-5 text-muted-foreground">
+                {mode === "review"
+                  ? "Starts without an associated Work item and reviews the broader operating state."
+                  : "Executes the requested outcome without inheriting an arbitrary Work item."}
+              </span>
+            </label>
             <label className="grid gap-2 text-sm font-semibold">
               Prompt
               <Textarea

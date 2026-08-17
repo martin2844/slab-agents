@@ -116,6 +116,14 @@ export function buildRunProgress(
       items,
     };
   }
+  if (status === "skipped") {
+    return {
+      headline: "Run skipped",
+      detail: "The Work trigger was no longer current when this run reached the queue head.",
+      command: "control-plane preflight",
+      items,
+    };
+  }
   if (active) {
     return {
       headline: active.label,

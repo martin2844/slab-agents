@@ -41,7 +41,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
-import { api } from "@/lib/client-api";
+import { api, ApiClientError } from "@/lib/client-api";
 import { formatDateTime } from "@/lib/utils";
 import type {
   Agent,
@@ -290,12 +290,13 @@ function IssueDialog({
 
   async function saveIssue(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!issueKey || !draft) return;
+    if (!issueKey || !draft || !detail) return;
     setSaving(true);
     try {
       const updated = await api<Issue>(`/api/work/issues/${issueKey}`, {
         method: "PATCH",
         body: JSON.stringify({
+          expected_version: detail.issue.version,
           title: draft.title,
           assignee: draft.assignee.trim() || null,
           description: draft.description,
@@ -309,7 +310,21 @@ function IssueDialog({
       setEditing(false);
       toast.success("Issue updated");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Update failed");
+      if (e instanceof ApiClientError && e.code === "VERSION_CONFLICT") {
+        const latest = await api<Detail>(`/api/work/issues/${issueKey}`).catch(
+          () => null,
+        );
+        if (latest) {
+          setDetail(latest);
+          setDraft(draftFromIssue(latest.issue));
+          onUpdated(latest.issue);
+        }
+        toast.error(
+          "Issue changed while you were editing. Latest state loaded; please retry.",
+        );
+      } else {
+        toast.error(e instanceof Error ? e.message : "Update failed");
+      }
     } finally {
       setSaving(false);
     }
@@ -693,18 +708,39 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
   );
   async function move(key: string, status: IssueStatus) {
     const before = issues ?? [];
+    const currentIssue = before.find((issue) => issue.key === key);
+    if (!currentIssue) return;
     setIssues(before.map((i) => (i.key === key ? { ...i, status } : i)));
     try {
       const updated = await api<Issue>(`/api/work/issues/${key}`, {
         method: "PATCH",
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          expected_version: currentIssue.version,
+        }),
       });
       setIssues(
         (current) => current?.map((i) => (i.key === key ? updated : i)) ?? null,
       );
     } catch (e) {
-      setIssues(before);
-      toast.error(e instanceof Error ? e.message : "Could not move issue");
+      if (e instanceof ApiClientError && e.code === "VERSION_CONFLICT") {
+        const latest = await api<Detail>(`/api/work/issues/${key}`).catch(
+          () => null,
+        );
+        setIssues(
+          latest
+            ? before.map((issue) =>
+                issue.key === latest.issue.key ? latest.issue : issue,
+              )
+            : before,
+        );
+        toast.error(
+          "Issue changed before this move. Latest state loaded; please retry.",
+        );
+      } else {
+        setIssues(before);
+        toast.error(e instanceof Error ? e.message : "Could not move issue");
+      }
     }
   }
   function replace(updated: Issue) {

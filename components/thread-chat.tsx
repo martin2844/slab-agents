@@ -94,7 +94,11 @@ export function ThreadChat({
               }
             : null,
         );
-        if (["completed", "failed", "cancelled"].includes(runData.run.status)) {
+        if (
+          ["completed", "failed", "skipped", "cancelled"].includes(
+            runData.run.status,
+          )
+        ) {
           setBackgroundRunId(null);
           if (runData.run.status === "failed") {
             const message = runErrorMessage(runData.run.error);
@@ -181,6 +185,12 @@ export function ThreadChat({
               ),
               runId: event.runId,
             });
+          } else if (event.type === "run_queued") {
+            setRunEvents((current) => [
+              ...current,
+              liveEvent("run_queued", event),
+            ]);
+            setRunStatus("queued");
           } else if (
             event.type === "tool_started" ||
             event.type === "tool_completed" ||

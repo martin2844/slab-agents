@@ -9,6 +9,7 @@ const schema = z
     agentId: z.string().uuid(),
     cronExpression: z.string().min(5).nullable(),
     prompt: z.string().min(2),
+    mode: z.enum(["review", "task"]).default("review"),
     enabled: z.boolean().default(true),
   })
   .superRefine((v, ctx) => {

@@ -109,6 +109,7 @@ export function AgentsView({
                         defaultPrompt={item.prompt}
                         size="sm"
                         variant={item.label === "Run now" ? "default" : "outline"}
+                        defaultMode={item.label === "Run now" ? "review" : "task"}
                       />
                   ))}
                 </div>

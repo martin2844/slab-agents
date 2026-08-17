@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { repository } from "@/lib/repository";
-import { executeAutomationRun } from "@/lib/run-service";
+import { createRunExecution, executeRunInBackground } from "@/lib/run-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +12,7 @@ const schema = z.object({
   agentId: z.string().uuid().optional(),
   prompt: z.string().min(10).max(50_000),
   title: z.string().min(1).max(100).default("First operating loop"),
+  mode: z.enum(["review", "task"]).default("review"),
 });
 
 function ensureCoo() {
@@ -39,13 +40,14 @@ export async function POST(request: Request) {
     if (!agent.enabled) throw new Error("This agent is disabled.");
 
     const thread = repository.createThread(agent.id, input.title);
-    const run = repository.createRun({
+    const run = createRunExecution({
       agentId: agent.id,
       threadId: thread.id,
-      runtime: agent.runtime,
+      trigger: "manual",
+      mode: input.mode,
+      prompt: input.prompt,
     });
-    repository.addMessage(thread.id, run.id, "user", input.prompt);
-    void executeAutomationRun(run.id, input.prompt, "operating_loop");
+    void executeRunInBackground(run.id);
 
     return Response.json(
       {

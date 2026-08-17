@@ -13,6 +13,18 @@ export type McpInspectionConnection = {
   headers: Record<string, string>;
 };
 
+export class McpToolError extends Error {
+  readonly code: string;
+  readonly details: Record<string, unknown>;
+
+  constructor(code: string, message: string, details: Record<string, unknown>) {
+    super(message);
+    this.name = "McpToolError";
+    this.code = code;
+    this.details = details;
+  }
+}
+
 function parseTextResult(rawResult: Awaited<ReturnType<Client["callTool"]>>) {
   const result = rawResult as {
     isError?: boolean;
@@ -21,7 +33,22 @@ function parseTextResult(rawResult: Awaited<ReturnType<Client["callTool"]>>) {
   };
   if (result.isError) {
     const text = result.content.find((item) => item.type === "text");
-    throw new Error(text?.text ?? "The MCP tool returned an error.");
+    const message = text?.text ?? "The MCP tool returned an error.";
+    try {
+      const parsed = JSON.parse(message) as {
+        error?: Record<string, unknown>;
+      };
+      if (parsed.error && typeof parsed.error === "object") {
+        throw new McpToolError(
+          String(parsed.error.code ?? "MCP_TOOL_ERROR"),
+          String(parsed.error.message ?? "The MCP tool returned an error."),
+          parsed.error,
+        );
+      }
+    } catch (error) {
+      if (error instanceof McpToolError) throw error;
+    }
+    throw new Error(message);
   }
   if (result.structuredContent) return result.structuredContent;
   const text = result.content.find((item) => item.type === "text");

@@ -768,11 +768,34 @@ export function HowItWorksGuide() {
               <DiagramNode
                 eyebrow="Execution attempt"
                 title="Run"
-                detail="Status, runtime, start/end time, errors, usage, events, and approvals."
+                detail="Trigger, execution mode, optional issue scope, run policy, status, usage, events, and approvals."
                 icon={Activity}
                 tone="dark"
                 className="lg:flex-1"
               />
+            </div>
+            <div className="mt-8 grid gap-px overflow-hidden border bg-border md:grid-cols-3">
+              {[
+                [
+                  "Trigger",
+                  "Who woke the agent: chat, a manual action, the scheduler, an assignment, or another Work event.",
+                ],
+                [
+                  "Execution mode",
+                  "How the run should operate: conversation, specific task, operational review, assignment, or issue event.",
+                ],
+                [
+                  "Scope",
+                  "The associated issue only when the mode is intentionally Work-item scoped. Reviews and ad-hoc tasks start without one.",
+                ],
+              ].map(([label, detail]) => (
+                <div key={label} className="bg-card p-5">
+                  <p className="text-sm font-semibold">{label}</p>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    {detail}
+                  </p>
+                </div>
+              ))}
             </div>
             <div className="mt-10 grid gap-8 lg:grid-cols-2">
               <div>
@@ -965,16 +988,16 @@ export function HowItWorksGuide() {
               title="A schedule is simply another way to create a Run."
             >
               <p>
-                Manual and cron automations reuse the same execution pipeline as
-                chat. The key difference is who supplies the prompt and when the
-                Run is created.
+                Manual and cron automations reuse one execution pipeline. The
+                automation owns the execution mode and prompt; manual Run now
+                and the scheduler differ only in their trigger.
               </p>
             </SectionHeading>
             <div className="mt-10 flex flex-col items-stretch lg:flex-row lg:items-center">
               <DiagramNode
                 eyebrow="Definition"
                 title="Automation"
-                detail="Name, agent, cron expression or manual trigger, prompt, enabled state, and last run time."
+                detail="Name, agent, execution mode, cron expression or manual trigger, prompt, enabled state, and last run time."
                 icon={CalendarClock}
                 className="lg:flex-1"
               />

@@ -6,6 +6,7 @@ const schema = z.object({
   name: z.string().min(2).optional(),
   cronExpression: z.string().nullable().optional(),
   prompt: z.string().min(2).optional(),
+  mode: z.enum(["review", "task"]).optional(),
 });
 export async function PATCH(
   request: Request,

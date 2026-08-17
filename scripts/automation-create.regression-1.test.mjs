@@ -16,4 +16,7 @@ test("the create automation action submits its form", async () => {
     /<Button type="submit" disabled=\{saving \|\| !agentId\}>/,
     "Base UI buttons default to type=button, so the create action must opt into form submission",
   );
+  assert.match(source, /Execution mode/);
+  assert.match(source, /<SelectItem value="review">Operational review<\/SelectItem>/);
+  assert.match(source, /mode,/);
 });

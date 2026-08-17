@@ -80,6 +80,39 @@ Knex migrations run automatically before dev, build, and start.
 
 The workspace DB contains orchestration state only: agents, threads, messages, runs, run events, approvals, automations, settings, and Knex migration metadata. It does not mirror Slab issues or Slab Docs documents.
 
+## Concurrency semantics
+
+Work-triggered runs (`assignment`, `resumed`, `review_requested`, `blocked`,
+and `mention`) enter the existing per-agent FIFO queue. Immediately after a
+run reaches the queue head, the control plane re-reads its associated Work
+item before contacting Runner. Stateful triggers that are no longer true are
+persisted as `skipped`; they produce no runtime thread, model calls, agent tool
+calls, or token usage. Mentions remain durable event-based triggers and are
+invalidated only when their Work item no longer exists.
+
+Slab issue mutations carry `expected_version` from the latest Work read. A
+`VERSION_CONFLICT` is surfaced to the agent or UI instead of overwriting newer
+state. Comments remain append-only and do not use the issue version guard.
+
+The integration/MCP server set is a snapshot captured when each run starts.
+Approving a runtime action only resolves that pending action: it does not
+hot-plug a new server and does not create a new run. Integration changes apply
+to the next run.
+
+Runs persist execution semantics separately from agent identity:
+
+- `trigger` records what initiated execution, such as chat, manual action,
+  automation, assignment, or mention;
+- `mode` records how the run should operate, such as chat, task, review,
+  assignment, or another Work-item event;
+- `issue_key` is present only for deliberately Work-scoped runs;
+- `run_instructions` stores the policy for that individual execution.
+
+Manual and scheduled automations share the same execution path and automation
+mode. Runs for one agent are serialized in a local in-memory FIFO; different
+agents may execute concurrently. Work event idempotency remains persisted in
+SQLite.
+
 ```bash
 npm run migrate:latest
 npm run migrate:make -- add_something

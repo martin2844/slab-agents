@@ -51,6 +51,7 @@ function CreateAutomation({
     ),
     [saving, setSaving] = useState(false),
     [enabled, setEnabled] = useState(true),
+    [mode, setMode] = useState<Automation["mode"]>("review"),
     [scheduleType, setScheduleType] = useState<"cron" | "manual">("cron");
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -64,6 +65,7 @@ function CreateAutomation({
           agentId,
           cronExpression: scheduleType === "cron" ? form.get("cron") : null,
           prompt: form.get("prompt"),
+          mode,
           enabled,
         }),
       });
@@ -130,6 +132,25 @@ function CreateAutomation({
                   ))}
                 </SelectContent>
               </Select>
+            </label>
+            <label className="grid gap-2 text-sm font-semibold">
+              Execution mode
+              <Select
+                value={mode}
+                onValueChange={(value) => setMode(value as Automation["mode"])}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="review">Operational review</SelectItem>
+                  <SelectItem value="task">Specific task</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-xs font-normal text-muted-foreground">
+                Review starts without an associated Work item. Task follows the
+                prompt as a specific outcome.
+              </span>
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Trigger
@@ -304,7 +325,8 @@ export function AutomationsView({
                     {item.name}
                   </h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {item.agentName}
+                    {item.agentName} ·{" "}
+                    {item.mode === "review" ? "Review" : "Task"}
                   </p>
                   <p className="mt-3 line-clamp-2 max-w-2xl text-sm leading-6">
                     {item.prompt}

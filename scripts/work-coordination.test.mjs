@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   mentionHandles,
   remoteStatusUpdate,
+  sameAgentIdentity,
   semanticStatus,
 } from "../lib/work-status.ts";
 
@@ -26,6 +27,9 @@ test("mentions are case-insensitive, slug-safe, and deduplicated", () => {
     "coo",
     "sales-chief",
   ]);
+  assert.equal(sameAgentIdentity("@Sales", "sales"), true);
+  assert.equal(sameAgentIdentity("Sales Agent", "sales agent"), true);
+  assert.equal(sameAgentIdentity("coo", "sales"), false);
 });
 
 test("work coordination persists dedupe state and uses Work as truth", async () => {
@@ -49,6 +53,8 @@ test("work coordination persists dedupe state and uses Work as truth", async () 
   assert.match(source, /type: "blocked"/);
   assert.match(source, /type: "mention"/);
   assert.match(source, /coveredByStateEvent/);
+  assert.match(source, /\[agent\.id, agent\.slug, agent\.name\]/);
+  assert.match(source, /sameAgentIdentity\(comment\.author, identity\)/);
   assert.match(source, /el work item es la fuente de verdad/i);
   assert.match(runner, /assignee slug/);
   assert.match(runner, /Use Work items and comments/);

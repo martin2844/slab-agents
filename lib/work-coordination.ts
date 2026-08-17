@@ -1,10 +1,10 @@
 import "server-only";
 
 import { repository } from "@/lib/repository";
-import { executeAutomationRun } from "@/lib/run-service";
+import { createRunExecution, executeRunInBackground } from "@/lib/run-service";
 import { WorkClient } from "@/lib/mcp/work-client";
 import type { Agent, Comment, Issue } from "@/lib/types";
-import { mentionHandles } from "@/lib/work-status";
+import { mentionHandles, sameAgentIdentity } from "@/lib/work-status";
 
 type TriggerType =
   "assignment" | "resumed" | "review_requested" | "blocked" | "mention";
@@ -43,17 +43,22 @@ export function mentionedAgents(agents: Agent[], comment: Comment) {
         (handle) =>
           handle === identifier(agent.slug) ||
           handle === identifier(agent.name),
-      ) && identifier(comment.author) !== identifier(agent.slug),
+      ) &&
+      ![agent.id, agent.slug, agent.name].some((identity) =>
+        sameAgentIdentity(comment.author, identity),
+      ),
   );
 }
 
 function eventToken(issue: Issue) {
-  return (
-    issue.updated_at ?? `${issue.status}:${(issue.labels ?? []).join(",")}`
+  return String(
+    issue.version ??
+      issue.updated_at ??
+      `${issue.status}:${(issue.labels ?? []).join(",")}`,
   );
 }
 
-export function coordinationPrompt(input: {
+export function coordinationInstructions(input: {
   type: TriggerType;
   issue: Issue;
   agent: Agent;
@@ -122,6 +127,27 @@ export function coordinationPrompt(input: {
   ].join("\n\n");
 }
 
+export function coordinationInput(input: {
+  type: TriggerType;
+  issue: Issue;
+  agent: Agent;
+  comment?: Comment;
+}) {
+  const { type, issue, agent, comment } = input;
+  return [
+    `Work coordination event: ${type}`,
+    `Associated issue: ${issue.key}`,
+    `Title: ${issue.title}`,
+    `Status: ${issue.status}`,
+    `Priority: ${issue.priority}`,
+    `Assignee: ${issue.assignee ?? "unassigned"}`,
+    `Target agent: ${agent.name} (${agent.slug})`,
+    ...(comment
+      ? [`Comment author: ${comment.author}`, `Comment: ${comment.body}`]
+      : []),
+  ].join("\n");
+}
+
 async function triggerAgent(input: {
   type: TriggerType;
   issue: Issue;
@@ -146,20 +172,28 @@ async function triggerAgent(input: {
   if (!eventId) return "handled" as const;
 
   try {
-    const prompt = coordinationPrompt(input);
-    const run = repository.createRun({
+    const prompt = coordinationInput(input);
+    const mode =
+      input.type === "assignment" || input.type === "resumed"
+        ? "assignment"
+        : "work_item";
+    const run = createRunExecution({
       agentId: input.agent.id,
       threadId: thread.id,
-      runtime: input.agent.runtime,
+      trigger: input.type,
+      mode,
+      issueKey: input.issue.key,
+      prompt,
+      eventInstructions: coordinationInstructions(input),
     });
-    repository.addMessage(thread.id, run.id, "user", prompt);
     repository.addRunEvent(run.id, "work_coordination_triggered", {
       issueKey: input.issue.key,
+      issueVersion: input.issue.version,
       trigger: input.type,
       commentId: input.comment?.id ?? null,
     });
     repository.completeWorkCoordinationEvent(eventId, { runId: run.id });
-    void executeAutomationRun(run.id, prompt, input.type);
+    void executeRunInBackground(run.id);
     return "handled" as const;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

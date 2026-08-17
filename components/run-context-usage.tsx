@@ -161,7 +161,13 @@ function PayloadPreview({ call }: { call: ToolCallProfile }) {
   );
 }
 
-export function RunContextUsage({ profile }: { profile: RunContextProfile }) {
+export function RunContextUsage({
+  profile,
+  runtimeSkipped = false,
+}: {
+  profile: RunContextProfile;
+  runtimeSkipped?: boolean;
+}) {
   return (
     <section className="space-y-5" aria-labelledby="context-usage-title">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -178,14 +184,18 @@ export function RunContextUsage({ profile }: { profile: RunContextProfile }) {
           </p>
         </div>
         <Badge variant={profile.captured ? "secondary" : "outline"}>
-          {profile.captured ? "Profiling captured" : "Legacy run"}
+          {runtimeSkipped
+            ? "Runtime not started"
+            : profile.captured
+              ? "Profiling captured"
+              : "Legacy run"}
         </Badge>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric
           label="Initial model-call input"
-          value={tokens(profile.initialModelCallInputTokens)}
+          value={runtimeSkipped ? "0" : tokens(profile.initialModelCallInputTokens)}
           note={`${tokens(profile.knownInitialContextApproxTokens)} known bootstrap tokens`}
         />
         <Metric
@@ -272,7 +282,9 @@ export function RunContextUsage({ profile }: { profile: RunContextProfile }) {
               ))}
               {profile.contextComponents.length === 0 && (
                 <p className="py-3 text-sm text-muted-foreground">
-                  Bootstrap metrics were not captured for this run.
+                  {runtimeSkipped
+                    ? "Preflight skipped this run before runtime bootstrap."
+                    : "Bootstrap metrics were not captured for this run."}
                 </p>
               )}
             </div>

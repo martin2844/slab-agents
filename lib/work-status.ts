@@ -46,3 +46,13 @@ export function mentionHandles(body: string) {
     ),
   ];
 }
+
+export function sameAgentIdentity(
+  left: string | null | undefined,
+  right: string | null | undefined,
+) {
+  const normalize = (value: string | null | undefined) =>
+    value?.trim().replace(/^@/, "").toLocaleLowerCase() ?? "";
+  const a = normalize(left);
+  return Boolean(a) && a === normalize(right);
+}

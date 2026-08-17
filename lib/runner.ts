@@ -7,6 +7,7 @@ import { POSTHOG_AGENT_PROMPT } from "@/lib/integrations/catalog";
 import { getAgentPostHogMcp } from "@/lib/integrations/service";
 import { inspectMcpDefinitions } from "@/lib/mcp/client";
 import { RunnerRequestError } from "@/lib/runner-errors";
+import type { RunExecution } from "@/lib/run-execution";
 import {
   measureJson,
   measureText,
@@ -150,6 +151,7 @@ export async function startRunnerRun(input: {
   thread: Thread;
   messages: Message[];
   prompt: string;
+  execution: RunExecution;
 }) {
   const contextMessages =
     input.messages.at(-1)?.role === "user" &&
@@ -164,6 +166,7 @@ export async function startRunnerRun(input: {
   const instructionParts = [
     input.agent.instructions,
     workInstructions,
+    input.execution.policy,
     ...(integrationInstructions ? [integrationInstructions] : []),
   ];
   const combinedInstructions = instructionParts.join("\n\n");
@@ -196,6 +199,20 @@ export async function startRunnerRun(input: {
       key: "work_coordination_instructions",
       label: "Control-plane Work coordination instructions",
       ...measureText(workInstructions),
+    },
+    {
+      key: "run_policy",
+      label: `${input.execution.mode} run policy`,
+      ...measureText(input.execution.policy),
+    },
+    {
+      key: "execution_metadata",
+      label: "Execution trigger, mode, and scope",
+      ...measureJson({
+        trigger: input.execution.trigger,
+        mode: input.execution.mode,
+        issueKey: input.execution.issueKey,
+      }),
     },
     {
       key: "integration_instructions",
@@ -280,6 +297,13 @@ export async function startRunnerRun(input: {
   return {
     events: streamRunnerEvents(input.runId),
     contextProfile,
+    capabilitySnapshot: {
+      capturedAt: new Date().toISOString(),
+      semantics: "snapshot_at_run_start",
+      serverCount: mcpServers.length,
+      servers: mcpServers.map((server) => server.name),
+      changesApplyTo: "next_run",
+    },
   };
 }
 

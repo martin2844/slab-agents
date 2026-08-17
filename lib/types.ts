@@ -1,4 +1,5 @@
 import type { RunContextProfile } from "@/lib/run-context-profile";
+import type { AutomationMode, RunMode, RunTrigger } from "@/lib/run-execution";
 
 export type Agent = {
   id: string;
@@ -48,6 +49,7 @@ export type RunStatus =
   | "waiting_approval"
   | "completed"
   | "failed"
+  | "skipped"
   | "cancelled";
 
 export type Run = {
@@ -55,6 +57,10 @@ export type Run = {
   agentId: string;
   threadId: string | null;
   automationId: string | null;
+  trigger: RunTrigger;
+  mode: RunMode;
+  issueKey: string | null;
+  runInstructions: string;
   status: RunStatus;
   runtime: string;
   startedAt: string | null;
@@ -78,6 +84,7 @@ export type Automation = {
   agentName?: string;
   cronExpression: string | null;
   prompt: string;
+  mode: AutomationMode;
   enabled: boolean;
   lastRunAt: string | null;
   lastRunId: string | null;
@@ -121,6 +128,7 @@ export type Issue = {
   type: "epic" | "story" | "task" | "bug";
   assignee?: string | null;
   labels?: string[];
+  version: number;
   created_at?: string;
   updated_at?: string;
   resolved_at?: string | null;
