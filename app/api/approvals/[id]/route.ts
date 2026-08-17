@@ -2,6 +2,7 @@ import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { repository } from "@/lib/repository";
 import { resolveRunnerApproval } from "@/lib/runner";
+import { isRunnerRunNotFound } from "@/lib/runner-errors";
 const schema = z.object({ decision: z.enum(["approve", "deny"]) });
 export async function POST(
   request: Request,
@@ -43,6 +44,18 @@ export async function POST(
       repository.updateRun(approval.runId, "running");
       return Response.json({ data: result });
     } catch (error) {
+      if (isRunnerRunNotFound(error)) {
+        const result = repository.resolveApproval(id, "denied");
+        if (!result) throw new Error("Could not dismiss stale approval");
+        repository.addRunEvent(approval.runId, "approval_dismissed", {
+          approvalId: id,
+          reason: "runner_run_not_found",
+        });
+        repository.updateRun(approval.runId, "cancelled", {
+          error: "Runner run was not found; stale approval dismissed.",
+        });
+        return Response.json({ data: { ...result, dismissed: true } });
+      }
       repository.releaseApproval(id);
       throw error;
     }

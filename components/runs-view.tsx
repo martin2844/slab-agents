@@ -14,7 +14,7 @@ import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 import { api } from "@/lib/client-api";
-import type { RunsData } from "@/lib/types";
+import type { Approval, RunsData } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
 export function RunsView({ initialData }: { initialData: RunsData }) {
   const [data, setData] = useState<RunsData | null>(initialData),
@@ -28,12 +28,16 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
     if (resolvingId) return;
     setResolvingId(id);
     try {
-      await api(`/api/approvals/${id}`, {
-        method: "POST",
-        body: JSON.stringify({ decision }),
-      });
-      toast.success(decision === "approve" ? "Approved" : "Denied");
-      load();
+      const result = await api<Approval & { dismissed?: boolean }>(
+        `/api/approvals/${id}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ decision }),
+        },
+      );
+      if (result.dismissed) toast.info("Stale approval dismissed");
+      else toast.success(decision === "approve" ? "Approved" : "Denied");
+      await load();
     } catch (e) {
       toast.error(
         e instanceof Error ? e.message : "Could not resolve approval",

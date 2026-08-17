@@ -18,6 +18,7 @@ import { api } from "@/lib/client-api";
 import { buildReplyDurations } from "@/lib/chat-metrics";
 import { buildRunProgress } from "@/lib/run-progress";
 import type {
+  Approval,
   RunDetailData,
   RunEvent,
   RunStatus,
@@ -234,10 +235,20 @@ export function ThreadChat({
     if (!approval || approvalResolving) return;
     setApprovalResolving(true);
     try {
-      await api(`/api/approvals/${approval.approvalId}`, {
-        method: "POST",
-        body: JSON.stringify({ decision }),
-      });
+      const result = await api<Approval & { dismissed?: boolean }>(
+        `/api/approvals/${approval.approvalId}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ decision }),
+        },
+      );
+      if (result.dismissed) {
+        toast.info("Stale approval dismissed");
+        setApproval(null);
+        setRunStatus("cancelled");
+        setRunError("The Runner no longer has this run.");
+        return;
+      }
       toast.success(
         decision === "approve" ? "Action approved" : "Action denied",
       );

@@ -6,6 +6,7 @@ import type { Agent, Message, Thread } from "@/lib/types";
 import { POSTHOG_AGENT_PROMPT } from "@/lib/integrations/catalog";
 import { getAgentPostHogMcp } from "@/lib/integrations/service";
 import { inspectMcpDefinitions } from "@/lib/mcp/client";
+import { RunnerRequestError } from "@/lib/runner-errors";
 import {
   measureJson,
   measureText,
@@ -77,7 +78,7 @@ async function runnerError(response: Response) {
     "message" in body.error
       ? String(body.error.message)
       : `Runner returned ${response.status}`;
-  return new Error(message);
+  return new RunnerRequestError(message, response.status);
 }
 
 function parseEventBlock(block: string): RunnerEvent | null {
