@@ -61,6 +61,8 @@ export type ToolCallProfile = {
   responseApproxTokens: number;
   responsePreview: string | null;
   success: boolean | null;
+  status: string | null;
+  reason: string | null;
   command: string | null;
   exitCode: number | null;
   outputBytes: number | null;
@@ -265,7 +267,10 @@ function toolCalls(events: RunEvent[]): ToolCallProfile[] {
       .map((event) => [String(event.payload.toolId ?? event.id), event]),
   );
   return events
-    .filter((event) => event.type === "tool_completed")
+    .filter(
+      (event) =>
+        event.type === "tool_completed" || event.type === "tool_failed",
+    )
     .map((event) => {
       const payload = event.payload;
       const toolId = String(payload.toolId ?? event.id);
@@ -295,6 +300,8 @@ function toolCalls(events: RunEvent[]): ToolCallProfile[] {
         responseApproxTokens: number(payload.responseApproxTokens),
         responsePreview: string(payload.responsePreview),
         success: typeof payload.success === "boolean" ? payload.success : null,
+        status: string(payload.status),
+        reason: string(payload.reason),
         command: string(payload.command),
         exitCode: nullableNumber(payload.exitCode),
         outputBytes: nullableNumber(payload.outputBytes),
@@ -357,7 +364,7 @@ function correlatedTimeline(
     .map(({ index }) => index);
   const completedToolIndexes = new Map<string, number>();
   events.forEach((event, index) => {
-    if (event.type === "tool_completed") {
+    if (event.type === "tool_completed" || event.type === "tool_failed") {
       completedToolIndexes.set(String(event.payload.toolId ?? event.id), index);
     }
   });
@@ -506,9 +513,7 @@ export function buildRunContextProfile(
     ),
     toolBreakdown: breakdown,
     largestResponses: tools
-      .filter(
-        (tool) => tool.responseBytes > 0 || tool.responseApproxTokens > 0,
-      )
+      .filter((tool) => tool.responseBytes > 0 || tool.responseApproxTokens > 0)
       .sort((a, b) => b.responseApproxTokens - a.responseApproxTokens)
       .slice(0, 8),
     repeatedCalls: breakdown.filter((tool) => tool.calls > 1),

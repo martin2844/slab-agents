@@ -207,6 +207,46 @@ test("legacy usage remains analyzable without claiming bootstrap capture", () =>
   assert.match(profile.limitations[0], /predates/);
 });
 
+test("missing tool terminal events remain visible as failed calls", () => {
+  const profile = buildRunContextProfile(run, [
+    event(
+      "tool_started",
+      {
+        toolId: "work-open",
+        server: "work",
+        tool: "get_issue",
+        name: "work.get_issue",
+        kind: "mcpToolCall",
+        argumentsApproxTokens: 4,
+      },
+      1,
+    ),
+    event(
+      "tool_failed",
+      {
+        toolId: "work-open",
+        server: "work",
+        tool: "get_issue",
+        name: "work.get_issue",
+        kind: "mcpToolCall",
+        status: "failed",
+        success: false,
+        reason: "terminal_event_missing",
+        argumentsApproxTokens: 4,
+        durationMs: 25,
+      },
+      2,
+    ),
+  ]);
+
+  assert.equal(profile.toolCalls.length, 1);
+  assert.equal(profile.toolCalls[0].success, false);
+  assert.equal(profile.toolCalls[0].status, "failed");
+  assert.equal(profile.toolCalls[0].reason, "terminal_event_missing");
+  assert.equal(profile.toolCalls[0].responseApproxTokens, 0);
+  assert.equal(profile.timeline[0].entryType, "tool");
+});
+
 test("tools reported before first usage update are grouped after model call one", () => {
   const profile = buildRunContextProfile(run, [
     event(

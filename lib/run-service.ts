@@ -4,6 +4,7 @@ import { AgentRunQueue } from "@/lib/agent-run-queue";
 import { repository } from "@/lib/repository";
 import {
   defineRunExecution,
+  planRuntimeThread,
   type RunMode,
   type RunTrigger,
 } from "@/lib/run-execution";
@@ -150,10 +151,21 @@ export async function* executeRun(input: { runId: string }) {
 
     let assistantBody = "";
     let runnerRunId = run.id;
-    let runtimeThreadId = thread.runtimeThreadId;
+    const runtimeThreadPlan = planRuntimeThread(
+      run.mode,
+      thread.runtimeThreadId,
+    );
+    let runtimeThreadId = runtimeThreadPlan.runtimeThreadId;
+    let runtimeContinuity = runtimeThreadPlan.continuity;
     let completed = false;
     const contextProfilePersistence: Promise<void>[] = [];
     let modelCallIndex = 0;
+    repository.addRunEvent(run.id, "runtime_thread_selected", {
+      runtimeThreadId,
+      continuity: runtimeContinuity,
+      reusable: runtimeThreadPlan.reusable,
+      mode: run.mode,
+    });
 
     try {
       const messages = repository.listMessages(thread.id);
@@ -226,10 +238,15 @@ export async function* executeRun(input: { runId: string }) {
             const createdThreadId = String(data.runtimeThreadId ?? "");
             if (createdThreadId) {
               runtimeThreadId = createdThreadId;
-              repository.setRuntimeThread(thread.id, createdThreadId);
+              runtimeContinuity = "fresh";
+              if (runtimeThreadPlan.reusable) {
+                repository.setRuntimeThread(thread.id, createdThreadId);
+              }
             }
             repository.addRunEvent(run.id, "thread_created", {
               runtimeThreadId: createdThreadId,
+              continuity: "fresh",
+              reusable: runtimeThreadPlan.reusable,
             });
             continue;
           }
@@ -282,7 +299,8 @@ export async function* executeRun(input: { runId: string }) {
           }
           if (
             event.type === "tool.started" ||
-            event.type === "tool.completed"
+            event.type === "tool.completed" ||
+            event.type === "tool.failed"
           ) {
             const type = event.type.replace(".", "_");
             repository.addRunEvent(run.id, type, {
@@ -291,6 +309,14 @@ export async function* executeRun(input: { runId: string }) {
               attempt: attempt + 1,
             });
             yield browserEvent(type, event);
+            continue;
+          }
+          if (event.type === "runtime.warning") {
+            repository.addRunEvent(run.id, "runtime_warning", {
+              ...data,
+              runnerRunId: event.runId,
+              attempt: attempt + 1,
+            });
             continue;
           }
           if (event.type === "run.failed") {
@@ -302,6 +328,7 @@ export async function* executeRun(input: { runId: string }) {
             ) {
               const previousRuntimeThreadId = runtimeThreadId;
               runtimeThreadId = null;
+              runtimeContinuity = "fresh";
               runnerRunId = `${run.id}-rehydrated`;
               assistantBody = "";
               repository.setRuntimeThread(thread.id, null);
@@ -323,8 +350,13 @@ export async function* executeRun(input: { runId: string }) {
           }
           if (event.type === "run.completed") {
             completed = true;
-            repository.addRunEvent(run.id, "run_completed", data);
-            yield browserEvent("run_completed", event);
+            const completedData = {
+              ...data,
+              runtimeThreadId: data.runtimeThreadId ?? runtimeThreadId ?? null,
+              runtimeContinuity,
+            };
+            repository.addRunEvent(run.id, "run_completed", completedData);
+            yield browserEvent("run_completed", event, completedData);
           }
         }
 

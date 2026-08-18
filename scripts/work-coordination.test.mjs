@@ -61,3 +61,22 @@ test("work coordination persists dedupe state and uses Work as truth", async () 
   assert.match(migration, /createTable\("work_coordination_events"/);
   assert.match(migration, /dedupe_key/);
 });
+
+test("assignment completion is scoped to the current deliverable", async () => {
+  const source = await readFile(
+    new URL("../lib/work-coordination.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /entregable solicitado en este item/i);
+  assert.match(source, /aunque queden recomendaciones o próximos pasos/i);
+  assert.match(source, /review sólo cuando el entregable mismo requiera/i);
+  assert.match(
+    source,
+    /blocked sólo cuando no puedas producir el entregable actual/i,
+  );
+  assert.doesNotMatch(
+    source,
+    /done si el resultado no requiere decisión adicional/i,
+  );
+});

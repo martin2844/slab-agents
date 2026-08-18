@@ -66,3 +66,27 @@ test("run progress makes a real approval pause explicit", () => {
   const progress = buildRunProgress([], "waiting_approval");
   assert.equal(progress.headline, "Waiting for your approval");
 });
+
+test("run progress terminalizes tools whose runtime completion was missing", () => {
+  const progress = buildRunProgress(
+    [
+      event("tool_started", { toolId: "tool-1", name: "work.get_issue" }),
+      event("tool_failed", {
+        toolId: "tool-1",
+        name: "work.get_issue",
+        status: "failed",
+        reason: "terminal_event_missing",
+      }),
+    ],
+    "running",
+  );
+
+  assert.deepEqual(progress.items, [
+    {
+      id: "tool-1",
+      label: "Read issue details",
+      command: "mcp work.get_issue",
+      status: "failed",
+    },
+  ]);
+});

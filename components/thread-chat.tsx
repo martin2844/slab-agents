@@ -194,6 +194,7 @@ export function ThreadChat({
           } else if (
             event.type === "tool_started" ||
             event.type === "tool_completed" ||
+            event.type === "tool_failed" ||
             event.type === "run_started"
           ) {
             setRunEvents((current) => [
@@ -361,10 +362,18 @@ export function ThreadChat({
                       </ReactMarkdown>
                     </div>
                   )}
-                  <div className={partial ? "mt-4 border bg-muted/30 p-4" : "border bg-muted/30 p-4"}>
+                  <div
+                    className={
+                      partial
+                        ? "mt-4 border bg-muted/30 p-4"
+                        : "border bg-muted/30 p-4"
+                    }
+                  >
                     <div className="flex items-center gap-2.5">
                       <LoaderCircle className="size-4 shrink-0 animate-spin text-primary" />
-                      <p className="text-sm font-semibold">{progress.headline}</p>
+                      <p className="text-sm font-semibold">
+                        {progress.headline}
+                      </p>
                     </div>
                     <p
                       className="mt-2 truncate font-mono text-[0.68rem] text-muted-foreground"

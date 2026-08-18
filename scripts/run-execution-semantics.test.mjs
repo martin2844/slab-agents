@@ -1,7 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { defineRunExecution } from "../lib/run-execution.ts";
+import { defineRunExecution, planRuntimeThread } from "../lib/run-execution.ts";
+
+test("only chat can resume a persisted runtime thread", () => {
+  assert.deepEqual(planRuntimeThread("chat", "runtime-chat"), {
+    runtimeThreadId: "runtime-chat",
+    continuity: "resumed",
+    reusable: true,
+  });
+  assert.deepEqual(planRuntimeThread("chat", null), {
+    runtimeThreadId: null,
+    continuity: "fresh",
+    reusable: true,
+  });
+  for (const mode of ["task", "review", "assignment", "work_item"]) {
+    assert.deepEqual(planRuntimeThread(mode, "legacy-runtime"), {
+      runtimeThreadId: null,
+      continuity: "fresh",
+      reusable: false,
+    });
+  }
+});
 
 test("chat execution is conversation-scoped and issue-free", () => {
   const execution = defineRunExecution({ trigger: "chat", mode: "chat" });
@@ -22,6 +42,12 @@ test("assignment execution requires an issue and stays issue-scoped", () => {
   assert.match(execution.policy, /assigned work item/i);
   assert.match(execution.policy, /COO-42/);
   assert.match(execution.policy, /general operational review/i);
+  assert.match(execution.policy, /requested deliverable/i);
+  assert.match(execution.policy, /downstream action/i);
+  assert.match(execution.policy, /Use done when.*verifiably complete/i);
+  assert.match(execution.policy, /Use review only when.*approval/i);
+  assert.match(execution.policy, /do not use review merely.*next step/i);
+  assert.match(execution.policy, /Use blocked only when.*cannot be produced/i);
 });
 
 test("manual and scheduled reviews share policy but preserve their trigger", () => {
@@ -65,4 +91,5 @@ test("work-item review requests remain distinct from company reviews", () => {
   assert.equal(execution.issueKey, "COO-42");
   assert.match(execution.policy, /associated work item/i);
   assert.doesNotMatch(execution.policy, /^Perform an operational review/m);
+  assert.match(execution.policy, /requested deliverable/i);
 });

@@ -13,6 +13,24 @@ export function RunDetail({ data }: { data: RunDetailData }) {
   const runtimeStarted = data.events.some(
     (event) => event.type === "runner_run_started",
   );
+  const runtimeSelection = [...data.events]
+    .reverse()
+    .find((event) => event.type === "runtime_thread_selected");
+  const runtimeCompletion = [...data.events]
+    .reverse()
+    .find((event) => event.type === "run_completed");
+  const runtimeCreated = [...data.events]
+    .reverse()
+    .find((event) => event.type === "thread_created");
+  const runtimeThreadId =
+    runtimeCompletion?.payload.runtimeThreadId ??
+    runtimeCreated?.payload.runtimeThreadId ??
+    runtimeSelection?.payload.runtimeThreadId ??
+    null;
+  const runtimeContinuity =
+    runtimeCompletion?.payload.runtimeContinuity ??
+    runtimeSelection?.payload.continuity ??
+    null;
   const skipReason =
     data.run.trigger === "blocked"
       ? "Trigger is stale. The issue is no longer blocked."
@@ -48,7 +66,9 @@ export function RunDetail({ data }: { data: RunDetailData }) {
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
             <div>
               <dt className="text-xs text-muted-foreground">Runtime started</dt>
-              <dd className="mt-1 font-medium">{runtimeStarted ? "Yes" : "No"}</dd>
+              <dd className="mt-1 font-medium">
+                {runtimeStarted ? "Yes" : "No"}
+              </dd>
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">Model calls</dt>
@@ -152,6 +172,19 @@ export function RunDetail({ data }: { data: RunDetailData }) {
               Runtime
             </p>
             <p className="mt-2 text-sm capitalize">{data.run.runtime}</p>
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Runtime thread
+            </p>
+            <p className="mt-2 break-all font-mono text-xs">
+              {runtimeThreadId ? String(runtimeThreadId) : "Not started"}
+            </p>
+            {runtimeContinuity && (
+              <p className="mt-1 text-xs capitalize text-muted-foreground">
+                Continuity: {String(runtimeContinuity)}
+              </p>
+            )}
           </div>
           {data.run.error && (
             <div>

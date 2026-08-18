@@ -19,6 +19,25 @@ export type RunExecution = {
   policy: string;
 };
 
+export type RuntimeThreadPlan = {
+  runtimeThreadId: string | null;
+  continuity: "fresh" | "resumed";
+  reusable: boolean;
+};
+
+export function planRuntimeThread(
+  mode: RunMode,
+  persistedRuntimeThreadId: string | null,
+): RuntimeThreadPlan {
+  const reusable = mode === "chat";
+  const runtimeThreadId = reusable ? persistedRuntimeThreadId : null;
+  return {
+    runtimeThreadId,
+    continuity: runtimeThreadId ? "resumed" : "fresh",
+    reusable,
+  };
+}
+
 const REVIEW_POLICY = [
   "Perform an operational review.",
   "Review existing Work before creating new work.",
@@ -29,6 +48,13 @@ const REVIEW_POLICY = [
   "Delegate only actionable work.",
   "If nothing material requires action, it is valid to finish without changes.",
   "This run has no associated Work item. Do not adopt an arbitrary issue as its scope.",
+].join("\n");
+
+const WORK_DELIVERABLE_POLICY = [
+  "Evaluate completion against the requested deliverable of the current Work item, not against every downstream action that could follow from it.",
+  "Use done when the requested deliverable is sufficiently and verifiably complete, even if recommendations, future decisions, follow-ups, or separate work remain.",
+  "Use review only when that same deliverable was produced but explicitly requires approval, acceptance, or validation before it can be considered complete; do not use review merely because there is a next step.",
+  "Use blocked only when the currently requested deliverable cannot be produced with the available information or capabilities.",
 ].join("\n");
 
 const MODE_POLICIES: Record<
@@ -52,6 +78,7 @@ const MODE_POLICIES: Record<
     "Read its current state and relevant context before acting.",
     "Document any result or decision on the Work item when appropriate.",
     "Do not turn this run into a general operational review.",
+    WORK_DELIVERABLE_POLICY,
   ].join("\n"),
 };
 
@@ -63,6 +90,7 @@ function assignmentPolicy(issueKey: string) {
     "Use Work and Docs as needed, then document the result on the issue.",
     "Advance, block, request review, or complete the issue according to the available evidence.",
     "Do not turn this run into a general operational review.",
+    WORK_DELIVERABLE_POLICY,
   ].join("\n");
 }
 

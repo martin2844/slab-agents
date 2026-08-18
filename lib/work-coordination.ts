@@ -121,7 +121,8 @@ export function coordinationInstructions(input: {
     "Leé el issue completo, sus comentarios y relaciones antes de actuar.",
     "Consultá Docs para validar información relevante y evitá inventar datos.",
     "Ejecutá el resultado solicitado y registrá avances y resultado final como comentarios en Work, usando tu slug como author.",
-    "Marcá in_progress al comenzar. Al terminar, usá done si el resultado no requiere decisión adicional; si requiere criterio humano o del COO, solicitá review; si no podés continuar, marcá blocked y explicá exactamente qué falta.",
+    "Marcá in_progress al comenzar. Evaluá el cierre contra el entregable solicitado en este item, no contra todas las acciones posteriores posibles.",
+    "Usá done cuando ese entregable esté completo y sea verificable, aunque queden recomendaciones o próximos pasos. Usá review sólo cuando el entregable mismo requiera aprobación, aceptación o validación. Usá blocked sólo cuando no puedas producir el entregable actual, y explicá exactamente qué falta.",
     "No alcanza con responder en este thread: el work item es la fuente de verdad.",
     statusConvention,
   ].join("\n\n");

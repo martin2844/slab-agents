@@ -54,6 +54,10 @@ test("every entry point uses the same persisted execution contract", async () =>
     assert.match(runner, new RegExp(`key: "${key}"`));
   }
   assert.match(runner, /inspectMcpDefinitions/);
+  assert.match(service, /planRuntimeThread\(/);
+  assert.match(service, /if \(runtimeThreadPlan\.reusable\)/);
+  assert.match(runner, /input\.execution\.mode === "chat"/);
+  assert.match(runner, /shouldRehydrateConversation/);
 });
 
 test("execution semantics are persisted and historical runs are backfilled", async () => {

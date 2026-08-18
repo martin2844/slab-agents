@@ -35,12 +35,27 @@ const TOOL_LABELS: Record<string, [string, string]> = {
   list_docs: ["Browsing company docs", "Browsed company docs"],
   search_docs: ["Searching company docs", "Searched company docs"],
   get_doc: ["Reading company documentation", "Read company documentation"],
-  list_doc_revisions: ["Checking document revisions", "Checked document revisions"],
+  list_doc_revisions: [
+    "Checking document revisions",
+    "Checked document revisions",
+  ],
   get_doc_revision: ["Reading a document revision", "Read a document revision"],
-  create_doc: ["Creating company documentation", "Created company documentation"],
-  update_doc: ["Updating company documentation", "Updated company documentation"],
-  archive_doc: ["Archiving company documentation", "Archived company documentation"],
-  list_mcp_resources: ["Checking available resources", "Checked available resources"],
+  create_doc: [
+    "Creating company documentation",
+    "Created company documentation",
+  ],
+  update_doc: [
+    "Updating company documentation",
+    "Updated company documentation",
+  ],
+  archive_doc: [
+    "Archiving company documentation",
+    "Archived company documentation",
+  ],
+  list_mcp_resources: [
+    "Checking available resources",
+    "Checked available resources",
+  ],
   shell: ["Preparing the agent runtime", "Prepared the agent runtime"],
 };
 
@@ -68,10 +83,18 @@ function toolCommand(payload: Record<string, unknown>) {
 function toolItems(events: RunEvent[]): RunProgressItem[] {
   const items = new Map<string, RunProgressItem>();
   for (const event of events) {
-    if (event.type !== "tool_started" && event.type !== "tool_completed") continue;
+    if (
+      event.type !== "tool_started" &&
+      event.type !== "tool_completed" &&
+      event.type !== "tool_failed"
+    ) {
+      continue;
+    }
     const toolId = String(event.payload.toolId ?? event.id);
-    const completed = event.type === "tool_completed";
-    const failed = completed && event.payload.status === "failed";
+    const completed = event.type !== "tool_started";
+    const failed =
+      event.type === "tool_failed" ||
+      (completed && event.payload.status === "failed");
     items.delete(toolId);
     items.set(toolId, {
       id: toolId,
@@ -89,13 +112,15 @@ export function buildRunProgress(
 ): RunProgress {
   const items = toolItems(events);
   const active = [...items].reverse().find((item) => item.status === "active");
-  const command = active?.command ?? items.at(-1)?.command ?? "runtime planning";
+  const command =
+    active?.command ?? items.at(-1)?.command ?? "runtime planning";
   const lastEvent = events.at(-1)?.type;
 
   if (status === "waiting_approval") {
     return {
       headline: "Waiting for your approval",
-      detail: "The run will continue as soon as you approve or deny the action below.",
+      detail:
+        "The run will continue as soon as you approve or deny the action below.",
       command: "approval waiting",
       items,
     };
@@ -119,7 +144,8 @@ export function buildRunProgress(
   if (status === "skipped") {
     return {
       headline: "Run skipped",
-      detail: "The Work trigger was no longer current when this run reached the queue head.",
+      detail:
+        "The Work trigger was no longer current when this run reached the queue head.",
       command: "control-plane preflight",
       items,
     };

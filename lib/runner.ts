@@ -25,6 +25,8 @@ export type RunnerEvent = {
     | "assistant.completed"
     | "tool.started"
     | "tool.completed"
+    | "tool.failed"
+    | "runtime.warning"
     | "approval.required"
     | "approval.resolved"
     | "usage.updated"
@@ -170,12 +172,14 @@ export async function startRunnerRun(input: {
     ...(integrationInstructions ? [integrationInstructions] : []),
   ];
   const combinedInstructions = instructionParts.join("\n\n");
-  const context = input.thread.runtimeThreadId
-    ? []
-    : contextMessages
+  const shouldRehydrateConversation =
+    input.execution.mode === "chat" && !input.thread.runtimeThreadId;
+  const context = shouldRehydrateConversation
+    ? contextMessages
         .filter(({ role }) => role === "user" || role === "assistant")
         .slice(-12)
-        .map(({ role, body }) => ({ role, body }));
+        .map(({ role, body }) => ({ role, body }))
+    : [];
   const mcpServers = [
     {
       name: "work" as const,

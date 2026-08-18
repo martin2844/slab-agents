@@ -70,7 +70,8 @@ function PayloadPreview({ call }: { call: ToolCallProfile }) {
     !call.command &&
     call.debugArgumentsPayload === null &&
     call.debugResponsePayload === null &&
-    !call.searchQuery
+    !call.searchQuery &&
+    !call.reason
   ) {
     return null;
   }
@@ -80,6 +81,11 @@ function PayloadPreview({ call }: { call: ToolCallProfile }) {
         Inspect redacted preview
       </summary>
       <div className="mt-2 grid min-w-0 max-w-full gap-2">
+        {call.reason && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-destructive">
+            Tool lifecycle failure: <code>{call.reason}</code>
+          </div>
+        )}
         {call.searchQuery && (
           <div className="rounded-md border bg-muted/30 p-3">
             <p className="font-medium text-foreground">
@@ -195,7 +201,9 @@ export function RunContextUsage({
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric
           label="Initial model-call input"
-          value={runtimeSkipped ? "0" : tokens(profile.initialModelCallInputTokens)}
+          value={
+            runtimeSkipped ? "0" : tokens(profile.initialModelCallInputTokens)
+          }
           note={`${tokens(profile.knownInitialContextApproxTokens)} known bootstrap tokens`}
         />
         <Metric
@@ -552,7 +560,7 @@ export function RunContextUsage({
                   className="relative pb-5 last:pb-0"
                 >
                   <span
-                    className={`absolute -left-[1.77rem] top-1 size-2.5 rounded-full ring-4 ring-background ${isModel ? "bg-primary" : "bg-amber-500"}`}
+                    className={`absolute -left-[1.77rem] top-1 size-2.5 rounded-full ring-4 ring-background ${isModel ? "bg-primary" : entry.success === false ? "bg-destructive" : "bg-amber-500"}`}
                   />
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                     <time className="font-mono text-xs text-muted-foreground">
