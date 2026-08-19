@@ -65,7 +65,9 @@ export function IntegrationsView({
 }) {
   const [integrations, setIntegrations] = useState(initialData.integrations);
   const [editor, setEditor] = useState<EditorTarget | null>(null);
-  const activeProviders = new Set(integrations.map(({ provider }) => provider));
+  const activeProviders = new Set(
+    integrations.map(({ provider }) => provider),
+  );
 
   function updateIntegration(integration: Integration) {
     setIntegrations((current) => {
@@ -117,7 +119,8 @@ export function IntegrationsView({
                 No tools connected yet
               </h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Connect PostHog below to give an agent its first analytics tool.
+                Connect PostHog below to give agents their first external
+                tools.
               </p>
             </div>
           </div>
@@ -133,9 +136,8 @@ export function IntegrationsView({
         />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {initialData.catalog.map((item) => {
-            const active = activeProviders.has(
-              item.provider as Integration["provider"],
-            );
+            const active =
+              item.provider !== "custom" && activeProviders.has(item.provider);
             return (
               <AvailableCard
                 key={item.provider}
@@ -355,7 +357,7 @@ function AvailableCard({
             ? "Already connected"
             : custom
               ? "Coming soon"
-              : "Connect PostHog"}
+              : `Connect ${item.name}`}
         </Button>
       </CardFooter>
     </Card>
@@ -499,7 +501,8 @@ function PostHogEditor({
                 The key is encrypted locally, used only by the Next.js server,
                 and verified when you save. Use the least-privilege scopes
                 <strong className="font-semibold text-foreground">
-                  {" "}organization:read, project:read, and query:read
+                  {" "}
+                  organization:read, project:read, and query:read
                 </strong>
                 .
               </span>

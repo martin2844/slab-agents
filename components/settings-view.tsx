@@ -4,6 +4,7 @@ import {
   Check,
   EyeOff,
   LoaderCircle,
+  Mail,
   PlugZap,
   Save,
   Server,
@@ -11,21 +12,31 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { EmailIntegrationEditor } from "@/components/email-integration-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
 import { ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/client-api";
-import type { SetupStatus, WorkspaceSettings } from "@/lib/types";
+import type {
+  Agent,
+  EmailIntegrationState,
+  SetupStatus,
+  WorkspaceSettings,
+} from "@/lib/types";
 type Service = "work" | "docs" | "runner" | "codex";
 type State = "idle" | "testing" | "connected" | "error";
 export function SettingsView({
   initialSettings,
   initialSetup,
+  initialEmail,
+  agents,
 }: {
   initialSettings: WorkspaceSettings;
   initialSetup: SetupStatus;
+  initialEmail: EmailIntegrationState;
+  agents: Agent[];
 }) {
   const initialServiceState = (service: Service): State => {
     const value = initialSetup.checks.find((item) => item.service === service)?.state;
@@ -39,6 +50,8 @@ export function SettingsView({
     [error] = useState(""),
     [workKey, setWorkKey] = useState(""),
     [docsKey, setDocsKey] = useState(""),
+    [email, setEmail] = useState(initialEmail),
+    [emailOpen, setEmailOpen] = useState(false),
     [status, setStatus] = useState<Record<Service, State>>({
       work: initialServiceState("work"),
       docs: initialServiceState("docs"),
@@ -240,6 +253,56 @@ export function SettingsView({
               </Button>
             </div>
           </section>
+          <section className="border-t-2 border-foreground pt-5">
+            <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
+              <div className="flex gap-3">
+                <Mail className="mt-1 size-5" />
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-heading text-3xl font-semibold">
+                      Email
+                    </h2>
+                    <Badge variant="secondary">Optional</Badge>
+                  </div>
+                  <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                    Connect workspace mailboxes and define scoped read, draft,
+                    and send policies for each agent.
+                  </p>
+                </div>
+              </div>
+              <EmailConnectionBadge state={email} />
+            </div>
+            <div className="mt-6 grid gap-4 border-y py-4 text-sm sm:grid-cols-[1fr_auto_auto] sm:items-center">
+              <div className="min-w-0">
+                <span className="block text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">
+                  Service
+                </span>
+                <strong className="mt-1 block truncate">
+                  {email.serviceUrl || "Not configured"}
+                </strong>
+              </div>
+              <div className="flex gap-8 sm:px-4">
+                <div>
+                  <span className="block text-muted-foreground">Mailboxes</span>
+                  <strong>{email.accounts.length}</strong>
+                </div>
+                <div>
+                  <span className="block text-muted-foreground">
+                    Agent profiles
+                  </span>
+                  <strong>{email.assignments.length}</strong>
+                </div>
+              </div>
+              <Button variant="outline" onClick={() => setEmailOpen(true)}>
+                <Mail /> Configure email
+              </Button>
+            </div>
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+              Mailbox credentials remain in slab-email. Agents receive only
+              scoped connector access, and sending requires the policy chosen
+              here.
+            </p>
+          </section>
         </div>
         <aside className="border-t-2 border-primary pt-5">
           <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">
@@ -297,9 +360,45 @@ export function SettingsView({
           </div>
         </aside>
       </div>
+      <EmailIntegrationEditor
+        open={emailOpen}
+        initialState={email}
+        agents={agents}
+        onOpenChange={setEmailOpen}
+        onUpdated={setEmail}
+      />
     </>
   );
 }
+
+function EmailConnectionBadge({ state }: { state: EmailIntegrationState }) {
+  if (!state.configured)
+    return <Badge variant="outline">Not configured</Badge>;
+  if (
+    state.accounts.some(
+      (account) => account.enabled && account.lastConnectionStatus === "error",
+    )
+  )
+    return (
+      <Badge variant="destructive">
+        <X /> Mailbox issue
+      </Badge>
+    );
+  if (state.status === "connected")
+    return (
+      <Badge className="bg-emerald-700 text-white">
+        <Check /> Service connected
+      </Badge>
+    );
+  if (state.status === "failed")
+    return (
+      <Badge variant="destructive">
+        <X /> Unavailable
+      </Badge>
+    );
+  return <Badge variant="outline">Not tested</Badge>;
+}
+
 function ConnectionBadge({ state }: { state: State }) {
   if (state === "idle") return <Badge variant="outline">Not tested</Badge>;
   if (state === "testing")

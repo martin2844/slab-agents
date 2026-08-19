@@ -4,9 +4,11 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("integrations expose a catalog, active row, PostHog editor, and custom WIP card", async () => {
-  const [source, catalog] = await Promise.all([
+test("Integrations stays focused on external tools while Email is an optional Setting", async () => {
+  const [source, settings, emailEditor, catalog] = await Promise.all([
     read("components/integrations-view.tsx"),
+    read("components/settings-view.tsx"),
+    read("components/email-integration-editor.tsx"),
     read("lib/integrations/catalog.ts"),
   ]);
   assert.match(source, /Active integrations/);
@@ -14,8 +16,60 @@ test("integrations expose a catalog, active row, PostHog editor, and custom WIP 
   assert.match(source, /Personal API key/);
   assert.match(source, /Datacenter/);
   assert.match(source, /Agent tool access/);
+  assert.doesNotMatch(source, /EmailIntegrationEditor|EmailActiveCard/);
+  assert.match(settings, /Email/);
+  assert.match(settings, /Optional/);
+  assert.match(settings, /Configure email/);
+  assert.match(emailEditor, /Email service/);
+  assert.match(emailEditor, /Proton Bridge/);
+  assert.match(emailEditor, /Connect Gmail/);
+  assert.match(emailEditor, /Agent access profiles/);
+  assert.match(emailEditor, /Approval required/);
+  assert.match(emailEditor, /if \(result\.status !== "ok"\)/);
+  assert.match(emailEditor, /Mailbox connection failed/);
+  assert.match(emailEditor, /Connection failed/);
+  assert.match(emailEditor, /Edit mailbox connection/);
+  assert.match(emailEditor, /Save changes/);
+  assert.match(emailEditor, /method: "PATCH"/);
+  assert.match(emailEditor, /WSL mirrored networking/);
+  assert.match(settings, /Mailbox issue/);
+  assert.match(catalog, /EMAIL_AGENT_PROMPT/);
+  assert.doesNotMatch(catalog, /provider: "email"/);
   assert.match(catalog, /Custom integration/);
   assert.match(source, />WIP</);
+});
+
+test("Email credentials and one-time connector tokens stay outside browser payloads and SQLite", async () => {
+  const [migration, service, vault, client, runner, route] = await Promise.all([
+    read("db/migrations/202608180007_email_integration.cjs"),
+    read("lib/integrations/email-service.ts"),
+    read("lib/integrations/email-token-vault.ts"),
+    read("lib/integrations/email-client.ts"),
+    read("lib/runner.ts"),
+    read("app/api/integrations/email/agents/[agentId]/route.ts"),
+  ]);
+  assert.doesNotMatch(
+    migration,
+    /raw_token|token_ciphertext|password|refresh_token/,
+  );
+  assert.match(migration, /token_id/);
+  assert.match(migration, /token_prefix/);
+  assert.match(vault, /encryptLocalSecret/);
+  assert.match(vault, /email-connector-tokens/);
+  assert.match(client, /SLAB_EMAIL_ADMIN_KEY/);
+  assert.match(service, /storeEmailConnectorToken/);
+  assert.match(service, /readEmailConnectorToken/);
+  assert.match(runner, /getAgentEmailMcp/);
+  assert.match(runner, /EMAIL_AGENT_PROMPT/);
+  assert.doesNotMatch(route, /token|password|credential/i);
+});
+
+test("Email send policy is translated to per-tool runtime approval", async () => {
+  const service = await read("lib/integrations/email-service.ts");
+  assert.match(service, /approval_required/);
+  assert.match(service, /email_send/);
+  assert.match(service, /email_reply/);
+  assert.match(service, /defaultMode: "approve"/);
 });
 
 test("PostHog credentials remain server-side and its MCP surface is read-only", async () => {

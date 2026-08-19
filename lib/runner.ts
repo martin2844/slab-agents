@@ -3,7 +3,11 @@ import "server-only";
 import { getSetting } from "@/lib/settings";
 import { repository } from "@/lib/repository";
 import type { Agent, Message, Thread } from "@/lib/types";
-import { POSTHOG_AGENT_PROMPT } from "@/lib/integrations/catalog";
+import {
+  EMAIL_AGENT_PROMPT,
+  POSTHOG_AGENT_PROMPT,
+} from "@/lib/integrations/catalog";
+import { getAgentEmailMcp } from "@/lib/integrations/email-service";
 import { getAgentPostHogMcp } from "@/lib/integrations/service";
 import { inspectMcpDefinitions } from "@/lib/mcp/client";
 import { RunnerRequestError } from "@/lib/runner-errors";
@@ -163,8 +167,12 @@ export async function startRunnerRun(input: {
   const workApiKey = getSetting("work_api_key");
   const docsApiKey = getSetting("docs_api_key");
   const posthogMcp = getAgentPostHogMcp(input.agent.id);
+  const emailMcp = getAgentEmailMcp(input.agent.id);
   const workInstructions = workCoordinationContext();
-  const integrationInstructions = posthogMcp ? POSTHOG_AGENT_PROMPT : "";
+  const integrationInstructions = [
+    ...(posthogMcp ? [POSTHOG_AGENT_PROMPT] : []),
+    ...(emailMcp ? [EMAIL_AGENT_PROMPT] : []),
+  ].join("\n\n");
   const instructionParts = [
     input.agent.instructions,
     workInstructions,
@@ -192,6 +200,7 @@ export async function startRunnerRun(input: {
       ...(docsApiKey ? { credentials: { bearerToken: docsApiKey } } : {}),
     },
     ...(posthogMcp ? [posthogMcp] : []),
+    ...(emailMcp ? [emailMcp] : []),
   ];
   const components: ContextComponent[] = [
     {

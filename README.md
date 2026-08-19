@@ -31,9 +31,33 @@ WORK_MCP_URL=http://127.0.0.1:6969/mcp
 DOCS_MCP_URL=http://127.0.0.1:6980/mcp
 RUNNER_URL=http://127.0.0.1:6990
 SLAB_WORKSPACE_DB=.data/slab-workspace.db
+
+# Optional Email integration (admin key stays server-side)
+SLAB_EMAIL_ADMIN_KEY=...
 ```
 
 URLs and replacement credentials can also be saved from Settings. Stored credentials are never returned by the API; the browser receives only `*ApiKeyConfigured` booleans.
+
+## Email integration
+
+Email is managed as an optional workspace capability from Settings. `slab-agents` uses the `slab-email` admin
+API only from the Node.js runtime. Mailbox credentials and Gmail refresh tokens
+are stored by `slab-email`, never in the control-plane database. Each agent gets
+its own remote access profile and one scoped connector token.
+
+SQLite stores only profile and token metadata (`id`, prefix, timestamps). The
+one-time raw connector token is encrypted in a mode-0600 server-side vault under
+`.data/email-connector-tokens`; it is decrypted only while building the MCP
+capability snapshot for a run and is never returned to React or included in an
+LLM prompt. Configure `SLAB_EMAIL_ADMIN_KEY` in the server environment before
+using account/profile administration.
+
+Email send policy is enforced independently of the connector:
+
+- `disabled` omits send permission from the remote profile;
+- `approval required` exposes sending but forces a Runner approval for
+  `email_send` and `email_reply`;
+- `autonomous` uses the scoped profile without an additional send approval.
 
 ## Run locally
 

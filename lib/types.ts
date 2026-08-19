@@ -315,3 +315,57 @@ export type IntegrationsPageData = {
   agents: Agent[];
   catalog: IntegrationCatalogItem[];
 };
+
+export type EmailSendPolicy = "disabled" | "approval_required" | "autonomous";
+export type EmailAccount = {
+  id: string;
+  provider: "proton_bridge" | "imap_smtp" | "gmail";
+  emailAddress: string;
+  displayName: string;
+  enabled: boolean;
+  capabilities: {
+    read: boolean;
+    search: boolean;
+    draft: boolean;
+    send: boolean;
+    reply: boolean;
+    threads: boolean;
+  };
+  createdAt: string;
+  updatedAt: string;
+  lastConnectionStatus: string | null;
+  lastConnectionAt: string | null;
+  connection: {
+    imapHost: string;
+    imapPort: number;
+    imapTlsMode: "ssl" | "starttls" | "none";
+    smtpHost: string;
+    smtpPort: number;
+    smtpTlsMode: "ssl" | "starttls" | "none";
+  };
+};
+export type AgentEmailAccess = {
+  agentId: string;
+  profileId: string;
+  profileName: string;
+  accountIds: string[];
+  readEnabled: boolean;
+  draftEnabled: boolean;
+  sendEnabled: boolean;
+  sendPolicy: EmailSendPolicy;
+  tokenId: string;
+  tokenPrefix: string;
+  tokenCreatedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type EmailIntegrationState = {
+  configured: boolean;
+  adminConfigured: boolean;
+  serviceUrl: string;
+  status: IntegrationStatus;
+  lastTestedAt: string | null;
+  lastError: string | null;
+  accounts: EmailAccount[];
+  assignments: AgentEmailAccess[];
+};
