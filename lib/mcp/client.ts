@@ -18,6 +18,10 @@ export type McpInspectionConnection = {
   headers: Record<string, string>;
 };
 
+export type DiscoveredMcpTool = Awaited<
+  ReturnType<Client["listTools"]>
+>["tools"][number];
+
 export class McpToolError extends Error {
   readonly code: string;
   readonly details: Record<string, unknown>;
@@ -79,6 +83,16 @@ function resolveRequestHeaders(connection: McpConnection) {
   return headers;
 }
 
+const fetchWithoutRedirect: typeof fetch = async (input, init) => {
+  const response = await fetch(input, { ...init, redirect: "manual" });
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error(
+      "MCP_REDIRECT_BLOCKED: redirects are not allowed for authenticated MCP connections.",
+    );
+  }
+  return response;
+};
+
 export async function callMcpTool<T>(
   connection: McpConnection,
   name: string,
@@ -88,6 +102,7 @@ export async function callMcpTool<T>(
   const timeout = setTimeout(() => controller.abort(), 12_000);
   const client = new Client({ name: "slab-agent-workspace", version: "0.1.0" });
   const transport = new StreamableHTTPClientTransport(new URL(connection.url), {
+    fetch: fetchWithoutRedirect,
     requestInit: {
       headers: resolveRequestHeaders(connection),
       signal: controller.signal,
@@ -108,6 +123,7 @@ export async function testMcp(connection: McpConnection) {
   const timeout = setTimeout(() => controller.abort(), 8_000);
   const client = new Client({ name: "slab-agent-workspace", version: "0.1.0" });
   const transport = new StreamableHTTPClientTransport(new URL(connection.url), {
+    fetch: fetchWithoutRedirect,
     requestInit: {
       headers: resolveRequestHeaders(connection),
       signal: controller.signal,
@@ -117,6 +133,32 @@ export async function testMcp(connection: McpConnection) {
     await client.connect(transport);
     const tools = await client.listTools();
     return { ok: true, tools: tools.tools.map((tool) => tool.name) };
+  } finally {
+    clearTimeout(timeout);
+    await client.close().catch(() => undefined);
+  }
+}
+
+export async function discoverMcpTools(
+  connection: McpInspectionConnection,
+): Promise<DiscoveredMcpTool[]> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  const client = new Client({
+    name: "slab-agent-workspace-discovery",
+    version: "0.1.0",
+  });
+  const transport = new StreamableHTTPClientTransport(new URL(connection.url), {
+    fetch: fetchWithoutRedirect,
+    requestInit: {
+      headers: connection.headers,
+      signal: controller.signal,
+    },
+  });
+
+  try {
+    await client.connect(transport);
+    return (await client.listTools()).tools;
   } finally {
     clearTimeout(timeout);
     await client.close().catch(() => undefined);
@@ -134,6 +176,7 @@ export async function inspectMcpDefinitions(
     version: "0.1.0",
   });
   const transport = new StreamableHTTPClientTransport(new URL(connection.url), {
+    fetch: fetchWithoutRedirect,
     requestInit: {
       headers: connection.headers,
       signal: controller.signal,

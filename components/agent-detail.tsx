@@ -11,6 +11,7 @@ import {
   Radio,
   ShieldCheck,
   Sparkles,
+  Puzzle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AgentRunDialog } from "@/components/agent-run-dialog";
@@ -30,14 +31,48 @@ import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 import { api } from "@/lib/client-api";
-import type { AgentDetailData, Thread } from "@/lib/types";
+import type { AgentDetailData, Integration, Thread } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
 export function AgentDetail({ data }: { data: AgentDetailData }) {
   const [open, setOpen] = useState(false),
     [creating, setCreating] = useState(false),
     [fullAccess, setFullAccess] = useState(data.agent.fullAccess),
     [savingAccess, setSavingAccess] = useState(false),
-    [quickActions, setQuickActions] = useState(data.quickActions);
+    [quickActions, setQuickActions] = useState(data.quickActions),
+    [integrations, setIntegrations] = useState(data.integrations),
+    [savingIntegration, setSavingIntegration] = useState<string | null>(null);
+
+  async function changeIntegrationAccess(
+    integration: Integration,
+    enabled: boolean,
+  ) {
+    setSavingIntegration(integration.id);
+    try {
+      const next = await api<Integration>(
+        `/api/agents/${data.agent.id}/integrations/${integration.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ enabled }),
+        },
+      );
+      setIntegrations((current) =>
+        current.map((item) => (item.id === next.id ? next : item)),
+      );
+      toast.success(
+        enabled
+          ? `${next.name} enabled for ${data.agent.name}`
+          : `${next.name} disabled for ${data.agent.name}`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not update integration access",
+      );
+    } finally {
+      setSavingIntegration(null);
+    }
+  }
 
   async function changeFullAccess(next: boolean) {
     if (savingAccess) return;
@@ -177,6 +212,61 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
                 />
               </div>
             </div>
+          </section>
+          <section className="border-y py-5">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">
+                Integrations
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Choose which configured capabilities are included in this
+                agent&apos;s next run.
+              </p>
+            </div>
+            {integrations.length ? (
+              <div className="mt-4 divide-y rounded-xl border">
+                {integrations.map((integration) => {
+                  const assigned =
+                    (integration.permissions[agent.id] ?? []).length > 0;
+                  return (
+                    <div
+                      key={integration.id}
+                      className="flex items-center justify-between gap-4 p-4"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Puzzle className="size-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold">
+                            {integration.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {integration.tools.length} tools ·{" "}
+                            {integration.status.replace("_", " ")}
+                          </p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={assigned}
+                        disabled={
+                          savingIntegration === integration.id ||
+                          !integration.enabled ||
+                          integration.status !== "connected"
+                        }
+                        onCheckedChange={(checked) =>
+                          changeIntegrationAccess(integration, checked)
+                        }
+                        aria-label={`${integration.name} for ${agent.name}`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">
+                No integrations configured. Add one from Settings →
+                Integrations.
+              </p>
+            )}
           </section>
           <section className="grid gap-px overflow-hidden border bg-border sm:grid-cols-2 xl:grid-cols-4">
             {[

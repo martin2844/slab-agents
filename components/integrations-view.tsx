@@ -8,7 +8,6 @@ import {
   KeyRound,
   LoaderCircle,
   LockKeyhole,
-  Code2,
   Pencil,
   PlugZap,
   Puzzle,
@@ -17,10 +16,22 @@ import {
   Wrench,
   X,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -66,9 +77,7 @@ export function IntegrationsView({
 }) {
   const [integrations, setIntegrations] = useState(initialData.integrations);
   const [editor, setEditor] = useState<EditorTarget | null>(null);
-  const activeProviders = new Set(
-    integrations.map(({ provider }) => provider),
-  );
+  const activeProviders = new Set(integrations.map(({ provider }) => provider));
 
   function updateIntegration(integration: Integration) {
     setIntegrations((current) => {
@@ -79,6 +88,11 @@ export function IntegrationsView({
           )
         : [...current, integration];
     });
+  }
+
+  function removeIntegration(id: string) {
+    setIntegrations((current) => current.filter((item) => item.id !== id));
+    setEditor(null);
   }
 
   return (
@@ -120,8 +134,7 @@ export function IntegrationsView({
                 No tools connected yet
               </h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Connect PostHog below to give agents their first external
-                tools.
+                Connect PostHog below to give agents their first external tools.
               </p>
             </div>
           </div>
@@ -163,6 +176,7 @@ export function IntegrationsView({
             updateIntegration(integration);
             setEditor(null);
           }}
+          onDeleted={removeIntegration}
         />
       )}
       {editor?.catalog.provider === "custom_http" && (
@@ -171,12 +185,12 @@ export function IntegrationsView({
           open
           integration={editor.integration}
           agents={initialData.agents}
-          catalog={editor.catalog}
           onOpenChange={(open) => !open && setEditor(null)}
           onSaved={(integration) => {
             updateIntegration(integration);
             setEditor(null);
           }}
+          onDeleted={removeIntegration}
         />
       )}
       {editor?.catalog.provider === "custom_mcp" && (
@@ -190,6 +204,7 @@ export function IntegrationsView({
             updateIntegration(integration);
             setEditor(null);
           }}
+          onDeleted={removeIntegration}
         />
       )}
     </>
@@ -261,8 +276,11 @@ function ActiveCard({
         { method: "POST" },
       );
       onUpdated(next);
-      if (next.status === "connected") toast.success("PostHog is connected");
-      else toast.error(next.lastError ?? "PostHog connection failed");
+      if (next.status === "connected")
+        toast.success(`${next.name} is connected`);
+      else if (next.status === "disabled")
+        toast.success(`${next.name} is disabled`);
+      else toast.error(next.lastError ?? "Connection test failed");
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Connection test failed",
@@ -304,7 +322,12 @@ function ActiveCard({
         <div className="grid grid-cols-2 gap-3 border-y py-4 text-sm">
           <div>
             <span className="block text-muted-foreground">Tools</span>
-            <strong>{integration.tools.length} read-only</strong>
+            <strong>
+              {integration.tools.length}{" "}
+              {integration.tools.every((tool) => tool.readOnly)
+                ? "read-only"
+                : "tools"}
+            </strong>
           </div>
           <div>
             <span className="block text-muted-foreground">Agent access</span>
@@ -321,7 +344,7 @@ function ActiveCard({
               : "Connection has not been tested yet."}
         </p>
       </CardContent>
-        <CardFooter className="flex gap-2 border-t bg-muted/35 p-3">
+      <CardFooter className="flex gap-2 border-t bg-muted/35 p-3">
         <Button variant="outline" className="flex-1" onClick={onEdit}>
           <Pencil /> Edit
         </Button>
@@ -348,7 +371,8 @@ function AvailableCard({
   active: boolean;
   onConnect: () => void;
 }) {
-  const custom = item.provider === "custom_http" || item.provider === "custom_mcp";
+  const custom =
+    item.provider === "custom_http" || item.provider === "custom_mcp";
   return (
     <Card
       className={cn("py-0", !item.available && "border-dashed bg-muted/20")}
@@ -380,7 +404,8 @@ function AvailableCard({
           ))}
           {custom && (
             <span className="text-xs text-muted-foreground">
-              Connect HTTP APIs or MCP servers and expose capabilities to agents.
+              Connect HTTP APIs or MCP servers and expose capabilities to
+              agents.
             </span>
           )}
         </div>
@@ -393,9 +418,7 @@ function AvailableCard({
           onClick={onConnect}
         >
           {active ? <Check /> : <PlugZap />}
-          {active
-            ? "Already connected"
-            : `Connect ${item.name}`}
+          {active ? "Already connected" : `Connect ${item.name}`}
         </Button>
       </CardFooter>
     </Card>
@@ -409,6 +432,7 @@ function PostHogEditor({
   catalog,
   onOpenChange,
   onSaved,
+  onDeleted,
 }: {
   open: boolean;
   integration?: Integration;
@@ -416,6 +440,7 @@ function PostHogEditor({
   catalog: IntegrationCatalogItem;
   onOpenChange: (open: boolean) => void;
   onSaved: (integration: Integration) => void;
+  onDeleted: (id: string) => void;
 }) {
   const [apiKey, setApiKey] = useState("");
   const [datacenter, setDatacenter] = useState<"us" | "eu">(
@@ -425,6 +450,7 @@ function PostHogEditor({
     integration?.permissions ?? {},
   );
   const [saving, setSaving] = useState(false);
+  const [enabled, setEnabled] = useState(integration?.enabled ?? true);
   const enabledAgentCount = useMemo(
     () => Object.values(permissions).filter((tools) => tools.length > 0).length,
     [permissions],
@@ -460,6 +486,7 @@ function PostHogEditor({
             ...(integration ? {} : { provider: "posthog" }),
             apiKey: apiKey || undefined,
             datacenter,
+            enabled,
             permissions,
           }),
         },
@@ -502,6 +529,12 @@ function PostHogEditor({
               <KeyRound className="size-4" />
               <h3 className="font-semibold">Connection</h3>
             </div>
+            {integration ? (
+              <label className="mt-4 flex items-center justify-between rounded-lg border p-3 text-sm font-semibold">
+                Integration enabled
+                <Switch checked={enabled} onCheckedChange={setEnabled} />
+              </label>
+            ) : null}
             <div className="grid gap-4 sm:grid-cols-[1fr_11rem]">
               <label className="grid gap-2 text-sm font-semibold">
                 Personal API key
@@ -628,6 +661,13 @@ function PostHogEditor({
         </div>
 
         <DialogFooter className="m-0 rounded-none px-5">
+          {integration ? (
+            <DeleteIntegrationButton
+              integration={integration}
+              agents={agents}
+              onDeleted={onDeleted}
+            />
+          ) : null}
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
@@ -670,22 +710,22 @@ function CustomHttpEditor({
   open,
   integration,
   agents,
-  catalog,
   onOpenChange,
   onSaved,
+  onDeleted,
 }: {
   open: boolean;
   integration?: Integration;
   agents: Agent[];
-  catalog: IntegrationCatalogItem;
   onOpenChange: (open: boolean) => void;
   onSaved: (integration: Integration) => void;
+  onDeleted: (id: string) => void;
 }) {
   const [name, setName] = useState(integration?.name ?? "");
   const [baseUrl, setBaseUrl] = useState(integration?.baseUrl ?? "");
-  const [authType, setAuthType] = useState<"none" | "bearer" | "api_key_header">(
-    (integration?.authType as "none" | "bearer" | "api_key_header") ?? "none",
-  );
+  const [authType, setAuthType] = useState<
+    "none" | "bearer" | "api_key_header"
+  >((integration?.authType as "none" | "bearer" | "api_key_header") ?? "none");
   const [authHeaderName, setAuthHeaderName] = useState(
     integration?.authHeaderName ?? "X-API-Key",
   );
@@ -694,11 +734,13 @@ function CustomHttpEditor({
     String(integration?.timeoutMs ?? 15000),
   );
   const [saving, setSaving] = useState(false);
+  const [enabled, setEnabled] = useState(integration?.enabled ?? true);
   const [permissions, setPermissions] = useState<Record<string, string[]>>(
     integration?.permissions ?? {},
   );
   const [operations, setOperations] = useState<
     Array<{
+      id?: string;
       key: string;
       name: string;
       description: string;
@@ -718,19 +760,20 @@ function CustomHttpEditor({
   >(
     integration?.operations && integration.operations.length
       ? integration.operations.map((operation) => ({
-            key: operation.key,
-            name: operation.name,
-              description: operation.description || "",
-              method: operation.method,
-              path: operation.path,
-              responsePath: operation.responsePath ?? "",
-              maxResponseBytes: String(operation.maxResponseBytes ?? 32768),
-              maxItems: String(operation.maxItems ?? 50),
-              parameters: operation.parameters.map((parameter) => ({
-                ...parameter,
-                description: parameter.description ?? "",
-              })),
-            }))
+          id: operation.id,
+          key: operation.key,
+          name: operation.name,
+          description: operation.description || "",
+          method: operation.method,
+          path: operation.path,
+          responsePath: operation.responsePath ?? "",
+          maxResponseBytes: String(operation.maxResponseBytes ?? 32768),
+          maxItems: String(operation.maxItems ?? 50),
+          parameters: operation.parameters.map((parameter) => ({
+            ...parameter,
+            description: parameter.description ?? "",
+          })),
+        }))
       : [
           {
             key: "",
@@ -759,8 +802,9 @@ function CustomHttpEditor({
       operations
         .map((operation) => operation.key.trim())
         .filter(Boolean)
-        .map((operationKey) =>
-          `${slug}__${normalizeIntegrationToolKey(operationKey)}`,
+        .map(
+          (operationKey) =>
+            `${slug}__${normalizeIntegrationToolKey(operationKey)}`,
         ),
     [operations, slug],
   );
@@ -819,6 +863,35 @@ function CustomHttpEditor({
     });
   }
 
+  function setParameter(
+    operationIndex: number,
+    parameterIndex: number,
+    patch: Partial<(typeof operations)[number]["parameters"][number]>,
+  ) {
+    setOperations((current) => {
+      const next = [...current];
+      const operation = next[operationIndex]!;
+      const parameters = [...operation.parameters];
+      parameters[parameterIndex] = { ...parameters[parameterIndex]!, ...patch };
+      next[operationIndex] = { ...operation, parameters };
+      return next;
+    });
+  }
+
+  function removeParameter(operationIndex: number, parameterIndex: number) {
+    setOperations((current) => {
+      const next = [...current];
+      const operation = next[operationIndex]!;
+      next[operationIndex] = {
+        ...operation,
+        parameters: operation.parameters.filter(
+          (_, index) => index !== parameterIndex,
+        ),
+      };
+      return next;
+    });
+  }
+
   function addOperation() {
     setOperations((current) => [
       ...current,
@@ -840,7 +913,9 @@ function CustomHttpEditor({
     setSaving(true);
     try {
       const next = await api<Integration>(
-        integration ? `/api/integrations/${integration.id}` : "/api/integrations",
+        integration
+          ? `/api/integrations/${integration.id}`
+          : "/api/integrations",
         {
           method: integration ? "PATCH" : "POST",
           body: JSON.stringify({
@@ -851,10 +926,15 @@ function CustomHttpEditor({
             authHeaderName: authHeaderName || undefined,
             secret: secret || undefined,
             timeoutMs: Number(timeoutMs) || undefined,
+            enabled,
             permissions,
             operations: operations
-              .filter((operation) => operation.key && operation.path && operation.name)
+              .filter(
+                (operation) =>
+                  operation.key && operation.path && operation.name,
+              )
               .map((operation) => ({
+                id: operation.id,
                 key: operation.key,
                 name: operation.name,
                 description: operation.description,
@@ -862,7 +942,8 @@ function CustomHttpEditor({
                 path: operation.path,
                 parameters: operation.parameters,
                 responsePath: operation.responsePath || undefined,
-                maxResponseBytes: Number(operation.maxResponseBytes) || undefined,
+                maxResponseBytes:
+                  Number(operation.maxResponseBytes) || undefined,
                 maxItems: Number(operation.maxItems) || undefined,
                 timeoutMs: Number(timeoutMs) || undefined,
                 enabled: true,
@@ -893,7 +974,9 @@ function CustomHttpEditor({
       <DialogContent className="h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:h-auto sm:max-w-3xl">
         <DialogHeader className="border-b p-5 pr-14">
           <DialogTitle className="text-2xl">
-            {integration ? "Edit custom HTTP integration" : "Connect custom HTTP"}
+            {integration
+              ? "Edit custom HTTP integration"
+              : "Connect custom HTTP"}
           </DialogTitle>
           <DialogDescription>
             Map operations from an internal API to explicit MCP tools.
@@ -905,7 +988,10 @@ function CustomHttpEditor({
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-2 text-sm font-semibold">
                 Name
-                <Input value={name} onChange={(event) => setName(event.target.value)} />
+                <Input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
               </label>
               <label className="grid gap-2 text-sm font-semibold">
                 Base URL
@@ -931,7 +1017,9 @@ function CustomHttpEditor({
                   <SelectContent>
                     <SelectItem value="none">No auth</SelectItem>
                     <SelectItem value="bearer">Bearer token</SelectItem>
-                    <SelectItem value="api_key_header">API key header</SelectItem>
+                    <SelectItem value="api_key_header">
+                      API key header
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </label>
@@ -951,7 +1039,10 @@ function CustomHttpEditor({
               )}
               <label className="grid gap-2 text-sm font-semibold">
                 Timeout (ms)
-                <Input value={timeoutMs} onChange={(event) => setTimeoutMs(event.target.value)} />
+                <Input
+                  value={timeoutMs}
+                  onChange={(event) => setTimeoutMs(event.target.value)}
+                />
               </label>
             </div>
             {authType !== "none" ? (
@@ -970,6 +1061,12 @@ function CustomHttpEditor({
                 />
               </label>
             ) : null}
+            {integration ? (
+              <label className="mt-4 flex items-center justify-between rounded-lg border p-3 text-sm font-semibold">
+                Integration enabled
+                <Switch checked={enabled} onCheckedChange={setEnabled} />
+              </label>
+            ) : null}
           </section>
 
           <section className="border-b py-5">
@@ -981,17 +1078,20 @@ function CustomHttpEditor({
             </div>
             <div className="space-y-4">
               {operations.map((operation, operationIndex) => (
-                <div key={`${operation.key}-${operationIndex}`} className="rounded-lg border p-3">
+                <div
+                  key={`${operation.key}-${operationIndex}`}
+                  className="rounded-lg border p-3"
+                >
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="grid gap-1 text-xs">
                       Operation key
-                    <Input
-                      value={operation.key}
-                      onChange={(event) =>
+                      <Input
+                        value={operation.key}
+                        onChange={(event) =>
                           setOperation(operationIndex, {
                             key: event.target.value,
                           })
-                      }
+                        }
                         placeholder="list_customers"
                       />
                     </label>
@@ -1019,7 +1119,9 @@ function CustomHttpEditor({
                       <Input
                         value={operation.name}
                         onChange={(event) =>
-                          setOperation(operationIndex, { name: event.target.value })
+                          setOperation(operationIndex, {
+                            name: event.target.value,
+                          })
                         }
                         placeholder="List customers"
                       />
@@ -1029,7 +1131,9 @@ function CustomHttpEditor({
                       <Input
                         value={operation.path}
                         onChange={(event) =>
-                          setOperation(operationIndex, { path: event.target.value })
+                          setOperation(operationIndex, {
+                            path: event.target.value,
+                          })
                         }
                         placeholder="/customers/{customerId}"
                       />
@@ -1047,6 +1151,175 @@ function CustomHttpEditor({
                       />
                     </label>
                   </div>
+                  <div className="mt-4 border-t pt-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold">Parameters</p>
+                        <p className="text-xs text-muted-foreground">
+                          Declare every path placeholder and optional query
+                          input.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => addParameter(operationIndex)}
+                      >
+                        <Plus /> Add parameter
+                      </Button>
+                    </div>
+                    <div className="mt-3 space-y-3">
+                      {operation.parameters.map((parameter, parameterIndex) => (
+                        <div
+                          key={`${parameter.name}-${parameterIndex}`}
+                          className="grid gap-2 rounded-lg bg-muted/45 p-3 sm:grid-cols-2"
+                        >
+                          <label className="grid gap-1 text-xs">
+                            Name
+                            <Input
+                              value={parameter.name}
+                              onChange={(event) =>
+                                setParameter(operationIndex, parameterIndex, {
+                                  name: event.target.value,
+                                })
+                              }
+                              placeholder="customerId"
+                            />
+                          </label>
+                          <label className="grid gap-1 text-xs">
+                            Location
+                            <Select
+                              value={parameter.location}
+                              onValueChange={(value) =>
+                                setParameter(operationIndex, parameterIndex, {
+                                  location: value as "path" | "query",
+                                  required:
+                                    value === "path"
+                                      ? true
+                                      : parameter.required,
+                                })
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="path">Path</SelectItem>
+                                <SelectItem value="query">Query</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </label>
+                          <label className="grid gap-1 text-xs">
+                            Type
+                            <Select
+                              value={parameter.type}
+                              onValueChange={(value) =>
+                                setParameter(operationIndex, parameterIndex, {
+                                  type: value as typeof parameter.type,
+                                })
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="string">String</SelectItem>
+                                <SelectItem value="number">Number</SelectItem>
+                                <SelectItem value="integer">Integer</SelectItem>
+                                <SelectItem value="boolean">Boolean</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </label>
+                          <label className="grid gap-1 text-xs">
+                            Description
+                            <Input
+                              value={parameter.description}
+                              onChange={(event) =>
+                                setParameter(operationIndex, parameterIndex, {
+                                  description: event.target.value,
+                                })
+                              }
+                              placeholder="Internal customer ID"
+                            />
+                          </label>
+                          <div className="flex items-center justify-between sm:col-span-2">
+                            <label className="flex items-center gap-2 text-xs font-semibold">
+                              Required
+                              <Switch
+                                size="sm"
+                                checked={
+                                  parameter.location === "path" ||
+                                  parameter.required
+                                }
+                                disabled={parameter.location === "path"}
+                                onCheckedChange={(checked) =>
+                                  setParameter(operationIndex, parameterIndex, {
+                                    required: checked,
+                                  })
+                                }
+                              />
+                            </label>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                removeParameter(operationIndex, parameterIndex)
+                              }
+                            >
+                              <Trash2 /> Remove parameter
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <details className="mt-4 rounded-lg border p-3">
+                    <summary className="cursor-pointer text-sm font-semibold">
+                      Advanced response settings
+                    </summary>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                      <label className="grid gap-1 text-xs">
+                        Response path
+                        <Input
+                          value={operation.responsePath}
+                          onChange={(event) =>
+                            setOperation(operationIndex, {
+                              responsePath: event.target.value,
+                            })
+                          }
+                          placeholder="data.customer"
+                        />
+                      </label>
+                      <label className="grid gap-1 text-xs">
+                        Max response bytes
+                        <Input
+                          type="number"
+                          min={1024}
+                          value={operation.maxResponseBytes}
+                          onChange={(event) =>
+                            setOperation(operationIndex, {
+                              maxResponseBytes: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="grid gap-1 text-xs">
+                        Max array items
+                        <Input
+                          type="number"
+                          min={1}
+                          value={operation.maxItems}
+                          onChange={(event) =>
+                            setOperation(operationIndex, {
+                              maxItems: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                  </details>
                   <div className="mt-3">
                     <Button
                       size="sm"
@@ -1068,9 +1341,11 @@ function CustomHttpEditor({
               {agents.length ? (
                 agents.map((agent) => {
                   const agentTools = permissions[agent.id] ?? [];
-                  const allEnabled = operationToolKeys.every((toolKey) =>
-                    agentTools.includes(toolKey),
-                  );
+                  const allEnabled =
+                    operationToolKeys.length > 0 &&
+                    operationToolKeys.every((toolKey) =>
+                      agentTools.includes(toolKey),
+                    );
                   return (
                     <div key={agent.id} className="p-4">
                       <div className="flex items-center justify-between">
@@ -1099,7 +1374,8 @@ function CustomHttpEditor({
                             .map((operationKey) => {
                               const toolKey = `${slug}__${normalizeIntegrationToolKey(operationKey)}`;
                               const selected =
-                                permissions[agent.id]?.includes(toolKey) ?? false;
+                                permissions[agent.id]?.includes(toolKey) ??
+                                false;
                               return (
                                 <label
                                   key={toolKey}
@@ -1135,6 +1411,13 @@ function CustomHttpEditor({
         </div>
 
         <DialogFooter className="m-0 rounded-none px-5">
+          {integration ? (
+            <DeleteIntegrationButton
+              integration={integration}
+              agents={agents}
+              onDeleted={onDeleted}
+            />
+          ) : null}
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
@@ -1144,7 +1427,12 @@ function CustomHttpEditor({
           </Button>
           <Button
             onClick={save}
-            disabled={saving || !name.trim() || !baseUrl.trim() || !operations.some((operation) => operation.key && operation.path)}
+            disabled={
+              saving ||
+              !name.trim() ||
+              !baseUrl.trim() ||
+              !operations.some((operation) => operation.key && operation.path)
+            }
           >
             {saving ? <LoaderCircle className="animate-spin" /> : <PlugZap />}
             {saving ? "Saving and testing…" : "Save"}
@@ -1161,18 +1449,20 @@ function CustomMcpEditor({
   agents,
   onOpenChange,
   onSaved,
+  onDeleted,
 }: {
   open: boolean;
   integration?: Integration;
   agents: Agent[];
   onOpenChange: (open: boolean) => void;
   onSaved: (integration: Integration) => void;
+  onDeleted: (id: string) => void;
 }) {
   const [name, setName] = useState(integration?.name ?? "");
   const [baseUrl, setBaseUrl] = useState(integration?.baseUrl ?? "");
-  const [authType, setAuthType] = useState<"none" | "bearer" | "api_key_header">(
-    (integration?.authType as "none" | "bearer" | "api_key_header") ?? "none",
-  );
+  const [authType, setAuthType] = useState<
+    "none" | "bearer" | "api_key_header"
+  >((integration?.authType as "none" | "bearer" | "api_key_header") ?? "none");
   const [authHeaderName, setAuthHeaderName] = useState(
     integration?.authHeaderName ?? "X-API-Key",
   );
@@ -1181,12 +1471,15 @@ function CustomMcpEditor({
     integration?.permissions ?? {},
   );
   const [saving, setSaving] = useState(false);
+  const [enabled, setEnabled] = useState(integration?.enabled ?? true);
 
   const slug = useMemo(
     () =>
       normalizeIntegrationSlug(
         integration?.slug ??
-          normalizeIntegrationSlug(name.trim() || integration?.name?.trim() || "integration"),
+          normalizeIntegrationSlug(
+            name.trim() || integration?.name?.trim() || "integration",
+          ),
       ),
     [integration?.slug, integration?.name, name],
   );
@@ -1201,8 +1494,8 @@ function CustomMcpEditor({
   }
 
   function setAllTools(agentId: string, enabled: boolean) {
-    const availableTools = (integration?.mcpTools ?? []).map((tool) =>
-      normalizeToolPermission(tool.name).full,
+    const availableTools = (integration?.mcpTools ?? []).map(
+      (tool) => normalizeToolPermission(tool.name).full,
     );
     setPermissions((current) => ({
       ...current,
@@ -1230,7 +1523,9 @@ function CustomMcpEditor({
     setSaving(true);
     try {
       const next = await api<Integration>(
-        integration ? `/api/integrations/${integration.id}` : "/api/integrations",
+        integration
+          ? `/api/integrations/${integration.id}`
+          : "/api/integrations",
         {
           method: integration ? "PATCH" : "POST",
           body: JSON.stringify({
@@ -1240,6 +1535,7 @@ function CustomMcpEditor({
             authType,
             authHeaderName: authHeaderName || undefined,
             secret: secret || undefined,
+            enabled,
             permissions,
           }),
         },
@@ -1278,7 +1574,10 @@ function CustomMcpEditor({
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-2 text-sm font-semibold">
                 Name
-                <Input value={name} onChange={(event) => setName(event.target.value)} />
+                <Input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
               </label>
               <label className="grid gap-2 text-sm font-semibold">
                 Base URL
@@ -1304,7 +1603,9 @@ function CustomMcpEditor({
                   <SelectContent>
                     <SelectItem value="none">No auth</SelectItem>
                     <SelectItem value="bearer">Bearer token</SelectItem>
-                    <SelectItem value="api_key_header">API key header</SelectItem>
+                    <SelectItem value="api_key_header">
+                      API key header
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </label>
@@ -1337,6 +1638,12 @@ function CustomMcpEditor({
                 />
               </label>
             </div>
+            {integration ? (
+              <label className="mt-4 flex items-center justify-between rounded-lg border p-3 text-sm font-semibold">
+                Integration enabled
+                <Switch checked={enabled} onCheckedChange={setEnabled} />
+              </label>
+            ) : null}
           </section>
           <section className="py-5">
             <div className="mb-3 flex items-start justify-between">
@@ -1348,30 +1655,36 @@ function CustomMcpEditor({
                 </p>
               </div>
               <Badge variant="outline">
-                {Object.values(permissions).filter((tools) => tools.length > 0).length}{" "}
+                {
+                  Object.values(permissions).filter((tools) => tools.length > 0)
+                    .length
+                }{" "}
                 enabled
               </Badge>
             </div>
-                    <div className="mt-4 divide-y rounded-xl border">
-                      {agents.length ? (
-                        agents.map((agent) => {
-                          const availableTools = integration?.mcpTools ?? [];
-                          const selected = permissions[agent.id] ?? [];
-                          const selectedSet = new Set(selected);
-                          const toolEntries = availableTools.map((tool) => {
-                            const short = normalizeToolPermission(tool.name).short;
-                            const full = normalizeToolPermission(tool.name).full;
-                            return {
-                              tool,
-                              short,
-                              full,
-                            };
-                          });
-                          const allEnabled = toolEntries.every(({ short, full }) =>
-                            selectedSet.has(short) || selectedSet.has(full),
-                          );
-                          return (
-                            <div key={agent.id} className="p-4">
+            <div className="mt-4 divide-y rounded-xl border">
+              {agents.length ? (
+                agents.map((agent) => {
+                  const availableTools = integration?.mcpTools ?? [];
+                  const selected = permissions[agent.id] ?? [];
+                  const selectedSet = new Set(selected);
+                  const toolEntries = availableTools.map((tool) => {
+                    const short = normalizeToolPermission(tool.name).short;
+                    const full = normalizeToolPermission(tool.name).full;
+                    return {
+                      tool,
+                      short,
+                      full,
+                    };
+                  });
+                  const allEnabled =
+                    toolEntries.length > 0 &&
+                    toolEntries.every(
+                      ({ short, full }) =>
+                        selectedSet.has(short) || selectedSet.has(full),
+                    );
+                  return (
+                    <div key={agent.id} className="p-4">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-semibold">{agent.name}</p>
@@ -1383,35 +1696,37 @@ function CustomMcpEditor({
                           All tools
                           <Switch
                             checked={allEnabled}
-                            onCheckedChange={(checked) => setAllTools(agent.id, checked)}
+                            onCheckedChange={(checked) =>
+                              setAllTools(agent.id, checked)
+                            }
                             aria-label={`Give ${agent.name} all custom MCP tools`}
                           />
                         </label>
                       </div>
-                              <div className="mt-3 grid gap-2">
-                                {toolEntries.length ? (
-                                  toolEntries.map(({ tool, short, full }) => {
-                                    const isChecked =
-                                      selectedSet.has(short) || selectedSet.has(full);
-                                    return (
-                                      <label
-                                        key={tool.name}
-                                        className="flex items-start justify-between gap-3 rounded-lg bg-muted/50 p-3"
-                                      >
-                                        <span className="text-sm">{tool.name}</span>
-                                        <Switch
-                                          checked={isChecked}
-                                          onCheckedChange={(checked) =>
-                                            setPermission(agent.id, short, checked)
-                                          }
-                                          aria-label={`${tool.name} for ${agent.name}`}
-                                        />
-                                      </label>
-                                    );
-                                  })
-                                ) : (
-                                  <div className="p-3 text-sm text-muted-foreground">
-                                    Permissions will be available after save.
+                      <div className="mt-3 grid gap-2">
+                        {toolEntries.length ? (
+                          toolEntries.map(({ tool, short, full }) => {
+                            const isChecked =
+                              selectedSet.has(short) || selectedSet.has(full);
+                            return (
+                              <label
+                                key={tool.name}
+                                className="flex items-start justify-between gap-3 rounded-lg bg-muted/50 p-3"
+                              >
+                                <span className="text-sm">{tool.name}</span>
+                                <Switch
+                                  checked={isChecked}
+                                  onCheckedChange={(checked) =>
+                                    setPermission(agent.id, short, checked)
+                                  }
+                                  aria-label={`${tool.name} for ${agent.name}`}
+                                />
+                              </label>
+                            );
+                          })
+                        ) : (
+                          <div className="p-3 text-sm text-muted-foreground">
+                            Permissions will be available after save.
                           </div>
                         )}
                       </div>
@@ -1427,6 +1742,13 @@ function CustomMcpEditor({
           </section>
         </div>
         <DialogFooter className="m-0 rounded-none px-5">
+          {integration ? (
+            <DeleteIntegrationButton
+              integration={integration}
+              agents={agents}
+              onDeleted={onDeleted}
+            />
+          ) : null}
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
@@ -1447,6 +1769,63 @@ function CustomMcpEditor({
   );
 }
 
+function DeleteIntegrationButton({
+  integration,
+  agents,
+  onDeleted,
+}: {
+  integration: Integration;
+  agents: Agent[];
+  onDeleted: (id: string) => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const assignedAgents = agents.filter(
+    (agent) => (integration.permissions[agent.id] ?? []).length > 0,
+  );
+
+  async function remove() {
+    setDeleting(true);
+    try {
+      await api<{ id: string }>(`/api/integrations/${integration.id}`, {
+        method: "DELETE",
+      });
+      onDeleted(integration.id);
+      toast.success(`${integration.name} deleted`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not delete integration",
+      );
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="destructive" disabled={deleting} className="mr-auto">
+          <Trash2 /> Delete
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {integration.name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {assignedAgents.length
+              ? `Access will be removed from ${assignedAgents.map((agent) => agent.name).join(", ")}. Historical runs keep their audit metadata.`
+              : "Historical runs keep their audit metadata. This cannot be undone."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={remove} disabled={deleting}>
+            {deleting ? "Deleting…" : "Delete integration"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function StatusBadge({ status }: { status: Integration["status"] }) {
   if (status === "connected") {
     return (
@@ -1461,6 +1840,9 @@ function StatusBadge({ status }: { status: Integration["status"] }) {
         <X /> Failed
       </Badge>
     );
+  }
+  if (status === "disabled") {
+    return <Badge variant="secondary">Disabled</Badge>;
   }
   return (
     <Badge variant="outline">

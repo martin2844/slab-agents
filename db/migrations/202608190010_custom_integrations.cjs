@@ -28,7 +28,12 @@ exports.up = async function up(knex) {
   }
 
   // Backfill integration slugs.
-  const rows = await knex("integrations").select("id", "name", "provider", "slug");
+  const rows = await knex("integrations").select(
+    "id",
+    "name",
+    "provider",
+    "slug",
+  );
   for (const row of rows) {
     if (row.slug) continue;
     const base = normalizedSlug(row.name || row.provider || "integration");
@@ -43,7 +48,12 @@ exports.up = async function up(knex) {
 
   // Drop legacy uniqueness on provider so multiple custom integrations can coexist.
   const indexListRaw = await knex.raw("PRAGMA index_list(integrations)");
-  const indexRows = Array.isArray(indexListRaw) ? indexListRaw[0] : indexListRaw;
+  const indexRows =
+    Array.isArray(indexListRaw) &&
+    indexListRaw.length === 1 &&
+    Array.isArray(indexListRaw[0])
+      ? indexListRaw[0]
+      : indexListRaw;
   const indexes = (Array.isArray(indexRows) ? indexRows : []).filter(
     (index) => index && (index.unique === 1 || index[2] === 1),
   );
@@ -63,10 +73,21 @@ exports.up = async function up(knex) {
     }
   }
 
-  const existingIndexes = Array.isArray(indexRows) ? indexRows : [];
+  const refreshedIndexListRaw = await knex.raw(
+    "PRAGMA index_list(integrations)",
+  );
+  const existingIndexes =
+    Array.isArray(refreshedIndexListRaw) &&
+    refreshedIndexListRaw.length === 1 &&
+    Array.isArray(refreshedIndexListRaw[0])
+      ? refreshedIndexListRaw[0]
+      : Array.isArray(refreshedIndexListRaw)
+        ? refreshedIndexListRaw
+        : [];
   const hasIndex = (name) =>
     existingIndexes.some(
-      (index) => String(index.name || "").toLowerCase() === String(name).toLowerCase(),
+      (index) =>
+        String(index.name || "").toLowerCase() === String(name).toLowerCase(),
     );
 
   if (!hasIndex("idx_integrations_slug")) {
@@ -99,6 +120,7 @@ exports.up = async function up(knex) {
       table.text("response_path");
       table.integer("max_response_bytes");
       table.integer("max_items");
+      table.integer("timeout_ms");
       table.integer("enabled").notNullable().defaultTo(1);
       table.text("created_at").notNullable();
       table.text("updated_at").notNullable();

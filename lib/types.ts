@@ -226,6 +226,7 @@ export type SetupStatus = {
 
 export type AgentDetailData = {
   agent: Agent;
+  integrations: Integration[];
   quickActions: AgentQuickAction[];
   threads: Thread[];
   automations: Automation[];
@@ -281,16 +282,10 @@ export type WorkspaceSettings = {
   runnerUrl: string;
 };
 
-export type IntegrationProvider =
-  | "posthog"
-  | "custom_http"
-  | "custom_mcp";
+export type IntegrationProvider = "posthog" | "custom_http" | "custom_mcp";
 // Keep the historic values plus explicit disabled state for configured-but-paused integrations.
 export type IntegrationStatus =
-  | "connected"
-  | "failed"
-  | "not_tested"
-  | "disabled";
+  "connected" | "failed" | "not_tested" | "disabled";
 export type IntegrationAuthType = "none" | "bearer" | "api_key_header";
 
 export type IntegrationCatalogItem = {

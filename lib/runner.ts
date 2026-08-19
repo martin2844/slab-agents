@@ -156,6 +156,7 @@ async function* streamRunnerEvents(runId: string) {
 
 export async function startRunnerRun(input: {
   runId: string;
+  controlPlaneRunId?: string;
   agent: Agent;
   thread: Thread;
   messages: Message[];
@@ -171,7 +172,11 @@ export async function startRunnerRun(input: {
   const docsApiKey = getSetting("docs_api_key");
   const posthogMcp = getAgentPostHogMcp(input.agent.id);
   const emailMcp = getAgentEmailMcp(input.agent.id);
-  const customMcpServers = getAgentCustomIntegrationsMcp(input.agent.id);
+  const customIntegrations = getAgentCustomIntegrationsMcp(
+    input.agent.id,
+    input.controlPlaneRunId ?? input.runId,
+  );
+  const customMcpServers = customIntegrations.map(({ server }) => server);
   const workInstructions = workCoordinationContext();
   const integrationInstructions = [
     ...(posthogMcp ? [POSTHOG_AGENT_PROMPT] : []),
@@ -320,6 +325,7 @@ export async function startRunnerRun(input: {
       semantics: "snapshot_at_run_start",
       serverCount: mcpServers.length,
       servers: mcpServers.map((server) => server.name),
+      customIntegrations: customIntegrations.map(({ snapshot }) => snapshot),
       changesApplyTo: "next_run",
     },
   };

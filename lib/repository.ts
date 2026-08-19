@@ -153,6 +153,17 @@ export type IntegrationRecord = {
   updatedAt: string;
 };
 
+export type RunIntegrationCapabilityRecord = {
+  runId: string;
+  integrationId: string;
+  agentId: string;
+  integrationVersion: number;
+  tokenHash: string;
+  allowedTools: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 function mapIntegrationRecord(row: Row): IntegrationRecord {
   const config = json(row.config_json, {
     datacenter: "us",
@@ -161,10 +172,11 @@ function mapIntegrationRecord(row: Row): IntegrationRecord {
     id: String(row.id),
     provider: row.provider as IntegrationProvider,
     name: String(row.name),
-    slug: row.slug ? String(row.slug) : `integration-${String(row.id).slice(0, 8)}`,
+    slug: row.slug
+      ? String(row.slug)
+      : `integration-${String(row.id).slice(0, 8)}`,
     config,
-    authType: (config.authType ??
-      ("none" as IntegrationAuthType)),
+    authType: config.authType ?? ("none" as IntegrationAuthType),
     authHeaderName: config.authHeaderName ?? null,
     enabled: bool(row.enabled),
     version: Number(row.version ?? 1),
@@ -177,6 +189,18 @@ function mapIntegrationRecord(row: Row): IntegrationRecord {
   };
 }
 
+function mapRunIntegrationCapability(row: Row): RunIntegrationCapabilityRecord {
+  return {
+    runId: String(row.run_id),
+    integrationId: String(row.integration_id),
+    agentId: String(row.agent_id),
+    integrationVersion: Number(row.integration_version),
+    tokenHash: String(row.token_hash),
+    allowedTools: json(row.allowed_tools_json, []),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
 
 function mapIntegration(
   record: IntegrationRecord,
@@ -198,7 +222,7 @@ function mapIntegration(
               readOnly: true,
             }))
         : mcpTools.map((tool) => ({
-            key: `${normalizedSlug}__${tool.name}`,
+            key: `${normalizedSlug}__${normalizeToolKey(tool.name)}`,
             name: tool.name,
             description: tool.description ?? "Custom MCP tool",
             readOnly: tool.readOnlyHint,
@@ -217,8 +241,9 @@ function mapIntegration(
     authHeaderName: record.authHeaderName,
     enabled: record.enabled,
     version: record.version,
-    hasSecret: Boolean(record.credentialsCiphertext),
-    hasApiKey: Boolean(record.credentialsCiphertext),
+    hasSecret: record.provider !== "posthog" && record.authType !== "none",
+    hasApiKey:
+      record.provider === "posthog" && Boolean(record.credentialsCiphertext),
     status: record.status,
     operations: record.provider === "custom_http" ? operations : undefined,
     mcpTools: record.provider === "custom_mcp" ? mcpTools : undefined,
@@ -240,6 +265,15 @@ function normalizeSlug(value: string) {
     .slice(0, 48);
 }
 
+function normalizeToolKey(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 64);
+}
+
 function mapCustomHttpOperation(row: Row): IntegrationHttpOperation {
   return {
     id: String(row.id),
@@ -251,7 +285,9 @@ function mapCustomHttpOperation(row: Row): IntegrationHttpOperation {
     path: String(row.path),
     parameters: json(row.parameters_json, []),
     responsePath: row.response_path ? String(row.response_path) : undefined,
-    maxResponseBytes: row.max_response_bytes ? Number(row.max_response_bytes) : null,
+    maxResponseBytes: row.max_response_bytes
+      ? Number(row.max_response_bytes)
+      : null,
     maxItems: row.max_items ? Number(row.max_items) : null,
     timeoutMs: row.timeout_ms ? Number(row.timeout_ms) : null,
     enabled: bool(row.enabled),
@@ -264,12 +300,16 @@ function mapCustomMcpTool(row: Row): IntegrationMcpTool {
   return {
     name: String(row.name),
     description: row.description ? String(row.description) : null,
-    inputSchema: json(row.input_schema_json, {}) as IntegrationMcpTool["inputSchema"],
+    inputSchema: json(
+      row.input_schema_json,
+      {},
+    ) as IntegrationMcpTool["inputSchema"],
     readOnlyHint: bool(row.read_only_hint),
     destructiveHint: bool(row.destructive_hint),
     idempotentHint:
       row.idempotent_hint != null ? bool(row.idempotent_hint) : null,
-    openWorldHint: row.open_world_hint != null ? bool(row.open_world_hint) : null,
+    openWorldHint:
+      row.open_world_hint != null ? bool(row.open_world_hint) : null,
   };
 }
 
@@ -447,14 +487,15 @@ export const repository = {
     ).map(mapIntegrationRecord);
   },
   getIntegrationRecord(id: string) {
-    const row = db
-      .prepare("SELECT * FROM integrations WHERE id=?")
-      .get(id) as Row | undefined;
+    const row = db.prepare("SELECT * FROM integrations WHERE id=?").get(id) as
+      Row | undefined;
     return row ? mapIntegrationRecord(row) : null;
   },
   getIntegrationRecordByProvider(provider: IntegrationProvider) {
     const rows = db
-      .prepare("SELECT * FROM integrations WHERE provider=? ORDER BY created_at")
+      .prepare(
+        "SELECT * FROM integrations WHERE provider=? ORDER BY created_at",
+      )
       .all(provider) as Row[];
     if (!rows.length) return null;
     if (rows.length === 1 || provider === "posthog") {
@@ -472,6 +513,26 @@ export const repository = {
       (result[row.agent_id] ??= []).push(row.tool_key);
       return result;
     }, {});
+  },
+  setAgentIntegrationTools(
+    integrationId: string,
+    agentId: string,
+    toolKeys: string[],
+  ) {
+    const timestamp = now();
+    const transaction = db.transaction(() => {
+      db.prepare(
+        "DELETE FROM agent_integration_tools WHERE integration_id=? AND agent_id=?",
+      ).run(integrationId, agentId);
+      const insert = db.prepare(
+        "INSERT INTO agent_integration_tools (agent_id,integration_id,tool_key,created_at) VALUES (?,?,?,?)",
+      );
+      for (const toolKey of [...new Set(toolKeys)]) {
+        insert.run(agentId, integrationId, toolKey, timestamp);
+      }
+    });
+    transaction();
+    return this.getIntegration(integrationId);
   },
   listCustomHttpOperations(integrationId: string) {
     return (
@@ -508,7 +569,9 @@ export const repository = {
   getIntegration(idOrProvider: string) {
     const record =
       this.getIntegrationRecord(idOrProvider) ??
-      this.getIntegrationRecordByProvider(idOrProvider as IntegrationProvider) ??
+      this.getIntegrationRecordByProvider(
+        idOrProvider as IntegrationProvider,
+      ) ??
       null;
     return record
       ? mapIntegration(
@@ -540,7 +603,9 @@ export const repository = {
   }) {
     const current = input.id
       ? this.getIntegrationRecord(input.id)
-      : this.getIntegrationRecordByProvider(input.provider);
+      : input.provider === "posthog"
+        ? this.getIntegrationRecordByProvider(input.provider)
+        : null;
     const id = current?.id ?? input.id ?? randomUUID();
     const timestamp = now();
     const enabled = input.enabled ?? true;
@@ -572,7 +637,7 @@ export const repository = {
         id,
         input.provider,
         input.name,
-        normalizeSlug(input.name),
+        current?.slug ?? normalizeSlug(input.name),
         JSON.stringify(input.config),
         input.credentialsCiphertext,
         Number(enabled),
@@ -601,7 +666,7 @@ export const repository = {
           "DELETE FROM custom_http_operations WHERE integration_id=?",
         ).run(saved.id);
         const insertOperation = db.prepare(
-          "INSERT INTO custom_http_operations (id,integration_id,key,name,description,method,path,parameters_json,response_path,max_response_bytes,max_items,enabled,timeout_ms,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          "INSERT INTO custom_http_operations (id,integration_id,key,name,description,method,path,parameters_json,response_path,max_response_bytes,max_items,enabled,timeout_ms,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         );
         for (const operation of operations) {
           insertOperation.run(
@@ -668,6 +733,55 @@ export const repository = {
     if (!existing) return false;
     db.prepare("DELETE FROM integrations WHERE id=?").run(id);
     return true;
+  },
+  getRunIntegrationCapability(runId: string, integrationId: string) {
+    const row = db
+      .prepare(
+        "SELECT * FROM run_integration_capabilities WHERE run_id=? AND integration_id=?",
+      )
+      .get(runId, integrationId) as Row | undefined;
+    return row ? mapRunIntegrationCapability(row) : null;
+  },
+  listRunIntegrationCapabilities(runId: string) {
+    return (
+      db
+        .prepare(
+          "SELECT * FROM run_integration_capabilities WHERE run_id=? ORDER BY integration_id",
+        )
+        .all(runId) as Row[]
+    ).map(mapRunIntegrationCapability);
+  },
+  saveRunIntegrationCapability(input: {
+    runId: string;
+    integrationId: string;
+    agentId: string;
+    integrationVersion: number;
+    tokenHash: string;
+    allowedTools: string[];
+  }) {
+    const timestamp = now();
+    const current = this.getRunIntegrationCapability(
+      input.runId,
+      input.integrationId,
+    );
+    db.prepare(
+      `INSERT INTO run_integration_capabilities
+        (run_id,integration_id,agent_id,integration_version,token_hash,allowed_tools_json,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?)
+       ON CONFLICT(run_id,integration_id) DO UPDATE SET
+        token_hash=excluded.token_hash,
+        updated_at=excluded.updated_at`,
+    ).run(
+      input.runId,
+      input.integrationId,
+      input.agentId,
+      input.integrationVersion,
+      input.tokenHash,
+      JSON.stringify([...new Set(input.allowedTools)]),
+      current?.createdAt ?? timestamp,
+      timestamp,
+    );
+    return this.getRunIntegrationCapability(input.runId, input.integrationId)!;
   },
 
   listAgents() {

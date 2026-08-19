@@ -93,6 +93,7 @@ export async function PATCH(
         datacenter: input.datacenter,
         apiKey: input.apiKey,
         permissions: input.permissions,
+        enabled: input.enabled,
       });
     } else if (current.provider === "custom_http") {
       const input = customHttpSchema.parse(await request.json());
@@ -104,6 +105,7 @@ export async function PATCH(
         authHeaderName: input.authHeaderName,
         timeoutMs: input.timeoutMs,
         secret: input.secret,
+        enabled: input.enabled,
         permissions: input.permissions,
         operations: input.operations,
       });
@@ -117,12 +119,36 @@ export async function PATCH(
         authHeaderName: input.authHeaderName,
         timeoutMs: input.timeoutMs,
         secret: input.secret,
+        enabled: input.enabled,
         permissions: input.permissions,
       });
     } else {
       throw new Error("Integration type mismatch.");
     }
     return Response.json({ data });
+  } catch (error) {
+    return apiError(error);
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const current = repository.getIntegration(id);
+    if (!current) {
+      return Response.json(
+        { error: "Integration not found." },
+        { status: 404 },
+      );
+    }
+    const agentIds = Object.entries(current.permissions)
+      .filter(([, tools]) => tools.length > 0)
+      .map(([agentId]) => agentId);
+    repository.deleteIntegration(id);
+    return Response.json({ data: { id, agentIds } });
   } catch (error) {
     return apiError(error);
   }

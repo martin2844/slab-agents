@@ -12,15 +12,17 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const agentId = new URL(request.url).searchParams.get("agent") ?? "";
+  const requestUrl = new URL(request.url);
   const integration = repository.getIntegrationRecord(id);
   if (!integration) {
     return new Response("Integration not found", { status: 404 });
   }
 
   if (integration.provider !== "posthog") {
-    return routeCustomMcpRequest(request, id, agentId);
+    const runId = requestUrl.searchParams.get("run") ?? "";
+    return routeCustomMcpRequest(request, id, runId);
   }
+  const agentId = requestUrl.searchParams.get("agent") ?? "";
   return handlePostHogMcpRequest(request, id, agentId);
 }
 

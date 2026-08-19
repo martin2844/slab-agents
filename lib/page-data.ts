@@ -82,6 +82,7 @@ export function getAgentDetailPageData(id: string): AgentDetailData | null {
   if (!agent) return null;
   return {
     agent,
+    integrations: repository.listIntegrations(),
     quickActions: repository.listAgentQuickActions(agent.id),
     threads: repository.listThreads(agent.id),
     automations: repository

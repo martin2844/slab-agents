@@ -172,6 +172,7 @@ export async function* executeRun(input: { runId: string }) {
       for (let attempt = 0; attempt < 2 && !completed; attempt += 1) {
         const runner = await startRunnerRun({
           runId: runnerRunId,
+          controlPlaneRunId: run.id,
           agent,
           thread: { ...thread, runtimeThreadId },
           messages,

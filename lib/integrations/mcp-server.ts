@@ -11,21 +11,64 @@ import {
   queryPostHogAnalytics,
 } from "@/lib/integrations/posthog";
 import {
-  getCustomIntegrationRuntimeAccess,
+  getRunCustomIntegrationRuntimeAccess,
   getPostHogRuntimeAccess,
 } from "@/lib/integrations/service";
 import type { IntegrationHttpOperation } from "@/lib/types";
 
-function sanitizeJsonResult(value: unknown) {
-  const serialized = JSON.stringify(value, null, 2);
+const SENSITIVE_KEY =
+  /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[-_]?key|access[-_]?token|refresh[-_]?token|secret|password)$/i;
+const connectorCalls = new Map<string, number>();
+const MAX_CONCURRENT_CONNECTOR_CALLS = 4;
+
+function redactText(value: string, secrets: string[]) {
+  let redacted = value;
+  for (const secret of secrets.filter(Boolean)) {
+    redacted = redacted.split(secret).join("[REDACTED]");
+  }
+  return redacted.replace(
+    /("(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[-_]?key|access[-_]?token|refresh[-_]?token|secret|password)"\s*:\s*")[^"]*/gi,
+    "$1[REDACTED]",
+  );
+}
+
+function sanitizeConnectorValue(
+  value: unknown,
+  secrets: string[],
+  seen = new WeakSet<object>(),
+): unknown {
+  if (typeof value === "string") return redactText(value, secrets);
+  if (!value || typeof value !== "object") return value;
+  if (seen.has(value)) return "[Circular]";
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeConnectorValue(item, secrets, seen));
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+      key,
+      SENSITIVE_KEY.test(key)
+        ? "[REDACTED]"
+        : sanitizeConnectorValue(item, secrets, seen),
+    ]),
+  );
+}
+
+function sanitizeJsonResult(value: unknown, secrets: string[] = []) {
+  const safeValue = sanitizeConnectorValue(value, secrets);
+  const serialized = JSON.stringify(safeValue, null, 2) ?? "null";
   if (serialized.length <= 100_000) {
     return serialized;
   }
   return `${serialized.slice(0, 100_000)}\n\n[Output truncated. Use a narrower query.]`;
 }
 
-function toolResult(value: unknown) {
-  return { content: [{ type: "text" as const, text: sanitizeJsonResult(value) }] };
+function toolResult(value: unknown, secrets: string[] = []) {
+  return {
+    content: [
+      { type: "text" as const, text: sanitizeJsonResult(value, secrets) },
+    ],
+  };
 }
 
 function unauthorizedResponse() {
@@ -51,7 +94,9 @@ function readString(value: unknown) {
   return typeof value === "string" ? value : undefined;
 }
 
-function getSchemaType(type: IntegrationHttpOperation["parameters"][number]["type"]) {
+function getSchemaType(
+  type: IntegrationHttpOperation["parameters"][number]["type"],
+) {
   switch (type) {
     case "number":
       return z.number().finite();
@@ -65,10 +110,7 @@ function getSchemaType(type: IntegrationHttpOperation["parameters"][number]["typ
   }
 }
 
-function applyResponsePath(
-  value: unknown,
-  responsePath?: string,
-): unknown {
+function applyResponsePath(value: unknown, responsePath?: string): unknown {
   if (!responsePath) return value;
   const parts = responsePath
     .split(".")
@@ -124,20 +166,76 @@ function buildInputSchemaFromJsonSchema(raw: unknown) {
           shape[key] = valueSchema.optional();
         }
       }
-      return z.object(shape).passthrough().optional();
+      return shape;
     }
   }
-  return z.record(z.string(), z.unknown());
+  return {};
 }
 
-function sanitizeMcpError(message: string, status?: number) {
-  return {
-    error: {
-      code: "CONNECTOR_HTTP_ERROR",
-      message: message || "Request failed.",
-      ...(status ? { status } : {}),
-    },
-  };
+function connectorError(code: string, message: string, status?: number) {
+  return new Error(
+    JSON.stringify({
+      error: { code, message, ...(status ? { status } : {}) },
+    }),
+  );
+}
+
+async function withConnectorSlot<T>(
+  integrationId: string,
+  task: () => Promise<T>,
+) {
+  const active = connectorCalls.get(integrationId) ?? 0;
+  if (active >= MAX_CONCURRENT_CONNECTOR_CALLS) {
+    throw connectorError(
+      "CONNECTOR_BUSY",
+      "The integration has reached its concurrent request limit.",
+    );
+  }
+  connectorCalls.set(integrationId, active + 1);
+  try {
+    return await task();
+  } finally {
+    const remaining = (connectorCalls.get(integrationId) ?? 1) - 1;
+    if (remaining > 0) connectorCalls.set(integrationId, remaining);
+    else connectorCalls.delete(integrationId);
+  }
+}
+
+async function readLimitedBody(response: Response, maxBytes: number) {
+  const contentLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw connectorError(
+      "CONNECTOR_RESPONSE_TOO_LARGE",
+      `Response exceeded limit (${maxBytes} bytes).`,
+      response.status,
+    );
+  }
+
+  if (!response.body) return new Uint8Array();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw connectorError(
+        "CONNECTOR_RESPONSE_TOO_LARGE",
+        `Response exceeded limit (${maxBytes} bytes).`,
+        response.status,
+      );
+    }
+    chunks.push(value);
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
 }
 
 const DEFAULT_HTTP_TIMEOUT_MS = 15_000;
@@ -148,6 +246,7 @@ async function executeCustomHttpOperation(
   baseUrl: string,
   headers: Record<string, string>,
   timeoutMs: number,
+  secrets: string[],
 ) {
   const resolvedPath = operation.path.replace(/\{([^}]+)\}/g, (_, key) => {
     const value = args[key];
@@ -173,47 +272,52 @@ async function executeCustomHttpOperation(
   }
 
   const timeout = AbortSignal.timeout(Math.max(1_000, timeoutMs));
-  const response = await fetch(url, {
-    method: operation.method,
-    redirect: "manual",
-    headers,
-    signal: timeout,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: operation.method,
+      redirect: "manual",
+      headers,
+      signal: timeout,
+    });
+  } catch (error) {
+    if (
+      error instanceof DOMException &&
+      (error.name === "TimeoutError" || error.name === "AbortError")
+    ) {
+      throw connectorError(
+        "CONNECTOR_TIMEOUT",
+        "The connector request timed out.",
+      );
+    }
+    throw connectorError(
+      "CONNECTOR_HTTP_ERROR",
+      "The connector request failed.",
+    );
+  }
 
   if (response.status >= 300 && response.status < 400) {
-    throw new Error(
-      JSON.stringify(
-        sanitizeMcpError(
-          "Redirect received and blocked for safety.",
-          response.status,
-        ),
-      ),
+    throw connectorError(
+      "CONNECTOR_HTTP_ERROR",
+      "Redirect received and blocked for safety.",
+      response.status,
     );
   }
 
-  const bytes = await response.arrayBuffer();
-  const maxResponseBytes = operation.maxResponseBytes ?? 0;
-  if (maxResponseBytes > 0 && bytes.byteLength > maxResponseBytes) {
-    throw new Error(
-      JSON.stringify({
-        error: {
-          code: "CONNECTOR_RESPONSE_TOO_LARGE",
-          message: `Response exceeded limit (${maxResponseBytes} bytes).`,
-          status: response.status,
-        },
-      }),
-    );
-  }
+  const maxResponseBytes = operation.maxResponseBytes ?? 32 * 1024;
+  const bytes = await readLimitedBody(response, maxResponseBytes);
 
   if (!response.ok) {
-    const body = new TextDecoder().decode(bytes).slice(0, 4096);
-    throw new Error(
-      JSON.stringify(
-        sanitizeMcpError(
-          `HTTP ${response.status}: ${body || "request failed"}`,
-          response.status,
-        ),
-      ),
+    const body = redactText(
+      new TextDecoder().decode(bytes).slice(0, 4096),
+      secrets,
+    );
+    throw connectorError(
+      response.status === 401 || response.status === 403
+        ? "CONNECTOR_AUTH_FAILED"
+        : "CONNECTOR_HTTP_ERROR",
+      `HTTP ${response.status}: ${body || "request failed"}`,
+      response.status,
     );
   }
 
@@ -223,14 +327,30 @@ async function executeCustomHttpOperation(
 
   const rawBody = new TextDecoder().decode(bytes);
   const mime = response.headers.get("content-type") || "";
-  const parsed =
-    mime.toLowerCase().includes("application/json")
+  let parsed: unknown;
+  try {
+    parsed = mime.toLowerCase().includes("application/json")
       ? rawBody
         ? JSON.parse(rawBody)
         : null
       : rawBody || "";
+  } catch {
+    throw connectorError(
+      "CONNECTOR_INVALID_RESPONSE",
+      "The connector returned invalid JSON.",
+      response.status,
+    );
+  }
 
-  const shaped = applyResponsePath(parsed, operation.responsePath);
+  const safeParsed = sanitizeConnectorValue(parsed, secrets);
+  const shaped = applyResponsePath(safeParsed, operation.responsePath);
+  if (operation.responsePath && shaped === undefined) {
+    throw connectorError(
+      "CONNECTOR_INVALID_RESPONSE",
+      `Response path '${operation.responsePath}' was not found.`,
+      response.status,
+    );
+  }
   const trimmed = limitItems(shaped, operation.maxItems);
   return {
     data: trimmed,
@@ -240,39 +360,23 @@ async function executeCustomHttpOperation(
 
 function buildCustomHttpSchema(operation: IntegrationHttpOperation) {
   const shape: Record<string, z.ZodTypeAny> = {};
-  const required: string[] = [];
-  const requiredCheck: Array<{ name: string; location: "path" | "query" }> = [];
 
   for (const parameter of operation.parameters) {
     let schema = getSchemaType(parameter.type);
+    if (parameter.location === "path" && parameter.type === "string") {
+      schema = z.string().trim().min(1);
+    }
     if (parameter.description) {
       schema = schema.describe(parameter.description);
     }
     if (parameter.required) {
       shape[parameter.name] = schema;
-      requiredCheck.push({ name: parameter.name, location: parameter.location });
-      required.push(parameter.name);
     } else {
       shape[parameter.name] = schema.optional();
     }
   }
 
-  return z
-    .object(shape)
-    .strict()
-    .refine(
-      (args) =>
-        requiredCheck.every((parameter) => {
-          if (parameter.location !== "path") return true;
-          const value = args[parameter.name];
-          return typeof value === "string" && value.trim().length > 0;
-        }),
-      {
-        path: required,
-        message: "Path parameters must be non-empty strings.",
-      },
-    )
-    .transform((input) => ({ ...input }));
+  return shape;
 }
 
 export async function handlePostHogMcpRequest(
@@ -359,14 +463,36 @@ export async function handlePostHogMcpRequest(
 export async function handleCustomHttpMcpRequest(
   request: Request,
   integrationId: string,
-  agentId: string,
+  runId: string,
 ) {
-  const access = getCustomIntegrationRuntimeAccess(integrationId, agentId);
-  const record = access?.record;
   const token = resolveToken(request);
-  if (!record || !access || !token || token !== access.credentials.mcpToken) {
+  const access = getRunCustomIntegrationRuntimeAccess(
+    integrationId,
+    runId,
+    token,
+  );
+  if (access.status === "stale") {
+    return Response.json(
+      {
+        jsonrpc: "2.0",
+        error: {
+          code: -32009,
+          message:
+            "CAPABILITY_VERSION_CHANGED: integration configuration changed after this run started.",
+          data: {
+            expectedVersion: access.integrationVersion,
+            currentVersion: access.currentVersion,
+          },
+        },
+        id: null,
+      },
+      { status: 409 },
+    );
+  }
+  if (access.status !== "ok") {
     return unauthorizedResponse();
   }
+  const record = access.record;
 
   const operations = repository.listCustomHttpOperations(record.id);
   if (!operations || operations.length === 0) {
@@ -422,14 +548,24 @@ export async function handleCustomHttpMcpRequest(
       },
       async (args) => {
         const safeArgs = (args as Record<string, unknown>) ?? {};
-        const result = await executeCustomHttpOperation(
-          operation,
-          safeArgs,
-          String(record.config.baseUrl),
-          headers,
-          operation.timeoutMs ?? record.config.timeoutMs ?? DEFAULT_HTTP_TIMEOUT_MS,
+        const result = await withConnectorSlot(record.id, () =>
+          executeCustomHttpOperation(
+            operation,
+            safeArgs,
+            String(record.config.baseUrl),
+            headers,
+            operation.timeoutMs ??
+              record.config.timeoutMs ??
+              DEFAULT_HTTP_TIMEOUT_MS,
+            access.credentials.authSecret
+              ? [access.credentials.authSecret]
+              : [],
+          ),
         );
-        return toolResult(result);
+        return toolResult(
+          result,
+          access.credentials.authSecret ? [access.credentials.authSecret] : [],
+        );
       },
     );
   }
@@ -445,14 +581,36 @@ export async function handleCustomHttpMcpRequest(
 export async function handleCustomMcpRequest(
   request: Request,
   integrationId: string,
-  agentId: string,
+  runId: string,
 ) {
-  const access = getCustomIntegrationRuntimeAccess(integrationId, agentId);
-  const record = access?.record;
   const token = resolveToken(request);
-  if (!record || !access || !token || token !== access.credentials.mcpToken) {
+  const access = getRunCustomIntegrationRuntimeAccess(
+    integrationId,
+    runId,
+    token,
+  );
+  if (access.status === "stale") {
+    return Response.json(
+      {
+        jsonrpc: "2.0",
+        error: {
+          code: -32009,
+          message:
+            "CAPABILITY_VERSION_CHANGED: integration configuration changed after this run started.",
+          data: {
+            expectedVersion: access.integrationVersion,
+            currentVersion: access.currentVersion,
+          },
+        },
+        id: null,
+      },
+      { status: 409 },
+    );
+  }
+  if (access.status !== "ok") {
     return unauthorizedResponse();
   }
+  const record = access.record;
 
   const tools = repository.listCustomMcpTools(record.id);
   if (!tools.length) {
@@ -493,7 +651,11 @@ export async function handleCustomMcpRequest(
   });
 
   for (const tool of tools) {
-    const fullName = `${record.slug}__${tool.name}`;
+    const fullName = `${record.slug}__${tool.name}`
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 128);
     if (!allowed.has(fullName) && !allowed.has(tool.name)) continue;
 
     server.registerTool(
@@ -505,15 +667,30 @@ export async function handleCustomMcpRequest(
         annotations: {
           readOnlyHint: tool.readOnlyHint,
           destructiveHint: tool.destructiveHint,
+          ...(tool.idempotentHint == null
+            ? {}
+            : { idempotentHint: tool.idempotentHint }),
+          ...(tool.openWorldHint == null
+            ? {}
+            : { openWorldHint: tool.openWorldHint }),
         },
       },
       async (arguments_: Record<string, unknown>) => {
-        const delegated = await callMcpTool(
-          remoteConnection,
-          tool.name,
-          arguments_ || {},
-        );
-        return toolResult(delegated);
+        const secrets = access.credentials.authSecret
+          ? [access.credentials.authSecret]
+          : [];
+        try {
+          const delegated = await withConnectorSlot(record.id, () =>
+            callMcpTool(remoteConnection, tool.name, arguments_ || {}),
+          );
+          return toolResult(delegated, secrets);
+        } catch (error) {
+          const message = redactText(
+            error instanceof Error ? error.message : "Remote MCP tool failed.",
+            secrets,
+          );
+          throw new Error(message);
+        }
       },
     );
   }
@@ -529,14 +706,13 @@ export async function handleCustomMcpRequest(
 export async function routeCustomMcpRequest(
   request: Request,
   integrationId: string,
-  agentId: string,
+  runId: string,
 ) {
-  const access = getCustomIntegrationRuntimeAccess(integrationId, agentId);
-  const record = access?.record;
-  if (!record) return unauthorizedResponse();
+  const integration = repository.getIntegrationRecord(integrationId);
+  if (!integration) return unauthorizedResponse();
 
-  if (record.provider === "custom_http") {
-    return handleCustomHttpMcpRequest(request, integrationId, agentId);
+  if (integration.provider === "custom_http") {
+    return handleCustomHttpMcpRequest(request, integrationId, runId);
   }
-  return handleCustomMcpRequest(request, integrationId, agentId);
+  return handleCustomMcpRequest(request, integrationId, runId);
 }

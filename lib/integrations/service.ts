@@ -1,7 +1,12 @@
 import "server-only";
 
-import { randomBytes, randomUUID } from "node:crypto";
-import { inspectMcpDefinitions } from "@/lib/mcp/client";
+import {
+  createHash,
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
+import { discoverMcpTools } from "@/lib/mcp/client";
 import { POSTHOG_TOOLS } from "@/lib/integrations/catalog";
 import {
   testPostHogConnection,
@@ -22,10 +27,6 @@ const DEFAULT_MAX_RESPONSE_BYTES = 32 * 1024;
 const OPERATION_MAX_RESPONSE_BYTES = 1024 * 1024;
 const OPERATION_MIN_RESPONSE_BYTES = 64;
 
-function randomToken() {
-  return randomBytes(24).toString("base64url");
-}
-
 type CustomCredentials = {
   mcpToken: string;
   authSecret?: string;
@@ -41,12 +42,14 @@ function randomAuthToken() {
 }
 
 function normalizeSlug(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 48) || "integration";
+  return (
+    value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 48) || "integration"
+  );
 }
 
 function normalizeToolKey(value: string) {
@@ -77,9 +80,7 @@ function clampNumber(
 }
 
 function normalizeAuthType(value: IntegrationAuthType | undefined | null) {
-  return value === "api_key_header" || value === "bearer"
-    ? value
-    : "none";
+  return value === "api_key_header" || value === "bearer" ? value : "none";
 }
 
 function normalizeAuthHeaderName(value: string | null | undefined) {
@@ -148,9 +149,22 @@ function normalizeParameterType(
   return "string";
 }
 
+function normalizeParameterName(value: string) {
+  return value
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+}
+
 function sanitizeParameters(
   parameters: Array<
-    Partial<Pick<IntegrationOperationParameter, "name" | "location" | "type" | "required" | "description">>
+    Partial<
+      Pick<
+        IntegrationOperationParameter,
+        "name" | "location" | "type" | "required" | "description"
+      >
+    >
   >,
 ): IntegrationOperationParameter[] {
   if (!Array.isArray(parameters)) return [];
@@ -158,14 +172,11 @@ function sanitizeParameters(
   const seen = new Set<string>();
 
   for (const parameter of parameters) {
-    const name = normalizeToolKey(parameter.name ?? "");
+    const name = normalizeParameterName(parameter.name ?? "");
     if (!name) continue;
     if (seen.has(name)) continue;
 
-    const location =
-      parameter.location === "path"
-        ? "path"
-        : "query";
+    const location = parameter.location === "path" ? "path" : "query";
     result.push({
       name,
       location,
@@ -201,7 +212,9 @@ function assertPathParameters(
   for (const placeholder of placeholders) {
     const parameter = lookup.get(placeholder);
     if (!parameter) {
-      throw new Error(`Missing declaration for path parameter '{${placeholder}}'.`);
+      throw new Error(
+        `Missing declaration for path parameter '{${placeholder}}'.`,
+      );
     }
     if (parameter.location !== "path") {
       throw new Error(
@@ -216,7 +229,10 @@ function assertPathParameters(
   }
 
   for (const parameter of parameters) {
-    if (parameter.location === "path" && !placeholders.includes(parameter.name)) {
+    if (
+      parameter.location === "path" &&
+      !placeholders.includes(parameter.name)
+    ) {
       throw new Error(
         `Path parameter '${parameter.name}' is not used in path '${pathTemplate}'.`,
       );
@@ -235,7 +251,9 @@ function normalizePermissionTools(
   permissions: Record<string, string[]>,
 ) {
   const available = new Set(availableToolKeys);
-  const validAgentIds = new Set(repository.listAgents().map((agent) => agent.id));
+  const validAgentIds = new Set(
+    repository.listAgents().map((agent) => agent.id),
+  );
 
   const result: Record<string, string[]> = {};
   for (const [agentId, requestedTools] of Object.entries(permissions ?? {})) {
@@ -291,18 +309,30 @@ function buildAuthHeaders(
 }
 
 function mapMcpTools(rawTools: Array<Record<string, unknown>>) {
+  const exposedNames = new Set<string>();
   return rawTools.map((tool): IntegrationMcpTool => {
+    const name = String(tool.name ?? "").trim();
+    const exposedName = normalizeToolKey(name);
+    if (!name || !exposedName) {
+      throw new Error("The MCP server returned a tool without a valid name.");
+    }
+    if (exposedNames.has(exposedName)) {
+      throw new Error(
+        `MCP tool name collision after normalization: '${name}'.`,
+      );
+    }
+    exposedNames.add(exposedName);
     const annotations = (tool.annotations ?? {}) as Record<string, unknown>;
 
     return {
-      name: String(tool.name),
-      description: typeof tool.description === "string" ? tool.description : null,
-      inputSchema:
-        (tool.inputSchema as Record<string, unknown>) ?? {
-          type: "object",
-          properties: {},
-          additionalProperties: false,
-        },
+      name,
+      description:
+        typeof tool.description === "string" ? tool.description : null,
+      inputSchema: (tool.inputSchema as Record<string, unknown>) ?? {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
       readOnlyHint: Boolean(annotations.readOnlyHint),
       destructiveHint: Boolean(annotations.destructiveHint),
       idempotentHint:
@@ -329,8 +359,9 @@ type CustomHttpOperationInput = {
       Pick<
         IntegrationOperationParameter,
         "name" | "location" | "type" | "required" | "description"
-      >>
-    >;
+      >
+    >
+  >;
   responsePath?: string;
   maxResponseBytes?: number | null;
   maxItems?: number | null;
@@ -344,7 +375,9 @@ function normalizeCustomHttpOperations(
   integrationName: string,
 ): IntegrationHttpOperation[] {
   if (!Array.isArray(operations) || operations.length === 0) {
-    throw new Error("At least one operation is required for a custom HTTP integration.");
+    throw new Error(
+      "At least one operation is required for a custom HTTP integration.",
+    );
   }
 
   const normalized: IntegrationHttpOperation[] = [];
@@ -386,9 +419,7 @@ function normalizeCustomHttpOperations(
         OPERATION_MAX_RESPONSE_BYTES,
       ),
       maxItems:
-        raw.maxItems != null
-          ? clampNumber(raw.maxItems, 50, 1, 500)
-          : null,
+        raw.maxItems != null ? clampNumber(raw.maxItems, 50, 1, 500) : null,
       timeoutMs:
         raw.timeoutMs != null
           ? clampNumber(raw.timeoutMs, defaultTimeoutMs, 1_000, 120_000)
@@ -407,6 +438,7 @@ export async function savePostHogIntegration(input: {
   apiKey?: string;
   datacenter: PostHogDatacenter;
   permissions: Record<string, string[]>;
+  enabled?: boolean;
 }): Promise<Integration> {
   const current = input.id
     ? repository.getIntegrationRecord(input.id)
@@ -441,6 +473,7 @@ export async function savePostHogIntegration(input: {
     lastError =
       error instanceof Error ? error.message : "PostHog connection failed.";
   }
+  if (input.enabled === false) status = "disabled";
 
   return repository.saveIntegration({
     id: current?.id,
@@ -455,7 +488,7 @@ export async function savePostHogIntegration(input: {
     lastTestedAt: testedAt,
     lastError,
     permissions: normalizePosthogPermissions(input.permissions),
-    enabled: input.id ? current?.enabled : true,
+    enabled: input.enabled ?? current?.enabled ?? true,
   });
 }
 
@@ -476,16 +509,14 @@ export async function saveCustomHttpIntegration(input: {
     throw new Error("Integration name is required.");
   }
 
-  const slug = normalizeSlug(name);
   const baseUrl = ensureHttpUrl(input.baseUrl);
   const authType = normalizeAuthType(input.authType);
-  const current = input.id
-    ? repository.getIntegrationRecord(input.id)
-    : null;
+  const current = input.id ? repository.getIntegrationRecord(input.id) : null;
 
   if (current && current.provider !== "custom_http") {
     throw new Error("Integration type mismatch.");
   }
+  const slug = current?.slug ?? normalizeSlug(name);
 
   const timeout = clampNumber(
     input.timeoutMs,
@@ -527,12 +558,19 @@ export async function saveCustomHttpIntegration(input: {
   try {
     const response = await fetch(baseUrl, {
       method: "HEAD",
-      headers: buildAuthHeaders(authType, input.authHeaderName ?? null, authSecret),
+      headers: buildAuthHeaders(
+        authType,
+        input.authHeaderName ?? null,
+        authSecret,
+      ),
       cache: "no-store",
       signal: AbortSignal.timeout(12_000),
+      redirect: "manual",
     });
     if (!response.ok && response.status !== 404 && response.status !== 405) {
-      throw new Error(`Custom HTTP integration test failed: ${response.status}`);
+      throw new Error(
+        `Custom HTTP integration test failed: ${response.status}`,
+      );
     }
   } catch (error) {
     status = "failed";
@@ -541,8 +579,11 @@ export async function saveCustomHttpIntegration(input: {
         ? error.message
         : "Custom HTTP integration connection failed.";
   }
+  if (input.enabled === false) status = "disabled";
 
-  const slugTools = operations.map((operation) => toFullToolName(slug, operation.key));
+  const slugTools = operations.map((operation) =>
+    toFullToolName(slug, operation.key),
+  );
   const permissions = normalizePermissionTools(
     "custom_http",
     slug,
@@ -558,14 +599,16 @@ export async function saveCustomHttpIntegration(input: {
       baseUrl,
       authType,
       authHeaderName:
-        authType === "api_key_header" ? normalizeAuthHeaderName(input.authHeaderName) : null,
+        authType === "api_key_header"
+          ? normalizeAuthHeaderName(input.authHeaderName)
+          : null,
       timeoutMs: timeout,
     },
     credentialsCiphertext: encryptLocalSecret(JSON.stringify(credentials)),
     status,
     lastTestedAt: testedAt,
     lastError,
-    enabled: input.enabled ?? true,
+    enabled: input.enabled ?? current?.enabled ?? true,
     permissions,
     operations,
     version: (current?.version ?? 0) + 1,
@@ -588,7 +631,6 @@ export async function saveCustomMcpIntegration(input: {
     throw new Error("Integration name is required.");
   }
 
-  const slug = normalizeSlug(name);
   const baseUrl = ensureHttpUrl(input.baseUrl);
   const authType = normalizeAuthType(input.authType);
   const timeout = clampNumber(
@@ -597,13 +639,12 @@ export async function saveCustomMcpIntegration(input: {
     1_000,
     120_000,
   );
-  const current = input.id
-    ? repository.getIntegrationRecord(input.id)
-    : null;
+  const current = input.id ? repository.getIntegrationRecord(input.id) : null;
 
   if (current && current.provider !== "custom_mcp") {
     throw new Error("Integration type mismatch.");
   }
+  const slug = current?.slug ?? normalizeSlug(name);
 
   let previousSecret: CustomCredentials | null = null;
   if (current) {
@@ -632,14 +673,15 @@ export async function saveCustomMcpIntegration(input: {
   let status: IntegrationRecord["status"] = "connected";
   let lastError: string | null = null;
   try {
-    const result = await inspectMcpDefinitions("custom_mcp", {
+    const result = await discoverMcpTools({
       url: baseUrl,
-      headers: buildAuthHeaders(authType, input.authHeaderName ?? null, authSecret),
+      headers: buildAuthHeaders(
+        authType,
+        input.authHeaderName ?? null,
+        authSecret,
+      ),
     });
-    if (!result.success) {
-      throw new Error(result.error || "Could not inspect MCP tools.");
-    }
-    mcpTools = mapMcpTools(result.tools as Array<Record<string, unknown>>);
+    mcpTools = mapMcpTools(result as Array<Record<string, unknown>>);
   } catch (error) {
     status = "failed";
     lastError =
@@ -647,6 +689,7 @@ export async function saveCustomMcpIntegration(input: {
         ? error.message
         : "Custom MCP integration connection failed.";
   }
+  if (input.enabled === false) status = "disabled";
 
   const permissions = normalizePermissionTools(
     "custom_mcp",
@@ -672,7 +715,7 @@ export async function saveCustomMcpIntegration(input: {
     status,
     lastTestedAt: testedAt,
     lastError,
-    enabled: input.enabled ?? true,
+    enabled: input.enabled ?? current?.enabled ?? true,
     permissions,
     mcpTools,
     version: (current?.version ?? 0) + 1,
@@ -692,7 +735,7 @@ export async function retestPostHogIntegration(id: string) {
       readPosthogCredentials(record).apiKey,
     );
     return repository.updateIntegrationCheck(id, {
-      status: "connected",
+      status: record.enabled ? "connected" : "disabled",
       lastTestedAt: testedAt,
       lastError: null,
     })!;
@@ -724,13 +767,16 @@ export async function retestCustomHttpIntegration(id: string) {
       ),
       cache: "no-store",
       signal: AbortSignal.timeout(12_000),
+      redirect: "manual",
     });
     if (!response.ok && response.status !== 404 && response.status !== 405) {
-      throw new Error(`Custom HTTP integration test failed: ${response.status}`);
+      throw new Error(
+        `Custom HTTP integration test failed: ${response.status}`,
+      );
     }
 
     return repository.updateIntegrationCheck(id, {
-      status: "connected",
+      status: record.enabled ? "connected" : "disabled",
       lastTestedAt: testedAt,
       lastError: null,
     })!;
@@ -755,7 +801,7 @@ export async function retestCustomMcpIntegration(id: string) {
   const credentials = readCustomCredentials(record);
   const testedAt = new Date().toISOString();
   try {
-    const discovered = await inspectMcpDefinitions("custom_mcp", {
+    const discovered = await discoverMcpTools({
       url: String(record.config.baseUrl),
       headers: buildAuthHeaders(
         record.config.authType ?? "none",
@@ -763,11 +809,7 @@ export async function retestCustomMcpIntegration(id: string) {
         credentials.authSecret,
       ),
     });
-    if (!discovered.success) {
-      throw new Error(discovered.error || "Could not inspect MCP tools.");
-    }
-
-    const mcpTools = mapMcpTools(discovered.tools as Array<Record<string, unknown>>);
+    const mcpTools = mapMcpTools(discovered as Array<Record<string, unknown>>);
     const permissions = normalizePermissionTools(
       "custom_mcp",
       record.slug,
@@ -781,7 +823,7 @@ export async function retestCustomMcpIntegration(id: string) {
       name: record.name,
       config: record.config,
       credentialsCiphertext: record.credentialsCiphertext,
-      status: "connected",
+      status: record.enabled ? "connected" : "disabled",
       lastTestedAt: testedAt,
       lastError: null,
       permissions,
@@ -800,7 +842,10 @@ export async function retestCustomMcpIntegration(id: string) {
   }
 }
 
-export function getPostHogRuntimeAccess(integrationId: string, agentId: string) {
+export function getPostHogRuntimeAccess(
+  integrationId: string,
+  agentId: string,
+) {
   const record = repository.getIntegrationRecord(integrationId);
   if (
     !record ||
@@ -811,7 +856,8 @@ export function getPostHogRuntimeAccess(integrationId: string, agentId: string) 
     return null;
   }
 
-  const allowedTools = repository.listIntegrationPermissions(record.id)[agentId] ?? [];
+  const allowedTools =
+    repository.listIntegrationPermissions(record.id)[agentId] ?? [];
   if (allowedTools.length === 0) return null;
 
   return {
@@ -822,10 +868,11 @@ export function getPostHogRuntimeAccess(integrationId: string, agentId: string) 
 }
 
 export function getAgentPostHogMcp(agentId: string) {
-  const record = repository.getIntegrationRecord("posthog");
+  const record = repository.getIntegrationRecordByProvider("posthog");
   if (!record || record.status !== "connected" || !record.enabled) return null;
 
-  const allowedTools = repository.listIntegrationPermissions(record.id)[agentId] ?? [];
+  const allowedTools =
+    repository.listIntegrationPermissions(record.id)[agentId] ?? [];
   if (allowedTools.length === 0) return null;
 
   const credentials = readPosthogCredentials(record);
@@ -838,57 +885,137 @@ export function getAgentPostHogMcp(agentId: string) {
   };
 }
 
-export function getCustomIntegrationRuntimeAccess(
+function hashCapabilityToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function capabilityTokenMatches(token: string, expectedHash: string) {
+  const actual = Buffer.from(hashCapabilityToken(token), "hex");
+  const expected = Buffer.from(expectedHash, "hex");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+export type RunCustomIntegrationAccess =
+  | {
+      status: "ok";
+      record: IntegrationRecord;
+      credentials: CustomCredentials;
+      allowedTools: string[];
+      integrationVersion: number;
+    }
+  | {
+      status: "stale";
+      integrationVersion: number;
+      currentVersion: number;
+    }
+  | { status: "unauthorized" };
+
+export function getRunCustomIntegrationRuntimeAccess(
   integrationId: string,
-  agentId: string,
-) {
+  runId: string,
+  token: string,
+): RunCustomIntegrationAccess {
+  const capability = repository.getRunIntegrationCapability(
+    runId,
+    integrationId,
+  );
+  const run = repository.getRun(runId);
+  if (
+    !capability ||
+    !run ||
+    run.agentId !== capability.agentId ||
+    !["running", "waiting_approval"].includes(run.status) ||
+    !token ||
+    !capabilityTokenMatches(token, capability.tokenHash)
+  ) {
+    return { status: "unauthorized" };
+  }
+
   const record = repository.getIntegrationRecord(integrationId);
   if (
     !record ||
-    record.provider !== "custom_http" && record.provider !== "custom_mcp" ||
-    record.status !== "connected" ||
-    !record.enabled
+    (record.provider !== "custom_http" && record.provider !== "custom_mcp")
   ) {
-    return null;
+    return { status: "unauthorized" };
+  }
+  if (record.version !== capability.integrationVersion) {
+    return {
+      status: "stale",
+      integrationVersion: capability.integrationVersion,
+      currentVersion: record.version,
+    };
   }
 
-  const allowedTools = repository.listIntegrationPermissions(record.id)[agentId] ?? [];
-  if (allowedTools.length === 0) return null;
-
   return {
+    status: "ok",
     record,
     credentials: readCustomCredentials(record),
-    allowedTools,
+    allowedTools: capability.allowedTools,
+    integrationVersion: capability.integrationVersion,
   };
 }
 
-export function getAgentCustomIntegrationsMcp(agentId: string) {
-  const integrations = repository
-    .listIntegrations()
-    .filter(
-      (integration) =>
-        integration.enabled &&
-        integration.status === "connected" &&
-        (integration.provider === "custom_http" ||
-          integration.provider === "custom_mcp") &&
-        (repository.listIntegrationPermissions(integration.id)[agentId]?.length ?? 0) >
-          0,
-    );
+export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
+  const existing = repository.listRunIntegrationCapabilities(runId);
+  const candidates = existing.length
+    ? existing
+        .filter((capability) => capability.agentId === agentId)
+        .map((capability) => ({
+          integration: repository.getIntegration(capability.integrationId),
+          allowedTools: capability.allowedTools,
+          version: capability.integrationVersion,
+        }))
+    : repository
+        .listIntegrations()
+        .filter(
+          (integration) =>
+            integration.enabled &&
+            integration.status === "connected" &&
+            (integration.provider === "custom_http" ||
+              integration.provider === "custom_mcp"),
+        )
+        .map((integration) => ({
+          integration,
+          allowedTools:
+            repository.listIntegrationPermissions(integration.id)[agentId] ??
+            [],
+          version: integration.version ?? 1,
+        }));
 
-  return integrations
-    .map((integration) => {
-      const access = getCustomIntegrationRuntimeAccess(integration.id, agentId);
-      if (!access) return null;
-      const port = process.env.PORT?.trim() || "3009";
-      return {
-        name: `${integration.provider}_${integration.slug}` as const,
-        url: `http://127.0.0.1:${port}/api/integrations/${encodeURIComponent(integration.id)}/mcp?agent=${encodeURIComponent(agentId)}`,
-        credentials: { bearerToken: access.credentials.mcpToken },
-      };
-    })
-    .filter(Boolean) as {
-    name: string;
-    url: string;
-    credentials: { bearerToken: string };
-  }[];
+  return candidates.flatMap(({ integration, allowedTools, version }) => {
+    if (
+      !integration ||
+      allowedTools.length === 0 ||
+      (integration.provider !== "custom_http" &&
+        integration.provider !== "custom_mcp")
+    ) {
+      return [];
+    }
+    const token = randomBytes(32).toString("base64url");
+    const capability = repository.saveRunIntegrationCapability({
+      runId,
+      integrationId: integration.id,
+      agentId,
+      integrationVersion: version,
+      tokenHash: hashCapabilityToken(token),
+      allowedTools,
+    });
+    const port = process.env.PORT?.trim() || "3009";
+    return [
+      {
+        server: {
+          name: `${integration.provider}_${integration.slug}`,
+          url: `http://127.0.0.1:${port}/api/integrations/${encodeURIComponent(integration.id)}/mcp?run=${encodeURIComponent(runId)}`,
+          credentials: { bearerToken: token },
+        },
+        snapshot: {
+          integrationId: integration.id,
+          provider: integration.provider,
+          name: integration.name,
+          version: capability.integrationVersion,
+          tools: capability.allowedTools,
+        },
+      },
+    ];
+  });
 }

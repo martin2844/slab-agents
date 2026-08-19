@@ -58,6 +58,7 @@ const customHttpInput = z.object({
   authHeaderName: z.string().trim().max(80).optional(),
   secret: z.string().trim().max(16_384).optional(),
   timeoutMs: z.coerce.number().int().positive().optional(),
+  enabled: z.boolean().optional(),
   permissions: baseInput.permissions,
   operations: z.array(parameterSchema).min(1),
 });
@@ -69,6 +70,7 @@ const customMcpInput = z.object({
   authHeaderName: z.string().trim().max(80).optional(),
   secret: z.string().trim().max(16_384).optional(),
   timeoutMs: z.coerce.number().int().positive().optional(),
+  enabled: z.boolean().optional(),
   permissions: baseInput.permissions,
 });
 const schema = z.discriminatedUnion("provider", [
@@ -97,6 +99,7 @@ export async function POST(request: Request) {
       const integration = await savePostHogIntegration({
         apiKey,
         datacenter: input.datacenter,
+        enabled: input.enabled,
         permissions: input.permissions,
       });
       return Response.json({ data: integration }, { status: 201 });
@@ -108,6 +111,7 @@ export async function POST(request: Request) {
         authHeaderName: input.authHeaderName,
         timeoutMs: input.timeoutMs,
         secret: input.secret,
+        enabled: input.enabled,
         permissions: input.permissions,
         operations: input.operations,
       });
@@ -121,6 +125,7 @@ export async function POST(request: Request) {
       authHeaderName: input.authHeaderName,
       timeoutMs: input.timeoutMs,
       secret: input.secret,
+      enabled: input.enabled,
       permissions: input.permissions,
     });
     return Response.json({ data: integration }, { status: 201 });
