@@ -88,7 +88,9 @@ export function OverviewKickstart({
   const [open, setOpen] = useState(false);
   const [running, setRunning] = useState(false);
   const [agentId, setAgentId] = useState(
-    agents.find((agent) => agent.slug === "coo")?.id ?? agents[0]?.id ?? "coo-default",
+    agents.find((agent) => agent.slug === "coo")?.id ??
+      agents[0]?.id ??
+      "coo-default",
   );
   const [prompt, setPrompt] = useState(defaultPrompt);
 
@@ -106,7 +108,9 @@ export function OverviewKickstart({
           : `${result.connected} of ${result.total} checks passed`,
       );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Setup check failed");
+      toast.error(
+        error instanceof Error ? error.message : "Setup check failed",
+      );
     } finally {
       setChecking(false);
     }
@@ -129,7 +133,9 @@ export function OverviewKickstart({
       setOpen(false);
       router.push(result.href);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not start loop");
+      toast.error(
+        error instanceof Error ? error.message : "Could not start loop",
+      );
       setRunning(false);
     }
   }
@@ -137,27 +143,47 @@ export function OverviewKickstart({
   const trigger = (
     <Button>
       <Play />
-      Create operating loop
+      Run COO review
     </Button>
   );
+
+  if (setup.ready) {
+    return (
+      <Dialog open={open} onOpenChange={setOpen}>
+        <PageHeader
+          title="Overview"
+          description={`${setup.connected}/${setup.total} systems healthy · local control plane`}
+          actions={<DialogTrigger asChild>{trigger}</DialogTrigger>}
+        />
+        <OperatingLoopDialog
+          agents={agents}
+          agentId={agentId}
+          setAgentId={setAgentId}
+          prompt={prompt}
+          setPrompt={setPrompt}
+          running={running}
+          onRun={runFirstLoop}
+        />
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <PageHeader
-        eyebrow="Control plane"
-        title="Local agent control plane"
-        description="Connect Slab, Slab Docs, and the local Runner—then give a COO agent its first operational job."
+        title="Set up your control plane"
+        description="Connect Work, Docs, and the local runtime before the first operating loop."
         actions={<DialogTrigger asChild>{trigger}</DialogTrigger>}
       />
 
-      <section className="mb-10 grid border-y lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="p-5 sm:p-7 lg:border-r">
+      <section className="mb-6 grid overflow-hidden rounded-lg border bg-card lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="p-4 sm:p-5 lg:border-r">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">
+              <p className="text-xs font-semibold text-muted-foreground">
                 Setup checklist · {setup.connected}/{setup.total}
               </p>
-              <h2 className="mt-2 font-heading text-3xl font-semibold tracking-tight">
+              <h2 className="mt-1 font-heading text-2xl font-semibold tracking-tight">
                 Connect the operating system
               </h2>
             </div>
@@ -176,20 +202,21 @@ export function OverviewKickstart({
             ))}
           </ul>
         </div>
-        <div className="flex flex-col justify-between bg-muted/35 p-5 sm:p-7">
+        <div className="flex flex-col justify-between bg-muted/35 p-4 sm:p-5">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[.16em] text-muted-foreground">
+            <p className="text-xs font-semibold text-muted-foreground">
               First outcome
             </p>
-            <p className="mt-6 font-heading text-4xl font-semibold leading-tight tracking-tight">
+            <p className="mt-3 font-heading text-2xl font-semibold leading-tight tracking-tight">
               Turn current work into a short list of next actions.
             </p>
             <p className="mt-4 text-sm leading-6 text-muted-foreground">
               The loop sends one focused task to COO. It consults Work and Docs
-              through server-side tools, then keeps the result in a normal thread.
+              through server-side tools, then keeps the result in a normal
+              thread.
             </p>
           </div>
-          <div className="mt-8 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             <DialogTrigger asChild>{trigger}</DialogTrigger>
             <Button variant="ghost" onClick={() => router.push("/settings")}>
               <Settings2 />
@@ -246,8 +273,12 @@ function OperatingLoopDialog({
             <p className="text-xs text-muted-foreground">Operational truth</p>
           </div>
           <Select value="slab" disabled>
-            <SelectTrigger><SelectValue>Slab</SelectValue></SelectTrigger>
-            <SelectContent><SelectItem value="slab">Slab</SelectItem></SelectContent>
+            <SelectTrigger>
+              <SelectValue>Slab</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="slab">Slab</SelectItem>
+            </SelectContent>
           </Select>
         </div>
         <div className="grid gap-3 py-5 sm:grid-cols-[2rem_1fr_13rem] sm:items-center">
@@ -257,8 +288,12 @@ function OperatingLoopDialog({
             <p className="text-xs text-muted-foreground">Company context</p>
           </div>
           <Select value="slab-docs" disabled>
-            <SelectTrigger><SelectValue>Slab Docs</SelectValue></SelectTrigger>
-            <SelectContent><SelectItem value="slab-docs">Slab Docs</SelectItem></SelectContent>
+            <SelectTrigger>
+              <SelectValue>Slab Docs</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="slab-docs">Slab Docs</SelectItem>
+            </SelectContent>
           </Select>
         </div>
         <div className="grid gap-3 py-5 sm:grid-cols-[2rem_1fr_13rem] sm:items-center">

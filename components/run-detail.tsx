@@ -1,11 +1,20 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, CircleDot, Terminal, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
+import {
+  DenseTable,
+  denseTableCell,
+  denseTableHead,
+} from "@/components/operational-ui";
 import { StatusBadge } from "@/components/status-badge";
 import { RunContextUsage } from "@/components/run-context-usage";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { RunDetailData } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
+
+const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
 export function RunDetail({ data }: { data: RunDetailData }) {
   const skipped = [...data.events]
     .reverse()
@@ -37,167 +46,240 @@ export function RunDetail({ data }: { data: RunDetailData }) {
       : data.run.trigger === "assignment"
         ? "Trigger is stale. The issue is no longer assigned to this agent or no longer requires assignment work."
         : "The Work condition that created this run is no longer current.";
+
   return (
     <>
       <PageHeader
-        eyebrow="Run detail"
-        title={data.run.id.slice(0, 12)}
-        description="Inspect model-call usage, context growth, tool payload weight, and the persisted event trail."
+        title={`Run ${data.run.id.slice(0, 12)}`}
+        description={`${data.run.mode.replaceAll("_", " ")} · ${data.run.trigger.replaceAll("_", " ")}${data.run.issueKey ? ` · ${data.run.issueKey}` : ""}`}
         actions={
           <Button variant="outline" asChild>
             <Link href="/runs">
-              <ArrowLeft />
-              All runs
+              <ArrowLeft /> All runs
             </Link>
           </Button>
         }
       />
-      {skipped && (
-        <section className="mb-6 border border-stone-400/40 bg-stone-500/5 p-5">
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            Control-plane decision
-          </p>
-          <h2 className="mt-1 text-lg font-semibold">
-            Skipped — stale Work trigger
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            {skipReason} Runner was not invoked.
-          </p>
-          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-            <div>
-              <dt className="text-xs text-muted-foreground">Runtime started</dt>
-              <dd className="mt-1 font-medium">
-                {runtimeStarted ? "Yes" : "No"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">Model calls</dt>
-              <dd className="mt-1 font-mono font-medium">0</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">Runtime tokens</dt>
-              <dd className="mt-1 font-mono font-medium">0</dd>
-            </div>
-          </dl>
-          <pre className="mt-4 max-w-full overflow-auto border bg-background/70 p-3 font-mono text-xs leading-5">
-            {JSON.stringify(
-              {
-                expected: skipped.payload.expectedCondition,
-                observed: skipped.payload.observedState,
-              },
-              null,
-              2,
-            )}
-          </pre>
-        </section>
-      )}
-      <RunContextUsage
-        profile={data.contextProfile}
-        runtimeSkipped={Boolean(skipped)}
-      />
-      <div className="mt-10 grid gap-8 xl:grid-cols-[1fr_20rem]">
-        <section className="min-w-0" aria-labelledby="persisted-events-title">
-          <div className="mb-5">
-            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Debug log
-            </p>
-            <h2
-              id="persisted-events-title"
-              className="mt-1 text-xl font-semibold"
-            >
-              Persisted events
-            </h2>
-          </div>
-          <div className="relative ml-2 border-l pl-8">
-            {data.events.map((event, index) => (
-              <article key={event.id} className="relative min-w-0 pb-8">
-                <span
-                  className={`absolute -left-[2.28rem] top-1 size-3 rounded-full ring-4 ring-background ${event.type.includes("failed") ? "bg-destructive" : event.type.includes("completed") ? "bg-emerald-600" : "bg-primary"}`}
-                />
-                <div className="flex flex-wrap items-center gap-3">
-                  <h2 className="text-sm font-semibold">
-                    {event.type.replaceAll("_", " ")}
-                  </h2>
-                  <time className="text-xs text-muted-foreground">
-                    {formatDateTime(event.createdAt)}
-                  </time>
+      <Tabs defaultValue="overview" className="space-y-5">
+        <TabsList className="h-9 w-full justify-start overflow-x-auto rounded-lg border bg-card p-1 sm:w-auto">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="context">Context / Usage</TabsTrigger>
+          <TabsTrigger value="tools">Tools</TabsTrigger>
+          <TabsTrigger value="debug">Debug</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-5">
+          <section className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-2 xl:grid-cols-5">
+            {[
+              ["Status", <StatusBadge key="status" status={data.run.status} />],
+              ["Mode", data.run.mode.replaceAll("_", " ")],
+              ["Trigger", data.run.trigger.replaceAll("_", " ")],
+              ["Issue", data.run.issueKey ?? "None"],
+              [
+                "Runtime",
+                `${data.run.runtime} · ${runtimeContinuity ?? "fresh"}`,
+              ],
+            ].map(([label, value]) => (
+              <div
+                key={String(label)}
+                className="min-h-20 border-b p-3 sm:odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0"
+              >
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[.08em] text-muted-foreground">
+                  {label}
+                </p>
+                <div className="mt-2 text-sm font-semibold capitalize">
+                  {value}
                 </div>
-                {Object.keys(event.payload).length > 0 && (
-                  <pre className="mt-3 max-w-full overflow-auto border bg-muted/50 p-3 font-mono text-xs leading-5">
-                    {JSON.stringify(event.payload, null, 2)}
-                  </pre>
-                )}
-                {index === data.events.length - 1 && (
-                  <span className="absolute -left-[2.05rem] bottom-0 h-5 w-px bg-background" />
-                )}
-              </article>
+              </div>
             ))}
-          </div>
-        </section>
-        <aside className="space-y-6 border-t pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Status
-            </p>
-            <div className="mt-2">
-              <StatusBadge status={data.run.status} />
+          </section>
+          <section className="grid gap-4 lg:grid-cols-[1fr_22rem]">
+            <div className="rounded-lg border bg-card p-4">
+              <h2 className="text-sm font-semibold">Execution</h2>
+              <dl className="mt-3 divide-y border-y text-sm">
+                <div className="grid min-h-11 grid-cols-[10rem_1fr] items-center gap-3">
+                  <dt className="text-muted-foreground">Started</dt>
+                  <dd>
+                    {data.run.startedAt
+                      ? formatDateTime(data.run.startedAt)
+                      : "Not started"}
+                  </dd>
+                </div>
+                <div className="grid min-h-11 grid-cols-[10rem_1fr] items-center gap-3">
+                  <dt className="text-muted-foreground">Completed</dt>
+                  <dd>
+                    {data.run.completedAt
+                      ? formatDateTime(data.run.completedAt)
+                      : "In progress"}
+                  </dd>
+                </div>
+                <div className="grid min-h-11 grid-cols-[10rem_1fr] items-center gap-3">
+                  <dt className="text-muted-foreground">Runtime thread</dt>
+                  <dd className="break-all font-mono text-xs">
+                    {runtimeThreadId ? String(runtimeThreadId) : "Not started"}
+                  </dd>
+                </div>
+                <div className="grid min-h-11 grid-cols-[10rem_1fr] items-center gap-3">
+                  <dt className="text-muted-foreground">Runtime started</dt>
+                  <dd>{runtimeStarted ? "Yes" : "No"}</dd>
+                </div>
+              </dl>
             </div>
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Trigger
-            </p>
-            <p className="mt-2 text-sm capitalize">
-              {data.run.trigger.replaceAll("_", " ")}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Execution mode
-            </p>
-            <p className="mt-2 text-sm capitalize">
-              {data.run.mode.replaceAll("_", " ")}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Associated issue
-            </p>
-            <p className="mt-2 font-mono text-sm">
-              {data.run.issueKey ?? "None"}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Runtime
-            </p>
-            <p className="mt-2 text-sm capitalize">{data.run.runtime}</p>
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Runtime thread
-            </p>
-            <p className="mt-2 break-all font-mono text-xs">
-              {runtimeThreadId ? String(runtimeThreadId) : "Not started"}
-            </p>
-            {runtimeContinuity && (
-              <p className="mt-1 text-xs capitalize text-muted-foreground">
-                Continuity: {String(runtimeContinuity)}
+            <div className="rounded-lg border bg-card p-4">
+              <h2 className="text-sm font-semibold">Usage at a glance</h2>
+              <dl className="mt-3 divide-y border-y text-sm">
+                <div className="flex min-h-11 items-center justify-between">
+                  <dt className="text-muted-foreground">Model calls</dt>
+                  <dd className="font-mono">
+                    {data.contextProfile.modelCalls.length}
+                  </dd>
+                </div>
+                <div className="flex min-h-11 items-center justify-between">
+                  <dt className="text-muted-foreground">Tool calls</dt>
+                  <dd className="font-mono">
+                    {data.contextProfile.toolCalls.length}
+                  </dd>
+                </div>
+                <div className="flex min-h-11 items-center justify-between">
+                  <dt className="text-muted-foreground">Peak input</dt>
+                  <dd className="font-mono">
+                    {integer.format(
+                      data.contextProfile.peakModelCallInputTokens ?? 0,
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          </section>
+          {skipped && (
+            <section className="rounded-lg border border-stone-400/40 bg-stone-500/5 p-4">
+              <h2 className="text-sm font-semibold">
+                Skipped · stale Work trigger
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {skipReason} Runner was not invoked.
               </p>
-            )}
-          </div>
+              <pre className="mt-3 max-w-full overflow-auto rounded-md border bg-background/70 p-3 font-mono text-xs leading-5">
+                {JSON.stringify(
+                  {
+                    expected: skipped.payload.expectedCondition,
+                    observed: skipped.payload.observedState,
+                  },
+                  null,
+                  2,
+                )}
+              </pre>
+            </section>
+          )}
           {data.run.error && (
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-destructive">
-                Error
-              </p>
-              <p className="mt-2 text-sm leading-6 text-destructive">
-                {data.run.error}
-              </p>
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+              {data.run.error}
             </div>
           )}
-        </aside>
-      </div>
+        </TabsContent>
+
+        <TabsContent value="timeline">
+          <section className="rounded-lg border bg-card p-4">
+            <h2 className="text-sm font-semibold">Persisted event timeline</h2>
+            <div className="relative ml-2 mt-4 border-l pl-6">
+              {data.events.map((event) => (
+                <article key={event.id} className="relative pb-5 last:pb-0">
+                  <CircleDot className="absolute -left-[1.86rem] top-0.5 size-3.5 bg-card text-primary" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <strong className="text-sm">
+                      {event.type.replaceAll("_", " ")}
+                    </strong>
+                    <time className="text-xs text-muted-foreground">
+                      {formatDateTime(event.createdAt)}
+                    </time>
+                  </div>
+                  <p className="mt-1 line-clamp-2 font-mono text-xs text-muted-foreground">
+                    {Object.keys(event.payload).length
+                      ? JSON.stringify(event.payload)
+                      : "No payload"}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </section>
+        </TabsContent>
+
+        <TabsContent value="context">
+          <RunContextUsage
+            profile={data.contextProfile}
+            runtimeSkipped={Boolean(skipped)}
+          />
+        </TabsContent>
+
+        <TabsContent value="tools">
+          <section className="rounded-lg border bg-card p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <Wrench className="size-4" />
+              <h2 className="text-sm font-semibold">Tool breakdown</h2>
+            </div>
+            <DenseTable minWidth="620px">
+              <thead>
+                <tr>
+                  <th className={denseTableHead}>Tool</th>
+                  <th className={denseTableHead}>Calls</th>
+                  <th className={denseTableHead}>Responses</th>
+                  <th className={denseTableHead}>Largest</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.contextProfile.toolBreakdown.map((tool) => (
+                  <tr key={tool.key}>
+                    <td className={`${denseTableCell} font-mono text-xs`}>
+                      {tool.key}
+                    </td>
+                    <td className={`${denseTableCell} font-mono text-xs`}>
+                      {tool.calls}
+                    </td>
+                    <td className={`${denseTableCell} font-mono text-xs`}>
+                      ≈{integer.format(tool.responseApproxTokens)} tok
+                    </td>
+                    <td
+                      className={`${denseTableCell} font-mono text-xs text-muted-foreground`}
+                    >
+                      ≈{integer.format(tool.largestResponseApproxTokens)} tok
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </DenseTable>
+            {!data.contextProfile.toolBreakdown.length && (
+              <p className="py-5 text-sm text-muted-foreground">
+                No completed tool calls.
+              </p>
+            )}
+          </section>
+        </TabsContent>
+
+        <TabsContent value="debug">
+          <section className="rounded-lg border bg-card p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <Terminal className="size-4" />
+              <h2 className="text-sm font-semibold">Raw persisted events</h2>
+            </div>
+            <div className="space-y-2">
+              {data.events.map((event) => (
+                <details key={event.id} className="rounded-md border p-3">
+                  <summary className="cursor-pointer text-sm font-medium">
+                    {event.type.replaceAll("_", " ")}{" "}
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      {formatDateTime(event.createdAt)}
+                    </span>
+                  </summary>
+                  <pre className="mt-3 max-h-96 overflow-auto rounded-md bg-muted/50 p-3 font-mono text-xs leading-5">
+                    {JSON.stringify(event.payload, null, 2)}
+                  </pre>
+                </details>
+              ))}
+            </div>
+          </section>
+        </TabsContent>
+      </Tabs>
     </>
   );
 }

@@ -15,6 +15,7 @@ import {
   Plug,
   Settings,
   Workflow,
+  CircleCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,24 +27,34 @@ import {
 import { cn } from "@/lib/utils";
 
 const nav = [
-  { href: "/", label: "Overview", icon: LayoutDashboard },
-  { href: "/work", label: "Work", icon: PanelsTopLeft },
-  { href: "/docs", label: "Docs", icon: FileText },
-  { href: "/agents", label: "Agents", icon: Bot },
-  { href: "/automations", label: "Automations", icon: CalendarClock },
-  { href: "/integrations", label: "Integrations", icon: Plug },
-  { href: "/runs", label: "Runs", icon: Activity },
-  { href: "/settings", label: "Settings", icon: Settings },
+  {
+    label: "Operate",
+    items: [
+      { href: "/", label: "Overview", icon: LayoutDashboard },
+      { href: "/work", label: "Work", icon: PanelsTopLeft },
+      { href: "/agents", label: "Agents", icon: Bot },
+      { href: "/runs", label: "Runs", icon: Activity },
+    ],
+  },
+  {
+    label: "Configure",
+    items: [
+      { href: "/automations", label: "Automations", icon: CalendarClock },
+      { href: "/integrations", label: "Integrations", icon: Plug },
+      { href: "/docs", label: "Docs", icon: FileText },
+      { href: "/settings", label: "Settings", icon: Settings },
+    ],
+  },
 ];
 
 function Brand() {
   return (
-    <Link href="/" className="flex items-center gap-3 px-3 py-2">
-      <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
+    <Link href="/" className="flex items-center gap-2.5 px-2 py-1.5">
+      <span className="grid size-8 place-items-center rounded-md bg-primary text-primary-foreground">
         <Workflow className="size-4" />
       </span>
       <span>
-        <span className="block font-heading text-lg font-semibold leading-none tracking-tight">
+        <span className="block font-heading text-base font-semibold leading-none tracking-tight">
           Slab
         </span>
         <span className="mt-1 block text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -57,29 +68,58 @@ function Brand() {
 function Navigation({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   return (
-    <nav aria-label="Primary navigation" className="flex flex-col gap-1">
-      {nav.map(({ href, label, icon: Icon }) => {
-        const active =
-          href === "/" ? pathname === href : pathname.startsWith(href);
-        return (
-          <Button
-            key={href}
-            asChild
-            variant="ghost"
-            className={cn(
-              "h-10 justify-start gap-3 rounded-lg px-3 font-medium",
-              active && "bg-sidebar-accent text-sidebar-accent-foreground",
-              !active && "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <Link href={href} onClick={onNavigate}>
-              <Icon className="size-4" />
-              <span>{label}</span>
-            </Link>
-          </Button>
-        );
-      })}
+    <nav aria-label="Primary navigation" className="space-y-5">
+      {nav.map((group) => (
+        <div key={group.label}>
+          <p className="mb-1.5 px-3 text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80">
+            {group.label}
+          </p>
+          <div className="space-y-0.5">
+            {group.items.map(({ href, label, icon: Icon }) => {
+              const active =
+                href === "/" ? pathname === href : pathname.startsWith(href);
+              return (
+                <Button
+                  key={href}
+                  asChild
+                  variant="ghost"
+                  className={cn(
+                    "h-8 w-full justify-start gap-2.5 rounded-md px-3 text-[0.82rem] font-medium",
+                    active &&
+                      "bg-sidebar-accent text-sidebar-accent-foreground before:h-4 before:w-0.5 before:rounded-full before:bg-primary before:content-['']",
+                    !active && "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Link href={href} onClick={onNavigate}>
+                    <Icon className="size-3.5" />
+                    <span>{label}</span>
+                  </Link>
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </nav>
+  );
+}
+
+function SystemState() {
+  return (
+    <Link
+      href="/settings"
+      className="mb-2 flex items-center gap-2 rounded-md border bg-background/55 px-3 py-2 transition-colors hover:bg-background"
+    >
+      <CircleCheck className="size-3.5 text-emerald-700" />
+      <span className="min-w-0">
+        <span className="block truncate text-xs font-semibold">
+          Local control plane
+        </span>
+        <span className="block truncate text-[0.68rem] text-muted-foreground">
+          Codex · localhost
+        </span>
+      </span>
+    </Link>
   );
 }
 
@@ -106,13 +146,14 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-sidebar-border bg-sidebar p-4 lg:flex lg:flex-col">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 border-r border-sidebar-border bg-sidebar p-3 lg:flex lg:flex-col">
         <Brand />
-        <div className="mt-8">
+        <div className="mt-6">
           <Navigation />
         </div>
-        <div className="mt-auto px-3 py-2">
+        <div className="mt-auto px-1 py-1">
           <span className="mb-2 block h-px bg-border" />
+          <SystemState />
           <HowItWorksLink />
         </div>
       </aside>
@@ -143,8 +184,8 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           </SheetContent>
         </Sheet>
       </header>
-      <main id="main-content" className="min-h-dvh lg:pl-64">
-        <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 sm:py-8 xl:px-10 xl:py-10">
+      <main id="main-content" className="min-h-dvh min-w-0 lg:pl-56">
+        <div className="mx-auto w-full max-w-[1720px] px-4 py-5 sm:px-6 sm:py-6 xl:px-8 xl:py-7">
           {children}
         </div>
       </main>

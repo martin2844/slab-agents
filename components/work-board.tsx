@@ -5,7 +5,6 @@ import {
   Bug,
   Bot,
   Check,
-  ChevronRight,
   CircleDot,
   ExternalLink,
   LoaderCircle,
@@ -789,9 +788,8 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
   return (
     <>
       <PageHeader
-        eyebrow="Source · Slab"
         title="Work"
-        description="A human view over the operational truth. Drag work between states; every change goes through the Work adapter."
+        description={`${projectKey || "No project"} · ${issues?.length ?? 0} items · Slab source`}
         actions={
           <>
             <Button
@@ -810,7 +808,7 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
           </>
         }
       />
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
         <span className="text-xs font-bold uppercase tracking-[.16em] text-muted-foreground">
           Project
         </span>
@@ -827,7 +825,7 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
           </SelectContent>
         </Select>
       </div>
-      <div className="mb-6 flex flex-col justify-between gap-3 border-y bg-muted/35 px-4 py-3 text-sm sm:flex-row sm:items-center">
+      <div className="mb-4 flex flex-col justify-between gap-2 rounded-md border bg-muted/35 px-3 py-2 text-xs sm:flex-row sm:items-center">
         <span className="flex items-center gap-2 font-semibold">
           <Bot className="size-4" />
           Agent routing is active
@@ -885,7 +883,7 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
       )}
       {loadingIssues && <LoadingState label="Loading issues" />}
       {projects && projects.length > 0 && issues && !loadingIssues && (
-        <div className="grid grid-cols-[repeat(5,minmax(17rem,1fr))] gap-4 overflow-x-auto pb-3">
+        <div className="grid grid-cols-[repeat(5,minmax(15rem,1fr))] gap-3 overflow-x-auto pb-3">
           {columns.map((column) => (
             <section
               key={column.key}
@@ -894,13 +892,11 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
                 const key = e.dataTransfer.getData("text/plain");
                 if (key) void move(key, column.key);
               }}
-              className="min-h-[28rem] border-t-2 border-foreground bg-muted/45 p-3"
+              className="min-h-[28rem] rounded-md border border-t-2 border-t-foreground bg-muted/40 p-2.5"
             >
-              <header className="mb-4 flex items-start justify-between px-1 pt-2">
+              <header className="mb-3 flex items-start justify-between px-1 pt-1">
                 <div>
-                  <h2 className="font-heading text-2xl font-semibold">
-                    {column.label}
-                  </h2>
+                  <h2 className="text-sm font-semibold">{column.label}</h2>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {column.caption}
                   </p>
@@ -909,7 +905,7 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
                   {grouped[column.key].length}
                 </Badge>
               </header>
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {grouped[column.key].map((issue) => (
                   <button
                     key={issue.key}
@@ -918,7 +914,7 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
                       e.dataTransfer.setData("text/plain", issue.key)
                     }
                     onClick={() => setSelected(issue.key)}
-                    className="group w-full cursor-grab bg-card p-4 text-left ring-1 ring-border transition-transform hover:-translate-y-0.5 hover:ring-foreground/30 active:cursor-grabbing"
+                    className="group w-full cursor-grab rounded-md bg-card p-3 text-left ring-1 ring-border transition-colors hover:bg-background hover:ring-foreground/30 active:cursor-grabbing"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <span className="font-mono text-[0.68rem] font-semibold text-muted-foreground">
@@ -928,10 +924,10 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
                         {issue.priority}
                       </Badge>
                     </div>
-                    <h3 className="mt-3 text-sm font-semibold leading-5">
+                    <h3 className="mt-2 line-clamp-3 text-[0.82rem] font-semibold leading-[1.25rem]">
                       {issue.title}
                     </h3>
-                    <div className="mt-5 flex items-center justify-between text-xs text-muted-foreground">
+                    <div className="mt-3 flex items-center justify-between text-[0.68rem] text-muted-foreground">
                       <span className="flex items-center gap-1.5">
                         {issue.type === "bug" ? (
                           <Bug className="size-3.5" />
@@ -945,7 +941,6 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
                         {issue.assignee ?? "Unassigned"}
                       </span>
                     </div>
-                    <ChevronRight className="ml-auto mt-3 size-4 opacity-0 transition-opacity group-hover:opacity-100" />
                   </button>
                 ))}
                 {!grouped[column.key].length && (

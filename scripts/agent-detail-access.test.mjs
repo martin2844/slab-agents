@@ -7,23 +7,28 @@ const source = await readFile(
   "utf8",
 );
 
-test("full access control is discoverable before agent activity", () => {
+test("full access control is discoverable in the agent capabilities tab", () => {
+  const capabilitiesTab = source.indexOf(
+    '<TabsTrigger value="capabilities">Capabilities</TabsTrigger>',
+  );
   const accessControl = source.indexOf("Full access to Work & Docs");
-  const threads = source.indexOf(">Threads<");
-  const runs = source.indexOf(">Recent runs<");
+  const runsTab = source.indexOf(
+    '<TabsTrigger value="runs">Runs</TabsTrigger>',
+  );
 
+  assert.notEqual(
+    capabilitiesTab,
+    -1,
+    "agent detail should expose a capabilities tab",
+  );
   assert.notEqual(
     accessControl,
     -1,
     "full access control should have a visible label",
   );
   assert.ok(
-    accessControl < threads,
-    "full access control should appear before threads",
-  );
-  assert.ok(
-    accessControl < runs,
-    "full access control should appear before runs",
+    capabilitiesTab < runsTab,
+    "capabilities should remain a primary tab before run history",
   );
   assert.match(source, /Enable full access/);
 });

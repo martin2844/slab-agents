@@ -98,9 +98,8 @@ export function IntegrationsView({
   return (
     <>
       <PageHeader
-        eyebrow="Agent capabilities"
         title="Integrations"
-        description="Connect external systems as tools, then decide exactly which agents can use each capability. Credentials stay in the local control plane."
+        description={`${integrations.length} configured · ${integrations.filter((item) => item.status === "connected").length} healthy · ${integrations.reduce((total, item) => total + item.tools.length, 0)} tools`}
       />
 
       <section aria-labelledby="active-integrations">
@@ -111,7 +110,7 @@ export function IntegrationsView({
           description="Configured connections available to at least one agent."
         />
         {integrations.length ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="divide-y overflow-hidden rounded-lg border bg-card">
             {integrations.map((integration) => {
               const catalog = initialData.catalog.find(
                 ({ provider }) => provider === integration.provider,
@@ -141,7 +140,7 @@ export function IntegrationsView({
         )}
       </section>
 
-      <section className="mt-12" aria-labelledby="available-integrations">
+      <section className="mt-6" aria-labelledby="available-integrations">
         <SectionHeading
           id="available-integrations"
           index="02"
@@ -223,32 +222,25 @@ function SectionHeading({
   description: string;
 }) {
   return (
-    <div className="mb-5 flex items-end gap-4 border-t-2 border-foreground pt-4">
-      <span className="pb-1 text-xs font-bold tabular-nums text-primary">
-        {index}
-      </span>
-      <div>
-        <h2
-          id={id}
-          className="font-heading text-3xl font-semibold tracking-tight"
-        >
-          {title}
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-      </div>
+    <div className="mb-3 flex min-h-8 items-baseline gap-2">
+      <h2 id={id} className="text-sm font-semibold tracking-tight">
+        {title}
+      </h2>
+      <p className="text-xs text-muted-foreground">{description}</p>
+      <span className="sr-only">Section {index}</span>
     </div>
   );
 }
 
 function BrandMark() {
   return (
-    <div className="grid size-12 place-items-center rounded-xl border bg-background shadow-sm">
+    <div className="grid size-8 place-items-center rounded-md border bg-background">
       <Image
         src="/integrations/posthog.svg"
         alt=""
         width={52}
         height={28}
-        className="h-auto w-9"
+        className="h-auto w-6"
       />
     </div>
   );
@@ -291,74 +283,54 @@ function ActiveCard({
   }
 
   return (
-    <Card className="overflow-hidden py-0">
-      <CardHeader className="flex flex-row items-start justify-between p-5 pb-3">
-        <div className="flex items-center gap-3">
-          {integration.provider === "posthog" ? (
-            <BrandMark />
-          ) : (
-            <div className="grid size-12 place-items-center rounded-xl border bg-muted text-muted-foreground">
-              <Puzzle className="size-6" />
-            </div>
-          )}
-          <div>
-            <h3 className="font-heading text-2xl font-semibold">
-              {integration.name}
-            </h3>
-            <p className="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">
-              {integration.provider === "posthog"
-                ? integration.datacenter === "us"
-                  ? "US Cloud"
-                  : "EU Cloud"
-                : integration.provider === "custom_mcp"
-                  ? "MCP"
-                  : "HTTP API"}
-            </p>
+    <div className="grid gap-3 p-3 sm:grid-cols-[minmax(14rem,1fr)_7rem_7rem_8rem_auto] sm:items-center">
+      <div className="flex min-w-0 items-center gap-3">
+        {integration.provider === "posthog" ? (
+          <BrandMark />
+        ) : (
+          <div className="grid size-8 place-items-center rounded-md border bg-muted text-muted-foreground">
+            <Puzzle className="size-4" />
           </div>
+        )}
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold">{integration.name}</h3>
+          <p className="text-[0.68rem] uppercase tracking-[.08em] text-muted-foreground">
+            {integration.provider === "posthog"
+              ? integration.datacenter === "us"
+                ? "US Cloud"
+                : "EU Cloud"
+              : integration.provider === "custom_mcp"
+                ? "MCP"
+                : "HTTP API"}
+          </p>
         </div>
-        <StatusBadge status={integration.status} />
-      </CardHeader>
-      <CardContent className="px-5 pb-5">
-        <div className="grid grid-cols-2 gap-3 border-y py-4 text-sm">
-          <div>
-            <span className="block text-muted-foreground">Tools</span>
-            <strong>
-              {integration.tools.length}{" "}
-              {integration.tools.every((tool) => tool.readOnly)
-                ? "read-only"
-                : "tools"}
-            </strong>
-          </div>
-          <div>
-            <span className="block text-muted-foreground">Agent access</span>
-            <strong>
-              {agentCount} {agentCount === 1 ? "agent" : "agents"}
-            </strong>
-          </div>
-        </div>
-        <p className="mt-4 min-h-10 text-sm leading-5 text-muted-foreground">
-          {integration.status === "failed"
-            ? integration.lastError
-            : integration.lastTestedAt
-              ? `Verified ${formatDateTime(integration.lastTestedAt)}`
-              : "Connection has not been tested yet."}
-        </p>
-      </CardContent>
-      <CardFooter className="flex gap-2 border-t bg-muted/35 p-3">
-        <Button variant="outline" className="flex-1" onClick={onEdit}>
+      </div>
+      <div className="text-xs">
+        <span className="block text-muted-foreground">Tools</span>
+        <strong>{integration.tools.length}</strong>
+      </div>
+      <div className="text-xs">
+        <span className="block text-muted-foreground">Agents</span>
+        <strong>{agentCount}</strong>
+      </div>
+      <StatusBadge status={integration.status} />
+      <div className="flex items-center justify-end gap-1">
+        <Button variant="ghost" size="sm" onClick={onEdit}>
           <Pencil /> Edit
         </Button>
-        <Button
-          variant="ghost"
-          className="flex-1"
-          onClick={retest}
-          disabled={testing}
-        >
+        <Button variant="ghost" size="sm" onClick={retest} disabled={testing}>
           {testing ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
-          {testing ? "Testing..." : "Test"}
+          {testing ? "Testing" : "Test"}
         </Button>
-      </CardFooter>
-    </Card>
+      </div>
+      <p className="min-w-0 text-xs text-muted-foreground sm:col-start-1 sm:col-end-4">
+        {integration.status === "failed"
+          ? integration.lastError
+          : integration.lastTestedAt
+            ? `Verified ${formatDateTime(integration.lastTestedAt)}`
+            : "Connection has not been tested yet."}
+      </p>
+    </div>
   );
 }
 

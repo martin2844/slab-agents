@@ -1,4 +1,5 @@
 "use client";
+
 import { useState } from "react";
 import {
   Check,
@@ -8,16 +9,18 @@ import {
   PlugZap,
   Save,
   Server,
+  ShieldCheck,
   TerminalSquare,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmailIntegrationEditor } from "@/components/email-integration-editor";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
 import { ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/client-api";
 import type {
   Agent,
@@ -25,8 +28,10 @@ import type {
   SetupStatus,
   WorkspaceSettings,
 } from "@/lib/types";
+
 type Service = "work" | "docs" | "runner" | "codex";
 type State = "idle" | "testing" | "connected" | "error";
+
 export function SettingsView({
   initialSettings,
   initialSetup,
@@ -39,25 +44,28 @@ export function SettingsView({
   agents: Agent[];
 }) {
   const initialServiceState = (service: Service): State => {
-    const value = initialSetup.checks.find((item) => item.service === service)?.state;
+    const value = initialSetup.checks.find(
+      (item) => item.service === service,
+    )?.state;
     if (value === "connected") return "connected";
     if (value === "failed") return "error";
     return "idle";
   };
   const [settings, setSettings] = useState<WorkspaceSettings | null>(
-      initialSettings,
-    ),
-    [error] = useState(""),
-    [workKey, setWorkKey] = useState(""),
-    [docsKey, setDocsKey] = useState(""),
-    [email, setEmail] = useState(initialEmail),
-    [emailOpen, setEmailOpen] = useState(false),
-    [status, setStatus] = useState<Record<Service, State>>({
-      work: initialServiceState("work"),
-      docs: initialServiceState("docs"),
-      runner: initialServiceState("runner"),
-      codex: initialServiceState("codex"),
-    });
+    initialSettings,
+  );
+  const [error] = useState("");
+  const [workKey, setWorkKey] = useState("");
+  const [docsKey, setDocsKey] = useState("");
+  const [email, setEmail] = useState(initialEmail);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [status, setStatus] = useState<Record<Service, State>>({
+    work: initialServiceState("work"),
+    docs: initialServiceState("docs"),
+    runner: initialServiceState("runner"),
+    codex: initialServiceState("codex"),
+  });
+
   async function persistSettings() {
     if (!settings) throw new Error("Settings are not loaded");
     const updated = await api<WorkspaceSettings>("/api/settings", {
@@ -75,166 +83,121 @@ export function SettingsView({
     setDocsKey("");
     return updated;
   }
+
   async function save() {
     try {
       await persistSettings();
       toast.success("Settings saved");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save settings");
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "Could not save settings",
+      );
     }
   }
+
   async function test(service: Service) {
-    setStatus((v) => ({ ...v, [service]: "testing" }));
+    setStatus((current) => ({ ...current, [service]: "testing" }));
     try {
       await persistSettings();
-      const result = await api<SetupStatus>(`/api/settings/test`, {
+      const result = await api<SetupStatus>("/api/settings/test", {
         method: "POST",
         body: JSON.stringify({ service }),
       });
       const check = result.checks.find((item) => item.service === service);
       const next = check?.state === "connected" ? "connected" : "error";
-      setStatus((v) => ({ ...v, [service]: next }));
-      if (next === "error") throw new Error(check?.detail ?? `${service} is unavailable`);
+      setStatus((current) => ({ ...current, [service]: next }));
+      if (next === "error")
+        throw new Error(check?.detail ?? `${service} is unavailable`);
       if (service === "runner") {
-        setStatus((v) => ({ ...v, codex: "testing" }));
-        const runtime = await api<SetupStatus>(`/api/settings/test`, {
+        setStatus((current) => ({ ...current, codex: "testing" }));
+        const runtime = await api<SetupStatus>("/api/settings/test", {
           method: "POST",
           body: JSON.stringify({ service: "codex" }),
         });
         const codex = runtime.checks.find((item) => item.service === "codex");
-        setStatus((v) => ({
-          ...v,
+        setStatus((current) => ({
+          ...current,
           codex: codex?.state === "connected" ? "connected" : "error",
         }));
       }
-    } catch (e) {
-      setStatus((v) => ({ ...v, [service]: "error" }));
-      toast.error(e instanceof Error ? e.message : `${service} is unavailable`);
+    } catch (cause) {
+      setStatus((current) => ({ ...current, [service]: "error" }));
+      toast.error(
+        cause instanceof Error ? cause.message : `${service} is unavailable`,
+      );
     }
   }
+
   if (error) return <ErrorState message={error} />;
   if (!settings) return <LoadingState />;
+
   return (
     <>
       <PageHeader
-        eyebrow="Local configuration"
         title="Settings"
-        description="Connection details live in the server-side SQLite database. Secrets are accepted here but never returned to React."
+        description={`${initialSetup.connected}/${initialSetup.total} systems healthy · configuration stored locally`}
         actions={
           <Button onClick={save}>
-            <Save />
-            Save changes
+            <Save /> Save changes
           </Button>
         }
       />
-      <div className="grid gap-10 xl:grid-cols-[1fr_22rem]">
-        <div className="space-y-10">
-          {[
-            {
-              key: "work" as const,
-              title: "Slab",
-              description: "Operational work via remote MCP.",
-              icon: Server,
-              url: settings.workMcpUrl,
-              setUrl: (value: string) =>
-                setSettings({ ...settings, workMcpUrl: value }),
-              secret: workKey,
-              setSecret: setWorkKey,
-              configured: settings.workApiKeyConfigured,
-            },
-            {
-              key: "docs" as const,
-              title: "Slab Docs",
-              description: "Company knowledge via remote MCP.",
-              icon: PlugZap,
-              url: settings.docsMcpUrl,
-              setUrl: (value: string) =>
-                setSettings({ ...settings, docsMcpUrl: value }),
-              secret: docsKey,
-              setSecret: setDocsKey,
-              configured: settings.docsApiKeyConfigured,
-            },
-          ].map((item) => (
-            <section
-              key={item.key}
-              className="border-t-2 border-foreground pt-5"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex gap-3">
-                  <item.icon className="mt-1 size-5" />
-                  <div>
-                    <h2 className="font-heading text-3xl font-semibold">
-                      {item.title}
-                    </h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {item.description}
-                    </p>
-                  </div>
-                </div>
-                <ConnectionBadge state={status[item.key]} />
-              </div>
-              <div className="mt-6 grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-                <label className="grid gap-2 text-sm font-semibold">
-                  MCP URL
-                  <Input
-                    value={item.url}
-                    onChange={(e) => item.setUrl(e.target.value)}
-                    type="url"
-                  />
-                </label>
-                <label className="grid gap-2 text-sm font-semibold">
-                  API key
-                  <div className="relative">
-                    <Input
-                      value={item.secret}
-                      onChange={(e) => item.setSecret(e.target.value)}
-                      type="password"
-                      placeholder={
-                        item.configured
-                          ? "Configured · enter to replace"
-                          : "Enter API key"
-                      }
-                    />
-                    <EyeOff className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  </div>
-                </label>
-                <Button
-                  variant="outline"
-                  onClick={() => test(item.key)}
-                  disabled={status[item.key] === "testing"}
-                >
-                  {status[item.key] === "testing" ? (
-                    <LoaderCircle className="animate-spin" />
-                  ) : (
-                    <PlugZap />
-                  )}
-                  Test connection
-                </Button>
-              </div>
-            </section>
-          ))}
-          <section className="border-t-2 border-foreground pt-5">
-            <div className="flex items-start justify-between">
+      <Tabs defaultValue="sources" className="space-y-5">
+        <TabsList className="h-9 w-full justify-start overflow-x-auto rounded-lg border bg-card p-1 sm:w-auto">
+          <TabsTrigger value="sources">Sources</TabsTrigger>
+          <TabsTrigger value="runtime">Runtime</TabsTrigger>
+          <TabsTrigger value="email">Email</TabsTrigger>
+          <TabsTrigger value="security">Security</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="sources" className="space-y-4">
+          <ConnectionPanel
+            title="Work · Slab"
+            description="Operational work via remote MCP"
+            icon={Server}
+            state={status.work}
+            url={settings.workMcpUrl}
+            setUrl={(value) => setSettings({ ...settings, workMcpUrl: value })}
+            secret={workKey}
+            setSecret={setWorkKey}
+            configured={settings.workApiKeyConfigured}
+            onTest={() => test("work")}
+          />
+          <ConnectionPanel
+            title="Docs · Slab Docs"
+            description="Company knowledge via remote MCP"
+            icon={PlugZap}
+            state={status.docs}
+            url={settings.docsMcpUrl}
+            setUrl={(value) => setSettings({ ...settings, docsMcpUrl: value })}
+            secret={docsKey}
+            setSecret={setDocsKey}
+            configured={settings.docsApiKeyConfigured}
+            onTest={() => test("docs")}
+          />
+        </TabsContent>
+
+        <TabsContent value="runtime">
+          <section className="rounded-lg border bg-card p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-4">
               <div className="flex gap-3">
-                <TerminalSquare className="mt-1 size-5" />
+                <TerminalSquare className="mt-0.5 size-4" />
                 <div>
-                  <h2 className="font-heading text-3xl font-semibold">
-                    Runner
-                  </h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Loopback-only execution service.
+                  <h2 className="text-sm font-semibold">Runner</h2>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Loopback-only execution service
                   </p>
                 </div>
               </div>
               <ConnectionBadge state={status.runner} />
             </div>
-            <div className="mt-6 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
-              <label className="grid gap-2 text-sm font-semibold">
+            <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <label className="grid gap-1.5 text-xs font-semibold">
                 Runner URL
                 <Input
                   value={settings.runnerUrl}
-                  onChange={(e) =>
-                    setSettings({ ...settings, runnerUrl: e.target.value })
+                  onChange={(event) =>
+                    setSettings({ ...settings, runnerUrl: event.target.value })
                   }
                   type="url"
                 />
@@ -248,118 +211,98 @@ export function SettingsView({
                   <LoaderCircle className="animate-spin" />
                 ) : (
                   <PlugZap />
-                )}
+                )}{" "}
                 Test connection
               </Button>
             </div>
+            <div className="mt-4 flex min-h-11 items-center justify-between border-y text-sm">
+              <span>Codex runtime</span>
+              <ConnectionBadge state={status.codex} />
+            </div>
           </section>
-          <section className="border-t-2 border-foreground pt-5">
-            <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
+        </TabsContent>
+
+        <TabsContent value="email">
+          <section className="rounded-lg border bg-card p-4 sm:p-5">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
               <div className="flex gap-3">
-                <Mail className="mt-1 size-5" />
+                <Mail className="mt-0.5 size-4" />
                 <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-heading text-3xl font-semibold">
-                      Email
-                    </h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-semibold">Email service</h2>
                     <Badge variant="secondary">Optional</Badge>
                   </div>
-                  <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                    Connect workspace mailboxes and define scoped read, draft,
-                    and send policies for each agent.
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Workspace mailboxes and agent-scoped read, draft, and send
+                    policies
                   </p>
                 </div>
               </div>
               <EmailConnectionBadge state={email} />
             </div>
-            <div className="mt-6 grid gap-4 border-y py-4 text-sm sm:grid-cols-[1fr_auto_auto] sm:items-center">
+            <div className="mt-4 grid gap-4 border-y py-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center">
               <div className="min-w-0">
-                <span className="block text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">
+                <span className="block text-xs text-muted-foreground">
                   Service
                 </span>
-                <strong className="mt-1 block truncate">
+                <strong className="block truncate">
                   {email.serviceUrl || "Not configured"}
                 </strong>
               </div>
-              <div className="flex gap-8 sm:px-4">
-                <div>
-                  <span className="block text-muted-foreground">Mailboxes</span>
-                  <strong>{email.accounts.length}</strong>
-                </div>
-                <div>
-                  <span className="block text-muted-foreground">
-                    Agent profiles
-                  </span>
-                  <strong>{email.assignments.length}</strong>
-                </div>
+              <div>
+                <span className="block text-xs text-muted-foreground">
+                  Mailboxes
+                </span>
+                <strong>{email.accounts.length}</strong>
+              </div>
+              <div>
+                <span className="block text-xs text-muted-foreground">
+                  Agent profiles
+                </span>
+                <strong>{email.assignments.length}</strong>
               </div>
               <Button variant="outline" onClick={() => setEmailOpen(true)}>
                 <Mail /> Configure email
               </Button>
             </div>
-            <p className="mt-3 text-xs leading-5 text-muted-foreground">
-              Mailbox credentials remain in slab-email. Agents receive only
-              scoped connector access, and sending requires the policy chosen
-              here.
-            </p>
           </section>
-        </div>
-        <aside className="border-t-2 border-primary pt-5">
-          <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">
-            Security boundary
-          </p>
-          <h2 className="mt-2 font-heading text-3xl font-semibold leading-tight">
-            The browser never sees MCP credentials.
-          </h2>
-          <p className="mt-4 text-sm leading-6 text-muted-foreground">
-            React talks only to Next route handlers. MCP clients and Runner
-            requests execute in the Node.js runtime. Keep Runner bound to
-            127.0.0.1.
-          </p>
-          <div className="mt-6 space-y-3 border-y py-4 text-sm">
-            <div className="flex justify-between">
-              <span>Single user</span>
-              <strong>Local</strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Work source</span>
-              <strong>Slab</strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Docs source</span>
-              <strong>Slab Docs</strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Agent runtime</span>
-              <strong>Codex</strong>
-            </div>
-          </div>
-          <div className="mt-6 space-y-3 text-sm">
-            {[
-              ["Slab", status.work],
-              ["Docs", status.docs],
-              ["Runner", status.runner],
-              [
-                "Codex",
-                status.codex === "connected"
-                  ? "available"
-                  : status.codex === "error"
-                    ? "unavailable"
-                    : status.codex === "testing"
-                      ? "testing"
-                      : "not verified",
-              ],
-            ].map(([label, value]) => (
-              <div className="flex items-center justify-between" key={label}>
-                <span>{label}</span>
-                <span className="font-semibold capitalize text-muted-foreground">
-                  {value}
-                </span>
+        </TabsContent>
+
+        <TabsContent value="security">
+          <section className="max-w-3xl rounded-lg border bg-card p-4 sm:p-5">
+            <div className="flex gap-3">
+              <ShieldCheck className="mt-0.5 size-4 text-emerald-700" />
+              <div>
+                <h2 className="text-sm font-semibold">
+                  Server-side security boundary
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  The browser never receives MCP credentials. React talks only
+                  to Next route handlers; MCP clients and Runner requests
+                  execute in the Node.js runtime.
+                </p>
               </div>
-            ))}
-          </div>
-        </aside>
-      </div>
+            </div>
+            <dl className="mt-4 divide-y border-y text-sm">
+              {[
+                ["Workspace", "Single user · local"],
+                ["Work source", "Slab"],
+                ["Docs source", "Slab Docs"],
+                ["Agent runtime", "Codex"],
+                ["Runner boundary", "127.0.0.1"],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="flex min-h-11 items-center justify-between gap-4"
+                >
+                  <dt className="text-muted-foreground">{label}</dt>
+                  <dd className="font-medium">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        </TabsContent>
+      </Tabs>
       <EmailIntegrationEditor
         open={emailOpen}
         initialState={email}
@@ -371,9 +314,85 @@ export function SettingsView({
   );
 }
 
+function ConnectionPanel({
+  title,
+  description,
+  icon: Icon,
+  state,
+  url,
+  setUrl,
+  secret,
+  setSecret,
+  configured,
+  onTest,
+}: {
+  title: string;
+  description: string;
+  icon: typeof Server;
+  state: State;
+  url: string;
+  setUrl: (value: string) => void;
+  secret: string;
+  setSecret: (value: string) => void;
+  configured: boolean;
+  onTest: () => void;
+}) {
+  return (
+    <section className="rounded-lg border bg-card p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex gap-3">
+          <Icon className="mt-0.5 size-4" />
+          <div>
+            <h2 className="text-sm font-semibold">{title}</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {description}
+            </p>
+          </div>
+        </div>
+        <ConnectionBadge state={state} />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(14rem,.7fr)_auto] md:items-end">
+        <label className="grid gap-1.5 text-xs font-semibold">
+          MCP URL
+          <Input
+            value={url}
+            onChange={(event) => setUrl(event.target.value)}
+            type="url"
+          />
+        </label>
+        <label className="grid gap-1.5 text-xs font-semibold">
+          API key
+          <div className="relative">
+            <Input
+              value={secret}
+              onChange={(event) => setSecret(event.target.value)}
+              type="password"
+              placeholder={
+                configured ? "Configured · enter to replace" : "Enter API key"
+              }
+            />
+            <EyeOff className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          </div>
+        </label>
+        <Button
+          variant="outline"
+          onClick={onTest}
+          disabled={state === "testing"}
+        >
+          {state === "testing" ? (
+            <LoaderCircle className="animate-spin" />
+          ) : (
+            <PlugZap />
+          )}{" "}
+          Test
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 function EmailConnectionBadge({ state }: { state: EmailIntegrationState }) {
-  if (!state.configured)
-    return <Badge variant="outline">Not configured</Badge>;
+  if (!state.configured) return <Badge variant="outline">Not configured</Badge>;
   if (
     state.accounts.some(
       (account) => account.enabled && account.lastConnectionStatus === "error",
@@ -387,7 +406,7 @@ function EmailConnectionBadge({ state }: { state: EmailIntegrationState }) {
   if (state.status === "connected")
     return (
       <Badge className="bg-emerald-700 text-white">
-        <Check /> Service connected
+        <Check /> Connected
       </Badge>
     );
   if (state.status === "failed")
@@ -404,21 +423,18 @@ function ConnectionBadge({ state }: { state: State }) {
   if (state === "testing")
     return (
       <Badge variant="outline">
-        <LoaderCircle className="animate-spin" />
-        Testing
+        <LoaderCircle className="animate-spin" /> Testing
       </Badge>
     );
   if (state === "connected")
     return (
       <Badge className="bg-emerald-700 text-white">
-        <Check />
-        Connected
+        <Check /> Connected
       </Badge>
     );
   return (
     <Badge variant="destructive">
-      <X />
-      Unavailable
+      <X /> Unavailable
     </Badge>
   );
 }

@@ -26,11 +26,18 @@ export async function getOverviewPageData(): Promise<OverviewData> {
   const agents = repository.listAgents(),
     runs = repository.listRuns(),
     automations = repository.listAutomations(),
+    integrations = repository.listIntegrations(),
     approvals = repository.listApprovals("pending"),
     runningAgentIds = new Set(
       runs.filter((run) => run.status === "running").map((run) => run.agentId),
     );
-  let work = { open: 0, inProgress: 0, blocked: 0, connected: true };
+  let work = {
+    open: 0,
+    inProgress: 0,
+    blocked: 0,
+    review: 0,
+    connected: true,
+  };
 
   try {
     const projects = await WorkClient.listProjects();
@@ -52,6 +59,7 @@ export async function getOverviewPageData(): Promise<OverviewData> {
         (issue) => issue.status === "in_progress" || issue.status === "review",
       ).length,
       blocked: blockedKeys.size,
+      review: issues.filter((issue) => issue.status === "review").length,
       connected: true,
     };
   } catch {
@@ -62,15 +70,36 @@ export async function getOverviewPageData(): Promise<OverviewData> {
     agents: {
       total: agents.length,
       running: runningAgentIds.size,
+      queued: runs.filter((run) => run.status === "queued").length,
+      waitingApproval: runs.filter((run) => run.status === "waiting_approval")
+        .length,
       idle:
         agents.filter((agent) => agent.enabled).length - runningAgentIds.size,
     },
     work,
+    integrations: {
+      total: integrations.length,
+      healthy: integrations.filter(
+        (integration) =>
+          integration.enabled && integration.status === "connected",
+      ).length,
+      issues: integrations.filter(
+        (integration) => integration.enabled && integration.status === "failed",
+      ).length,
+    },
     automations: automations.filter((automation) => automation.enabled),
     attention: {
       approvals: approvals.length,
       failedRuns: runs.filter((run) => run.status === "failed").length,
+      blockedWork: work.blocked,
+      reviewWork: work.review,
+      integrationIssues: integrations.filter(
+        (integration) => integration.enabled && integration.status === "failed",
+      ).length,
     },
+    activeRuns: runs.filter((run) =>
+      ["running", "queued", "waiting_approval"].includes(run.status),
+    ),
     recentRuns: runs.slice(0, 6),
     setup: getSetupStatus(),
     agentsList: agents,
@@ -107,6 +136,7 @@ export function getRunsPageData(): RunsData {
   return {
     runs: repository.listRuns(),
     approvals: repository.listApprovals(),
+    agents: repository.listAgents(),
   };
 }
 

@@ -7,7 +7,9 @@ export default function AgentsPage() {
   return (
     <AgentsView
       initialAgents={repository.listAgents()}
-      initialQuickActions={repository.listAgentQuickActions()}
+      initialRuns={repository.listRuns()}
+      integrations={repository.listIntegrations()}
+      emailAssignments={repository.listAgentEmailAccess()}
     />
   );
 }

@@ -8,7 +8,6 @@ import {
   ListTodo,
   MessageSquare,
   Play,
-  Radio,
   ShieldCheck,
   Sparkles,
   Puzzle,
@@ -27,8 +26,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 import { api } from "@/lib/client-api";
 import type { AgentDetailData, Integration, Thread } from "@/lib/types";
@@ -123,12 +122,16 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
     }
   }
   const { agent } = data;
+  const activeRun = data.runs.find((run) =>
+    ["running", "waiting_approval", "queued"].includes(run.status),
+  );
+  const queued = data.runs.filter((run) => run.status === "queued").length;
+  const state = !agent.enabled ? "disabled" : (activeRun?.status ?? "idle");
   return (
     <>
       <PageHeader
-        eyebrow="Agent detail"
         title={agent.name}
-        description={agent.role}
+        description={`${agent.role} · ${agent.runtime} · ${agent.model}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Dialog open={open} onOpenChange={setOpen}>
@@ -172,9 +175,129 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
           </div>
         }
       />
-      <div className="grid gap-8 xl:grid-cols-[1fr_20rem]">
-        <div className="space-y-10">
-          <section className="border-y bg-muted/20 px-5 py-4">
+      <Tabs defaultValue="overview" className="space-y-5">
+        <TabsList className="h-9 w-full justify-start overflow-x-auto rounded-lg border bg-card p-1 sm:w-auto">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="instructions">Instructions</TabsTrigger>
+          <TabsTrigger value="capabilities">Capabilities</TabsTrigger>
+          <TabsTrigger value="automations">Automations</TabsTrigger>
+          <TabsTrigger value="runs">Runs</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-5">
+          <section className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-2 xl:grid-cols-5">
+            {[
+              { label: "State", value: state.replaceAll("_", " ") },
+              {
+                label: "Current work",
+                value:
+                  activeRun?.issueKey ??
+                  (activeRun?.mode === "review" ? "Operational review" : "—"),
+              },
+              { label: "Queue", value: queued ? `${queued} queued` : "Clear" },
+              { label: "Runtime", value: "Codex" },
+              { label: "Tool access", value: fullAccess ? "Full" : "Guarded" },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="min-h-20 border-b p-3 sm:odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0"
+              >
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[.08em] text-muted-foreground">
+                  {item.label}
+                </p>
+                <p className="mt-2 truncate text-sm font-semibold capitalize">
+                  {item.value}
+                </p>
+              </div>
+            ))}
+          </section>
+
+          <section className="rounded-lg border bg-card p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold">Quick tasks</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Start ad-hoc work or reuse a configured prompt.
+                </p>
+              </div>
+              <AgentQuickActionsEditor
+                agentId={agent.id}
+                actions={quickActions}
+                onChange={setQuickActions}
+              />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <AgentRunDialog
+                agent={agent}
+                label="Run now"
+                icon={Play}
+                variant="default"
+                defaultMode="review"
+              />
+              {quickActions.map((action) => (
+                <AgentRunDialog
+                  key={action.id}
+                  agent={agent}
+                  label={action.label}
+                  icon={Sparkles}
+                  defaultPrompt={action.prompt}
+                  variant="outline"
+                />
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-lg border bg-card p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Threads</h2>
+              <span className="text-xs text-muted-foreground">
+                {data.threads.length} conversations
+              </span>
+            </div>
+            <div className="mt-3 divide-y border-y">
+              {data.threads.map((thread) => (
+                <Link
+                  key={thread.id}
+                  href={`/agents/${agent.id}/threads/${thread.id}`}
+                  className="group flex min-h-12 items-center justify-between"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <MessageSquare className="size-3.5 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {thread.title}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Updated {formatDateTime(thread.updatedAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+                </Link>
+              ))}
+              {!data.threads.length && (
+                <p className="py-5 text-sm text-muted-foreground">
+                  No conversations yet.
+                </p>
+              )}
+            </div>
+          </section>
+        </TabsContent>
+
+        <TabsContent value="instructions">
+          <section className="rounded-lg border bg-card p-4 sm:p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <Bot className="size-4" />
+              <h2 className="text-sm font-semibold">System instructions</h2>
+            </div>
+            <pre className="max-h-[65vh] overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-4 font-sans text-sm leading-6">
+              {agent.instructions}
+            </pre>
+          </section>
+        </TabsContent>
+
+        <TabsContent value="capabilities" className="space-y-5">
+          <section className="rounded-lg border bg-card p-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex gap-3">
                 <ShieldCheck className="mt-0.5 size-4 shrink-0" />
@@ -213,18 +336,16 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
               </div>
             </div>
           </section>
-          <section className="border-y py-5">
+          <section className="rounded-lg border bg-card p-4">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">
-                Integrations
-              </p>
+              <h2 className="text-sm font-semibold">Integrations</h2>
               <p className="mt-1 text-xs text-muted-foreground">
                 Choose which configured capabilities are included in this
                 agent&apos;s next run.
               </p>
             </div>
             {integrations.length ? (
-              <div className="mt-4 divide-y rounded-xl border">
+              <div className="mt-4 divide-y rounded-md border">
                 {integrations.map((integration) => {
                   const assigned =
                     (integration.permissions[agent.id] ?? []).length > 0;
@@ -268,154 +389,66 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
               </p>
             )}
           </section>
-          <section className="grid gap-px overflow-hidden border bg-border sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              { label: "Runtime", value: "Codex", icon: Bot },
-              {
-                label: "Status",
-                value: agent.enabled ? "Idle" : "Disabled",
-                icon: Radio,
-              },
-              { label: "Model", value: agent.model, icon: Bot },
-              {
-                label: "Tool access",
-                value: fullAccess ? "Full" : "Guarded",
-                icon: ShieldCheck,
-              },
-            ].map((item) => (
-              <div className="bg-card p-5" key={item.label}>
-                <item.icon className="size-4 text-muted-foreground" />
-                <p className="mt-8 text-xs font-bold uppercase tracking-[.16em] text-muted-foreground">
-                  {item.label}
-                </p>
-                <p className="mt-1 text-lg font-semibold capitalize">
-                  {item.value}
-                </p>
-              </div>
-            ))}
-          </section>
-          <section className="border-y py-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">
-                  Quick tasks
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Start ad-hoc work or reuse a configured prompt.
-                </p>
-              </div>
-              <AgentQuickActionsEditor
-                agentId={agent.id}
-                actions={quickActions}
-                onChange={setQuickActions}
-              />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <AgentRunDialog
-                agent={agent}
-                label="Run now"
-                icon={Play}
-                variant="default"
-                defaultMode="review"
-              />
-              {quickActions.map((action) => (
-                <AgentRunDialog
-                  key={action.id}
-                  agent={agent}
-                  label={action.label}
-                  icon={Sparkles}
-                  defaultPrompt={action.prompt}
-                  variant="outline"
-                />
-              ))}
-            </div>
-          </section>
-          <section>
-            <h2 className="font-heading text-3xl font-semibold">Threads</h2>
-            <div className="mt-4 divide-y border-y">
-              {data.threads.map((thread) => (
-                <Link
-                  key={thread.id}
-                  href={`/agents/${agent.id}/threads/${thread.id}`}
-                  className="group flex items-center justify-between py-4"
-                >
-                  <div className="flex items-center gap-3">
-                    <MessageSquare className="size-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-semibold">{thread.title}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Updated {formatDateTime(thread.updatedAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
-                </Link>
-              ))}
-              {!data.threads.length && (
-                <EmptyState
-                  title="No conversations yet"
-                  description="Start a thread to give this agent its first job."
-                />
-              )}
-            </div>
-          </section>
-          <section>
-            <h2 className="font-heading text-3xl font-semibold">Recent runs</h2>
-            <div className="mt-4 divide-y border-y">
-              {data.runs.map((run) => (
-                <Link
-                  key={run.id}
-                  href={`/runs/${run.id}`}
-                  className="flex items-center justify-between py-4"
-                >
-                  <span className="font-mono text-sm">
-                    {run.id.slice(0, 12)}
-                  </span>
-                  <StatusBadge status={run.status} />
-                </Link>
-              ))}
-              {!data.runs.length && (
-                <p className="py-6 text-sm text-muted-foreground">
-                  No runs yet.
-                </p>
-              )}
-            </div>
-          </section>
-        </div>
-        <aside className="space-y-8">
-          <section>
-            <p className="text-xs font-bold uppercase tracking-[.16em] text-muted-foreground">
-              Instructions
-            </p>
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
-              {agent.instructions}
-            </p>
-          </section>
-          <section>
+        </TabsContent>
+
+        <TabsContent value="automations">
+          <section className="rounded-lg border bg-card p-4">
             <div className="flex items-center gap-2">
               <CalendarClock className="size-4" />
-              <p className="text-xs font-bold uppercase tracking-[.16em] text-muted-foreground">
-                Automations
-              </p>
+              <h2 className="text-sm font-semibold">Automations</h2>
             </div>
-            <div className="mt-3 space-y-3">
+            <div className="mt-3 divide-y border-y">
               {data.automations.map((item) => (
-                <div key={item.id} className="border-t pt-3">
+                <div
+                  key={item.id}
+                  className="grid min-h-14 gap-1 py-2 sm:grid-cols-[1fr_auto] sm:items-center"
+                >
                   <p className="text-sm font-semibold">{item.name}</p>
-                  <p className="mt-1 font-mono text-xs text-muted-foreground">
-                    {item.cronExpression}
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {item.cronExpression ?? "Manual"}
                   </p>
                 </div>
               ))}
               {!data.automations.length && (
-                <p className="text-sm text-muted-foreground">
+                <p className="py-5 text-sm text-muted-foreground">
                   Nothing scheduled.
                 </p>
               )}
             </div>
           </section>
-        </aside>
-      </div>
+        </TabsContent>
+
+        <TabsContent value="runs">
+          <section className="rounded-lg border bg-card p-4">
+            <h2 className="text-sm font-semibold">Recent runs</h2>
+            <div className="mt-3 divide-y border-y">
+              {data.runs.map((run) => (
+                <Link
+                  key={run.id}
+                  href={`/runs/${run.id}`}
+                  className="grid min-h-12 grid-cols-[minmax(0,1fr)_auto] items-center gap-3"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-mono text-xs">
+                      {run.id}
+                    </span>
+                    <span className="mt-0.5 block text-xs capitalize text-muted-foreground">
+                      {run.mode.replaceAll("_", " ")} ·{" "}
+                      {run.trigger.replaceAll("_", " ")}
+                    </span>
+                  </span>
+                  <StatusBadge status={run.status} />
+                </Link>
+              ))}
+              {!data.runs.length && (
+                <p className="py-5 text-sm text-muted-foreground">
+                  No runs yet.
+                </p>
+              )}
+            </div>
+          </section>
+        </TabsContent>
+      </Tabs>
     </>
   );
 }

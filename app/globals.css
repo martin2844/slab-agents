@@ -125,12 +125,14 @@
     @apply bg-background text-foreground;
     min-width: 320px;
     font-kerning: normal;
-    background-image: radial-gradient(
-      circle at 1px 1px,
-      oklch(0.7 0.025 70 / 0.16) 1px,
-      transparent 0
+    font-variant-numeric: tabular-nums;
+    background-image: linear-gradient(
+      to right,
+      transparent,
+      transparent calc(100% - 1px),
+      oklch(0.7 0.025 70 / 0.045) 100%
     );
-    background-size: 24px 24px;
+    background-size: 80px 100%;
   }
   html {
     @apply font-sans;
@@ -145,7 +147,7 @@
     @apply border-t border-foreground/80;
   }
   .markdown {
-    @apply max-w-[72ch] text-[1rem] leading-7 break-words;
+    @apply max-w-[76ch] break-words text-[0.9375rem] leading-7;
   }
   .markdown > :first-child {
     @apply mt-0;
@@ -154,10 +156,10 @@
     @apply mb-0;
   }
   .markdown h1 {
-    @apply mb-5 mt-8 font-heading text-4xl font-semibold tracking-tight;
+    @apply mb-4 mt-7 font-heading text-3xl font-semibold tracking-tight;
   }
   .markdown h2 {
-    @apply mb-3 mt-8 font-heading text-2xl font-semibold tracking-tight;
+    @apply mb-3 mt-7 font-heading text-xl font-semibold tracking-tight;
   }
   .markdown h3 {
     @apply mb-2 mt-6 text-lg font-bold;
@@ -215,18 +217,8 @@
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  main > div {
-    animation: reveal 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-  @keyframes reveal {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+@media (pointer: coarse) {
+  [data-slot="button"] {
+    min-height: 2.75rem;
   }
 }

@@ -191,15 +191,30 @@ export type DocumentRevision = {
 };
 
 export type OverviewData = {
-  agents: { total: number; running: number; idle: number };
+  agents: {
+    total: number;
+    running: number;
+    queued: number;
+    waitingApproval: number;
+    idle: number;
+  };
   work: {
     open: number;
     inProgress: number;
     blocked: number;
+    review: number;
     connected: boolean;
   };
+  integrations: { total: number; healthy: number; issues: number };
   automations: Automation[];
-  attention: { approvals: number; failedRuns: number };
+  attention: {
+    approvals: number;
+    failedRuns: number;
+    blockedWork: number;
+    reviewWork: number;
+    integrationIssues: number;
+  };
+  activeRuns: Run[];
   recentRuns: Run[];
   setup: SetupStatus;
   agentsList: Agent[];
@@ -239,7 +254,7 @@ export type ThreadData = {
   messages: Message[];
 };
 
-export type RunsData = { runs: Run[]; approvals: Approval[] };
+export type RunsData = { runs: Run[]; approvals: Approval[]; agents: Agent[] };
 
 export type RunDetailData = {
   run: Run;

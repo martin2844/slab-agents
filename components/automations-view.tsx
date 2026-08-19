@@ -8,7 +8,6 @@ import {
   Play,
   Plus,
   Sparkles,
-  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -32,6 +31,12 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/page-header";
+import {
+  DenseTable,
+  denseTableCell,
+  denseTableHead,
+} from "@/components/operational-ui";
+import { StatusBadge } from "@/components/status-badge";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { api } from "@/lib/client-api";
 import type { Agent, Automation, AutomationsData, Run } from "@/lib/types";
@@ -270,9 +275,8 @@ export function AutomationsView({
   return (
     <>
       <PageHeader
-        eyebrow="Local scheduler"
         title="Automations"
-        description="Simple cron triggers for repeatable agent work. The scheduler lives with this app and stops when the app stops."
+        description={`${automations?.filter((item) => item.enabled).length ?? 0} active · ${automations?.length ?? 0} configured · local scheduler`}
         actions={
           <CreateAutomation
             agents={agents}
@@ -311,71 +315,89 @@ export function AutomationsView({
             }
           />
         ) : (
-          <div className="divide-y border-y">
-            {automations.map((item) => (
-              <article
-                key={item.id}
-                className="grid gap-5 py-6 md:grid-cols-[3rem_1fr_13rem_auto] md:items-center"
-              >
-                <div className="grid size-11 place-items-center rounded-full bg-muted">
-                  <Zap className="size-4 text-primary" />
-                </div>
-                <div>
-                  <h2 className="font-heading text-2xl font-semibold">
-                    {item.name}
-                  </h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {item.agentName} ·{" "}
-                    {item.mode === "review" ? "Review" : "Task"}
-                  </p>
-                  <p className="mt-3 line-clamp-2 max-w-2xl text-sm leading-6">
-                    {item.prompt}
-                  </p>
-                </div>
-                <div>
-                  <p className="flex items-center gap-2 font-mono text-sm">
-                    <Clock3 className="size-4" />
-                    {item.cronExpression ?? "Manual"}
-                  </p>
-                  {item.lastRunAt && item.lastRunId ? (
-                    <Link
-                      href={`/runs/${item.lastRunId}`}
-                      className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      Last ran {formatDateTime(item.lastRunAt)}
-                      <ArrowUpRight className="size-3" />
-                    </Link>
-                  ) : (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {item.lastRunAt
-                        ? `Last ran ${formatDateTime(item.lastRunAt)}`
-                        : "Never run"}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => runNow(item)}
-                    disabled={runningId === item.id}
+          <DenseTable minWidth="980px">
+            <thead>
+              <tr>
+                <th className={denseTableHead}>Automation</th>
+                <th className={denseTableHead}>Agent</th>
+                <th className={denseTableHead}>Mode</th>
+                <th className={denseTableHead}>Schedule</th>
+                <th className={denseTableHead}>Last run</th>
+                <th className={denseTableHead}>Status</th>
+                <th className={`${denseTableHead} text-right`}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {automations.map((item) => (
+                <tr key={item.id} className="hover:bg-muted/25">
+                  <td className={denseTableCell}>
+                    <div className="max-w-sm">
+                      <p className="truncate font-semibold">{item.name}</p>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {item.prompt}
+                      </p>
+                    </div>
+                  </td>
+                  <td className={`${denseTableCell} font-medium`}>
+                    {item.agentName}
+                  </td>
+                  <td className={`${denseTableCell} text-xs capitalize`}>
+                    {item.mode}
+                  </td>
+                  <td className={`${denseTableCell} font-mono text-xs`}>
+                    <span className="flex items-center gap-1.5">
+                      <Clock3 className="size-3.5" />
+                      {item.cronExpression ?? "Manual"}
+                    </span>
+                  </td>
+                  <td
+                    className={`${denseTableCell} text-xs text-muted-foreground`}
                   >
-                    {runningId === item.id ? (
-                      <LoaderCircle className="animate-spin" />
+                    {item.lastRunAt && item.lastRunId ? (
+                      <Link
+                        href={`/runs/${item.lastRunId}`}
+                        className="inline-flex items-center gap-1 hover:text-foreground"
+                      >
+                        {formatDateTime(item.lastRunAt)}
+                        <ArrowUpRight className="size-3" />
+                      </Link>
+                    ) : item.lastRunAt ? (
+                      formatDateTime(item.lastRunAt)
                     ) : (
-                      <Play />
+                      "Never"
                     )}
-                    Run now
-                  </Button>
-                  <Switch
-                    checked={item.enabled}
-                    onCheckedChange={(value) => toggle(item, value)}
-                    aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.name}`}
-                  />
-                </div>
-              </article>
-            ))}
-          </div>
+                  </td>
+                  <td className={denseTableCell}>
+                    <StatusBadge
+                      status={item.enabled ? "enabled" : "disabled"}
+                    />
+                  </td>
+                  <td className={`${denseTableCell} text-right`}>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => runNow(item)}
+                        disabled={runningId === item.id}
+                      >
+                        {runningId === item.id ? (
+                          <LoaderCircle className="animate-spin" />
+                        ) : (
+                          <Play />
+                        )}
+                        Run now
+                      </Button>
+                      <Switch
+                        checked={item.enabled}
+                        onCheckedChange={(value) => toggle(item, value)}
+                        aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.name}`}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </DenseTable>
         ))}
     </>
   );

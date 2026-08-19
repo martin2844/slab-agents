@@ -189,7 +189,7 @@ function Tree({
               role="treeitem"
               aria-selected={selected === doc.id}
               onClick={() => onSelect(doc.id)}
-              className={`flex min-h-10 w-full items-center gap-2 rounded-md pr-2 text-left text-sm transition-colors hover:bg-muted ${selected === doc.id ? "bg-muted font-semibold" : "text-muted-foreground"}`}
+              className={`flex min-h-8 w-full items-center gap-2 rounded-md pr-2 text-left text-[0.82rem] transition-colors hover:bg-muted ${selected === doc.id ? "bg-muted font-semibold text-foreground" : "text-muted-foreground"}`}
               style={{ paddingLeft: `${8 + depth * 16}px` }}
             >
               <ChevronRight className="size-3.5" />
@@ -221,9 +221,9 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
     [body, setBody] = useState(initialData.detail?.document.body ?? ""),
     [title, setTitle] = useState(initialData.detail?.document.title ?? ""),
     [revision, setRevision] = useState<DocumentRevision | null>(null),
-    [searchResults, setSearchResults] = useState<
-      DocumentSearchResult[] | null
-    >(null),
+    [searchResults, setSearchResults] = useState<DocumentSearchResult[] | null>(
+      null,
+    ),
     [searching, setSearching] = useState(false),
     [testing, setTesting] = useState(false),
     skipInitialDetailLoad = useRef(true);
@@ -336,9 +336,8 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
   return (
     <>
       <PageHeader
-        eyebrow="Source · Slab Docs"
         title="Docs"
-        description="Browse the company memory, edit Markdown, and inspect prior revisions without copying knowledge into the control plane."
+        description={`${documents?.length ?? 0} documents · Slab Docs source`}
         actions={
           <CreateDocument documents={documents ?? []} onCreated={addDocument} />
         }
@@ -346,8 +345,8 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
       {error && <ErrorState message={error} />}{" "}
       {!documents && !error && <LoadingState />}
       {documents && (
-        <div className="grid min-h-[68vh] overflow-hidden border bg-card lg:grid-cols-[18rem_1fr]">
-          <aside className="border-b bg-muted/35 p-3 lg:border-b-0 lg:border-r">
+        <div className="grid min-h-[76vh] overflow-hidden rounded-lg border bg-card lg:grid-cols-[16rem_1fr]">
+          <aside className="border-b bg-muted/35 p-2.5 lg:border-b-0 lg:border-r">
             <div className="relative mb-3">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -363,7 +362,7 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
                   <button
                     key={document.id}
                     onClick={() => setSelected(document.id)}
-                    className={`flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-muted ${selected === document.id ? "bg-muted font-semibold" : "text-muted-foreground"}`}
+                    className={`flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[0.82rem] hover:bg-muted ${selected === document.id ? "bg-muted font-semibold text-foreground" : "text-muted-foreground"}`}
                   >
                     <Search className="size-3.5" />
                     <span className="truncate">{document.title}</span>
@@ -420,12 +419,12 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
               />
             ) : (
               <>
-                <header className="flex flex-col gap-4 border-b p-5 sm:flex-row sm:items-center sm:justify-between">
+                <header className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <p className="font-mono text-[0.68rem] text-muted-foreground">
                       /{detail.document.slug}
                     </p>
-                    <h2 className="truncate font-heading text-3xl font-semibold tracking-tight">
+                    <h2 className="truncate font-heading text-2xl font-semibold tracking-tight">
                       {detail.document.title}
                     </h2>
                   </div>
@@ -490,7 +489,7 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
                     {formatDateTime(revision.created_at)}
                   </div>
                 )}
-                <div className="p-5 sm:p-8">
+                <div className="p-4 sm:p-6">
                   {editing && !revision ? (
                     <Tabs defaultValue="write">
                       <TabsList>
