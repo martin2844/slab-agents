@@ -7,7 +7,12 @@ import {
   type McpServerDefinitionMetric,
 } from "@/lib/run-context-profile";
 
-export type McpConnection = { url: string; apiKey: string };
+export type McpConnection = {
+  url: string;
+  apiKey?: string;
+  headers?: Record<string, string>;
+};
+
 export type McpInspectionConnection = {
   url: string;
   headers: Record<string, string>;
@@ -31,6 +36,7 @@ function parseTextResult(rawResult: Awaited<ReturnType<Client["callTool"]>>) {
     structuredContent?: unknown;
     content: Array<{ type: string; text?: string }>;
   };
+
   if (result.isError) {
     const text = result.content.find((item) => item.type === "text");
     const message = text?.text ?? "The MCP tool returned an error.";
@@ -50,7 +56,9 @@ function parseTextResult(rawResult: Awaited<ReturnType<Client["callTool"]>>) {
     }
     throw new Error(message);
   }
-  if (result.structuredContent) return result.structuredContent;
+
+  if (result.structuredContent !== undefined) return result.structuredContent;
+
   const text = result.content.find((item) => item.type === "text");
   if (!text?.text) return null;
   try {
@@ -58,6 +66,17 @@ function parseTextResult(rawResult: Awaited<ReturnType<Client["callTool"]>>) {
   } catch {
     return text.text;
   }
+}
+
+function resolveRequestHeaders(connection: McpConnection) {
+  const headers: Record<string, string> = {
+    ...(connection.headers ?? {}),
+  };
+  if (connection.apiKey) {
+    headers.Authorization = `Bearer ${connection.apiKey}`;
+    headers["X-API-Key"] = connection.apiKey;
+  }
+  return headers;
 }
 
 export async function callMcpTool<T>(
@@ -68,13 +87,11 @@ export async function callMcpTool<T>(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12_000);
   const client = new Client({ name: "slab-agent-workspace", version: "0.1.0" });
-  const headers: Record<string, string> = {};
-  if (connection.apiKey) {
-    headers.Authorization = `Bearer ${connection.apiKey}`;
-    headers["X-API-Key"] = connection.apiKey;
-  }
   const transport = new StreamableHTTPClientTransport(new URL(connection.url), {
-    requestInit: { headers, signal: controller.signal },
+    requestInit: {
+      headers: resolveRequestHeaders(connection),
+      signal: controller.signal,
+    },
   });
   try {
     await client.connect(transport);
@@ -92,12 +109,7 @@ export async function testMcp(connection: McpConnection) {
   const client = new Client({ name: "slab-agent-workspace", version: "0.1.0" });
   const transport = new StreamableHTTPClientTransport(new URL(connection.url), {
     requestInit: {
-      headers: connection.apiKey
-        ? {
-            Authorization: `Bearer ${connection.apiKey}`,
-            "X-API-Key": connection.apiKey,
-          }
-        : {},
+      headers: resolveRequestHeaders(connection),
       signal: controller.signal,
     },
   });
@@ -122,18 +134,26 @@ export async function inspectMcpDefinitions(
     version: "0.1.0",
   });
   const transport = new StreamableHTTPClientTransport(new URL(connection.url), {
-    requestInit: { headers: connection.headers, signal: controller.signal },
+    requestInit: {
+      headers: connection.headers,
+      signal: controller.signal,
+    },
   });
+
   try {
     await client.connect(transport);
     const response = await client.listTools();
     const total = measureJson(response.tools);
+
     return {
       server,
       ...total,
       toolCount: response.tools.length,
       tools: response.tools
-        .map((tool) => ({ name: tool.name, ...measureJson(tool) }))
+        .map((tool) => ({
+          name: tool.name,
+          ...measureJson(tool),
+        }))
         .sort((a, b) => b.approxTokens - a.approxTokens),
       success: true,
     };

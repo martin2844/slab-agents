@@ -8,7 +8,10 @@ import {
   POSTHOG_AGENT_PROMPT,
 } from "@/lib/integrations/catalog";
 import { getAgentEmailMcp } from "@/lib/integrations/email-service";
-import { getAgentPostHogMcp } from "@/lib/integrations/service";
+import {
+  getAgentCustomIntegrationsMcp,
+  getAgentPostHogMcp,
+} from "@/lib/integrations/service";
 import { inspectMcpDefinitions } from "@/lib/mcp/client";
 import { RunnerRequestError } from "@/lib/runner-errors";
 import type { RunExecution } from "@/lib/run-execution";
@@ -168,6 +171,7 @@ export async function startRunnerRun(input: {
   const docsApiKey = getSetting("docs_api_key");
   const posthogMcp = getAgentPostHogMcp(input.agent.id);
   const emailMcp = getAgentEmailMcp(input.agent.id);
+  const customMcpServers = getAgentCustomIntegrationsMcp(input.agent.id);
   const workInstructions = workCoordinationContext();
   const integrationInstructions = [
     ...(posthogMcp ? [POSTHOG_AGENT_PROMPT] : []),
@@ -201,6 +205,7 @@ export async function startRunnerRun(input: {
     },
     ...(posthogMcp ? [posthogMcp] : []),
     ...(emailMcp ? [emailMcp] : []),
+    ...customMcpServers,
   ];
   const components: ContextComponent[] = [
     {

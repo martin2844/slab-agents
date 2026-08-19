@@ -35,8 +35,10 @@ test("Integrations stays focused on external tools while Email is an optional Se
   assert.match(settings, /Mailbox issue/);
   assert.match(catalog, /EMAIL_AGENT_PROMPT/);
   assert.doesNotMatch(catalog, /provider: "email"/);
+  assert.match(catalog, /custom_mcp|custom_http/);
   assert.match(catalog, /Custom integration/);
-  assert.match(source, />WIP</);
+  assert.match(source, /custom HTTP integration/);
+  assert.match(source, /custom MCP integration/);
 });
 
 test("Email credentials and one-time connector tokens stay outside browser payloads and SQLite", async () => {

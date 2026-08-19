@@ -27,11 +27,19 @@ export const INTEGRATION_CATALOG: IntegrationCatalogItem[] = [
     tools: POSTHOG_TOOLS,
   },
   {
-    provider: "custom",
+    provider: "custom_http",
     name: "Custom integration",
     description:
       "Connect an internal API or MCP server with a custom tool manifest.",
-    available: false,
+    available: true,
+    tools: [],
+  },
+  {
+    provider: "custom_mcp",
+    name: "Custom MCP integration",
+    description:
+      "Connect an existing Streamable HTTP MCP server and expose its tools.",
+    available: true,
     tools: [],
   },
 ];

@@ -281,28 +281,82 @@ export type WorkspaceSettings = {
   runnerUrl: string;
 };
 
-export type IntegrationProvider = "posthog";
-export type IntegrationStatus = "connected" | "failed" | "not_tested";
+export type IntegrationProvider =
+  | "posthog"
+  | "custom_http"
+  | "custom_mcp";
+// Keep the historic values plus explicit disabled state for configured-but-paused integrations.
+export type IntegrationStatus =
+  | "connected"
+  | "failed"
+  | "not_tested"
+  | "disabled";
+export type IntegrationAuthType = "none" | "bearer" | "api_key_header";
+
+export type IntegrationCatalogItem = {
+  provider: IntegrationProvider;
+  name: string;
+  description: string;
+  available: boolean;
+  tools: IntegrationTool[];
+};
 export type IntegrationTool = {
   key: string;
   name: string;
   description: string;
   readOnly: boolean;
 };
-export type IntegrationCatalogItem = {
-  provider: IntegrationProvider | "custom";
+export type IntegrationOperationParameter = {
+  name: string;
+  location: "path" | "query";
+  type: "string" | "number" | "integer" | "boolean";
+  required: boolean;
+  description?: string;
+};
+export type IntegrationHttpOperation = {
+  id: string;
+  integrationId: string;
+  key: string;
   name: string;
   description: string;
-  available: boolean;
-  tools: IntegrationTool[];
+  method: "GET" | "HEAD";
+  path: string;
+  parameters: IntegrationOperationParameter[];
+  responsePath?: string;
+  maxResponseBytes: number | null;
+  maxItems: number | null;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  timeoutMs: number | null;
+};
+export type IntegrationMcpTool = {
+  name: string;
+  description: string | null;
+  inputSchema: Record<string, unknown>;
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean | null;
+  openWorldHint: boolean | null;
 };
 export type Integration = {
   id: string;
   provider: IntegrationProvider;
   name: string;
-  datacenter: "us" | "eu";
+  slug: string;
+  datacenter?: "us" | "eu";
+  baseUrl?: string;
+  timeoutMs?: number | null;
+  kind?: "read" | "readwrite";
+  enabled: boolean;
+  version?: number;
+  authType?: IntegrationAuthType;
+  authHeaderName?: string | null;
   status: IntegrationStatus;
   hasApiKey: boolean;
+  hasSecret?: boolean;
+  operations?: IntegrationHttpOperation[];
+  mcpTools?: IntegrationMcpTool[];
   lastTestedAt: string | null;
   lastError: string | null;
   permissions: Record<string, string[]>;

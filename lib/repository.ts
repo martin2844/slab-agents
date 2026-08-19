@@ -8,9 +8,13 @@ import type {
   AgentEmailAccess,
   Approval,
   Automation,
+  IntegrationHttpOperation,
+  IntegrationMcpTool,
   Integration,
   IntegrationProvider,
   IntegrationStatus,
+  IntegrationAuthType,
+  IntegrationTool,
   EmailSendPolicy,
   Message,
   Run,
@@ -129,7 +133,18 @@ export type IntegrationRecord = {
   id: string;
   provider: IntegrationProvider;
   name: string;
-  config: { datacenter: "us" | "eu" };
+  slug: string;
+  config: {
+    datacenter?: "us" | "eu";
+    baseUrl?: string;
+    authType?: IntegrationAuthType;
+    authHeaderName?: string | null;
+    timeoutMs?: number;
+  };
+  authType: IntegrationAuthType;
+  authHeaderName?: string | null;
+  enabled: boolean;
+  version: number;
   credentialsCiphertext: string;
   status: IntegrationStatus;
   lastTestedAt: string | null;
@@ -139,12 +154,20 @@ export type IntegrationRecord = {
 };
 
 function mapIntegrationRecord(row: Row): IntegrationRecord {
-  const config = json(row.config_json, { datacenter: "us" as const });
+  const config = json(row.config_json, {
+    datacenter: "us",
+  }) as IntegrationRecord["config"];
   return {
     id: String(row.id),
     provider: row.provider as IntegrationProvider,
     name: String(row.name),
+    slug: row.slug ? String(row.slug) : `integration-${String(row.id).slice(0, 8)}`,
     config,
+    authType: (config.authType ??
+      ("none" as IntegrationAuthType)),
+    authHeaderName: config.authHeaderName ?? null,
+    enabled: bool(row.enabled),
+    version: Number(row.version ?? 1),
     credentialsCiphertext: String(row.credentials_ciphertext),
     status: row.status as IntegrationStatus,
     lastTestedAt: row.last_tested_at ? String(row.last_tested_at) : null,
@@ -154,23 +177,99 @@ function mapIntegrationRecord(row: Row): IntegrationRecord {
   };
 }
 
+
 function mapIntegration(
   record: IntegrationRecord,
   permissions: Record<string, string[]>,
+  operations: IntegrationHttpOperation[] = [],
+  mcpTools: IntegrationMcpTool[] = [],
 ): Integration {
+  const normalizedSlug = normalizeSlug(record.slug);
+  const tools: IntegrationTool[] =
+    record.provider === "posthog"
+      ? POSTHOG_TOOLS
+      : record.provider === "custom_http"
+        ? operations
+            .filter((operation) => operation.enabled)
+            .map((operation) => ({
+              key: `${normalizedSlug}__${operation.key}`,
+              name: operation.name,
+              description: operation.description,
+              readOnly: true,
+            }))
+        : mcpTools.map((tool) => ({
+            key: `${normalizedSlug}__${tool.name}`,
+            name: tool.name,
+            description: tool.description ?? "Custom MCP tool",
+            readOnly: tool.readOnlyHint,
+          }));
+
   return {
     id: record.id,
     provider: record.provider,
     name: record.name,
+    slug: record.slug,
     datacenter: record.config.datacenter,
-    status: record.status,
+    baseUrl: record.config.baseUrl,
+    timeoutMs: record.config.timeoutMs ?? null,
+    kind: record.config.authType === "none" ? "read" : "readwrite",
+    authType: record.authType,
+    authHeaderName: record.authHeaderName,
+    enabled: record.enabled,
+    version: record.version,
+    hasSecret: Boolean(record.credentialsCiphertext),
     hasApiKey: Boolean(record.credentialsCiphertext),
+    status: record.status,
+    operations: record.provider === "custom_http" ? operations : undefined,
+    mcpTools: record.provider === "custom_mcp" ? mcpTools : undefined,
     lastTestedAt: record.lastTestedAt,
     lastError: record.lastError,
     permissions,
-    tools: record.provider === "posthog" ? POSTHOG_TOOLS : [],
+    tools,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+  };
+}
+
+function normalizeSlug(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+}
+
+function mapCustomHttpOperation(row: Row): IntegrationHttpOperation {
+  return {
+    id: String(row.id),
+    integrationId: String(row.integration_id),
+    key: String(row.key),
+    name: String(row.name),
+    description: String(row.description ?? ""),
+    method: row.method === "HEAD" ? "HEAD" : "GET",
+    path: String(row.path),
+    parameters: json(row.parameters_json, []),
+    responsePath: row.response_path ? String(row.response_path) : undefined,
+    maxResponseBytes: row.max_response_bytes ? Number(row.max_response_bytes) : null,
+    maxItems: row.max_items ? Number(row.max_items) : null,
+    timeoutMs: row.timeout_ms ? Number(row.timeout_ms) : null,
+    enabled: bool(row.enabled),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+function mapCustomMcpTool(row: Row): IntegrationMcpTool {
+  return {
+    name: String(row.name),
+    description: row.description ? String(row.description) : null,
+    inputSchema: json(row.input_schema_json, {}) as IntegrationMcpTool["inputSchema"],
+    readOnlyHint: bool(row.read_only_hint),
+    destructiveHint: bool(row.destructive_hint),
+    idempotentHint:
+      row.idempotent_hint != null ? bool(row.idempotent_hint) : null,
+    openWorldHint: row.open_world_hint != null ? bool(row.open_world_hint) : null,
   };
 }
 
@@ -347,11 +446,21 @@ export const repository = {
       db.prepare("SELECT * FROM integrations ORDER BY name").all() as Row[]
     ).map(mapIntegrationRecord);
   },
-  getIntegrationRecord(idOrProvider: string) {
+  getIntegrationRecord(id: string) {
     const row = db
-      .prepare("SELECT * FROM integrations WHERE id=? OR provider=?")
-      .get(idOrProvider, idOrProvider) as Row | undefined;
+      .prepare("SELECT * FROM integrations WHERE id=?")
+      .get(id) as Row | undefined;
     return row ? mapIntegrationRecord(row) : null;
+  },
+  getIntegrationRecordByProvider(provider: IntegrationProvider) {
+    const rows = db
+      .prepare("SELECT * FROM integrations WHERE provider=? ORDER BY created_at")
+      .all(provider) as Row[];
+    if (!rows.length) return null;
+    if (rows.length === 1 || provider === "posthog") {
+      return mapIntegrationRecord(rows[0]);
+    }
+    return null;
   },
   listIntegrationPermissions(integrationId: string) {
     const rows = db
@@ -364,57 +473,117 @@ export const repository = {
       return result;
     }, {});
   },
+  listCustomHttpOperations(integrationId: string) {
+    return (
+      db
+        .prepare(
+          "SELECT * FROM custom_http_operations WHERE integration_id=? ORDER BY key",
+        )
+        .all(integrationId) as Row[]
+    ).map(mapCustomHttpOperation);
+  },
+  listCustomMcpTools(integrationId: string) {
+    return (
+      db
+        .prepare(
+          "SELECT * FROM custom_mcp_tools WHERE integration_id=? ORDER BY name",
+        )
+        .all(integrationId) as Row[]
+    ).map(mapCustomMcpTool);
+  },
   listIntegrations() {
     return this.listIntegrationRecords().map((record) =>
-      mapIntegration(record, this.listIntegrationPermissions(record.id)),
+      mapIntegration(
+        record,
+        this.listIntegrationPermissions(record.id),
+        record.provider === "custom_http"
+          ? this.listCustomHttpOperations(record.id)
+          : [],
+        record.provider === "custom_mcp"
+          ? this.listCustomMcpTools(record.id)
+          : [],
+      ),
     );
   },
   getIntegration(idOrProvider: string) {
-    const record = this.getIntegrationRecord(idOrProvider);
+    const record =
+      this.getIntegrationRecord(idOrProvider) ??
+      this.getIntegrationRecordByProvider(idOrProvider as IntegrationProvider) ??
+      null;
     return record
-      ? mapIntegration(record, this.listIntegrationPermissions(record.id))
+      ? mapIntegration(
+          record,
+          this.listIntegrationPermissions(record.id),
+          record.provider === "custom_http"
+            ? this.listCustomHttpOperations(record.id)
+            : [],
+          record.provider === "custom_mcp"
+            ? this.listCustomMcpTools(record.id)
+            : [],
+        )
       : null;
   },
   saveIntegration(input: {
     id?: string;
     provider: IntegrationProvider;
     name: string;
-    datacenter: "us" | "eu";
+    config: IntegrationRecord["config"];
     credentialsCiphertext: string;
     status: IntegrationStatus;
     lastTestedAt: string | null;
     lastError: string | null;
+    enabled?: boolean;
     permissions: Record<string, string[]>;
+    version?: number;
+    operations?: IntegrationHttpOperation[];
+    mcpTools?: IntegrationMcpTool[];
   }) {
-    const current = this.getIntegrationRecord(input.id ?? input.provider);
+    const current = input.id
+      ? this.getIntegrationRecord(input.id)
+      : this.getIntegrationRecordByProvider(input.provider);
     const id = current?.id ?? input.id ?? randomUUID();
     const timestamp = now();
+    const enabled = input.enabled ?? true;
+    const operations =
+      input.operations ??
+      (input.provider === "custom_http"
+        ? this.listCustomHttpOperations(id)
+        : []);
+    const mcpTools =
+      input.mcpTools ??
+      (input.provider === "custom_mcp" ? this.listCustomMcpTools(id) : []);
     const transaction = db.transaction(() => {
       db.prepare(
         `INSERT INTO integrations
-          (id,provider,name,config_json,credentials_ciphertext,status,last_tested_at,last_error,created_at,updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?)
-         ON CONFLICT(provider) DO UPDATE SET
-          name=excluded.name,
-          config_json=excluded.config_json,
-          credentials_ciphertext=excluded.credentials_ciphertext,
-          status=excluded.status,
-          last_tested_at=excluded.last_tested_at,
-          last_error=excluded.last_error,
-          updated_at=excluded.updated_at`,
+          (id,provider,name,slug,config_json,credentials_ciphertext,enabled,version,status,last_tested_at,last_error,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET
+           name=excluded.name,
+           slug=excluded.slug,
+           config_json=excluded.config_json,
+           credentials_ciphertext=excluded.credentials_ciphertext,
+           enabled=excluded.enabled,
+           version=excluded.version,
+           status=excluded.status,
+           last_tested_at=excluded.last_tested_at,
+           last_error=excluded.last_error,
+           updated_at=excluded.updated_at`,
       ).run(
         id,
         input.provider,
         input.name,
-        JSON.stringify({ datacenter: input.datacenter }),
+        normalizeSlug(input.name),
+        JSON.stringify(input.config),
         input.credentialsCiphertext,
+        Number(enabled),
+        input.version ?? (current?.version ?? 0) + 1,
         input.status,
         input.lastTestedAt,
         input.lastError,
         current?.createdAt ?? timestamp,
         timestamp,
       );
-      const saved = this.getIntegrationRecord(input.provider);
+      const saved = this.getIntegrationRecord(id);
       if (!saved) throw new Error("Integration could not be saved.");
       db.prepare(
         "DELETE FROM agent_integration_tools WHERE integration_id=?",
@@ -425,6 +594,56 @@ export const repository = {
       for (const [agentId, toolKeys] of Object.entries(input.permissions)) {
         for (const toolKey of [...new Set(toolKeys)]) {
           insert.run(agentId, saved.id, toolKey, timestamp);
+        }
+      }
+      if (saved.provider === "custom_http") {
+        db.prepare(
+          "DELETE FROM custom_http_operations WHERE integration_id=?",
+        ).run(saved.id);
+        const insertOperation = db.prepare(
+          "INSERT INTO custom_http_operations (id,integration_id,key,name,description,method,path,parameters_json,response_path,max_response_bytes,max_items,enabled,timeout_ms,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        );
+        for (const operation of operations) {
+          insertOperation.run(
+            operation.id || randomUUID(),
+            saved.id,
+            operation.key,
+            operation.name,
+            operation.description,
+            operation.method,
+            operation.path,
+            JSON.stringify(operation.parameters),
+            operation.responsePath ?? null,
+            operation.maxResponseBytes,
+            operation.maxItems,
+            Number(operation.enabled),
+            operation.timeoutMs,
+            operation.createdAt || timestamp,
+            timestamp,
+          );
+        }
+      }
+      if (saved.provider === "custom_mcp") {
+        db.prepare("DELETE FROM custom_mcp_tools WHERE integration_id=?").run(
+          saved.id,
+        );
+        const insertTool = db.prepare(
+          "INSERT INTO custom_mcp_tools (id,integration_id,name,description,input_schema_json,read_only_hint,destructive_hint,idempotent_hint,open_world_hint,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        );
+        for (const tool of mcpTools) {
+          insertTool.run(
+            randomUUID(),
+            saved.id,
+            tool.name,
+            tool.description,
+            JSON.stringify(tool.inputSchema),
+            Number(tool.readOnlyHint),
+            Number(tool.destructiveHint),
+            tool.idempotentHint,
+            tool.openWorldHint,
+            timestamp,
+            timestamp,
+          );
         }
       }
       return saved.id;
@@ -443,6 +662,12 @@ export const repository = {
       "UPDATE integrations SET status=?,last_tested_at=?,last_error=?,updated_at=? WHERE id=?",
     ).run(input.status, input.lastTestedAt, input.lastError, now(), id);
     return this.getIntegration(id);
+  },
+  deleteIntegration(id: string) {
+    const existing = this.getIntegrationRecord(id);
+    if (!existing) return false;
+    db.prepare("DELETE FROM integrations WHERE id=?").run(id);
+    return true;
   },
 
   listAgents() {
