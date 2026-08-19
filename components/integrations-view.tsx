@@ -347,42 +347,41 @@ function AvailableCard({
     item.provider === "custom_http" || item.provider === "custom_mcp";
   return (
     <Card
-      className={cn("py-0", !item.available && "border-dashed bg-muted/20")}
+      className={cn(
+        "self-start gap-0 py-0",
+        !item.available && "border-dashed bg-muted/20",
+      )}
     >
-      <CardHeader className="flex flex-row items-start gap-3 p-5 pb-3">
+      <CardHeader className="flex flex-row items-start gap-3 p-4 pb-3">
         {custom ? (
-          <div className="grid size-12 place-items-center rounded-xl bg-muted text-muted-foreground">
-            <Puzzle className="size-6" />
+          <div className="grid size-9 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
+            <Puzzle className="size-4" />
           </div>
         ) : (
           <BrandMark />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="font-heading text-2xl font-semibold">{item.name}</h3>
+            <h3 className="font-heading text-xl font-semibold">{item.name}</h3>
             {!item.available && <Badge variant="outline">Unavailable</Badge>}
           </div>
-          <p className="mt-1 text-sm leading-5 text-muted-foreground">
+          <p className="mt-1 text-[0.82rem] leading-5 text-muted-foreground">
             {item.description}
           </p>
         </div>
       </CardHeader>
-      <CardContent className="px-5 pb-4">
-        <div className="flex flex-wrap gap-2">
-          {item.tools.map((tool) => (
-            <Badge key={tool.key} variant="outline">
-              <Wrench /> {tool.name}
-            </Badge>
-          ))}
-          {custom && (
-            <span className="text-xs text-muted-foreground">
-              Connect HTTP APIs or MCP servers and expose capabilities to
-              agents.
-            </span>
-          )}
-        </div>
-      </CardContent>
-      <CardFooter className="border-t p-3">
+      {item.tools.length > 0 && (
+        <CardContent className="px-4 pb-3">
+          <div className="flex flex-wrap gap-1.5">
+            {item.tools.map((tool) => (
+              <Badge key={tool.key} variant="outline">
+                <Wrench /> {tool.name}
+              </Badge>
+            ))}
+          </div>
+        </CardContent>
+      )}
+      <CardFooter className="border-t p-2.5">
         <Button
           className="w-full"
           variant={active || !item.available ? "outline" : "default"}
