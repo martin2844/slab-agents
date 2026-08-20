@@ -18,17 +18,19 @@ Last updated: 2026-08-20
 | Initial Codex version lock                      | Complete          | Codex CLI `0.148.0`, `slab-stack@9fa934e`                                                     |
 | Slab Agents production runtime contract        | Published         | `ghcr.io/martin2844/slab-agents@sha256:741296dc6915f4c7411d7ccc7ee75c341aaa25b05d3462b3cf7cd33c94dd9e15` |
 | Slab Agents single-user authentication         | Published         | scrypt password, stdin bootstrap, revocable sessions, proxy/CSRF/rate-limit image smoke passed  |
-| Runner production image                         | Complete locally  | `slab-runner@715573b`; non-root/container-auth/health smoke passed                            |
-| Runner multi-arch publication                   | Pending           | Workflow exists; release tag, public GHCR package, signature, scan, and digest still required |
+| Runner production image                         | Published         | `ghcr.io/martin2844/slab-runner@sha256:d2cc9c9c2154d5e8673ce90350d84ac2d77586af5045bfed938ba36694475971` |
+| Runner multi-arch publication                   | Complete          | Public amd64/arm64 pull, signature, provenance, SBOM, and 0 high/critical scan verified        |
 | Slab Work production image                      | Published         | `ghcr.io/martin2844/slab@sha256:3190a68db66331027605dec6f07dfd12565b0ed9132d518b25367609edf1cfc5`        |
-| Slab Docs production image                      | PR ready          | Runtime/image hardening in [`slab-docs#1`](https://github.com/martin2844/slab-docs/pull/1)     |
-| Remaining service images                        | Pending           | Docs must merge/publish; Email and Runner still need published candidate digests               |
+| Slab Docs production image                      | Published         | `ghcr.io/martin2844/slab-docs@sha256:0521012b5465e92192699eb13a13826f07739995531e1a963c8e09db25a7d59a` |
+| Slab Email production image                     | Published         | `ghcr.io/martin2844/slab-email@sha256:f16eed650211605544fcedd5ac8a7eb1bafdaf7f4df82337288abaca38d7d9f8` |
+| Immutable stack candidate                       | Complete          | `slab-stack/releases/v0.1.0-candidate.1.json` pins all five public images by tag and digest     |
 | Public installer                                | Blocked by design | Must not publish before all five immutable image digests pass the VPS matrix                  |
 
-Current next gate: merge and publish the Docs candidate, then complete Email
-hardening and Runner publication. Agents and Work now have public, signed,
-scanned amd64/arm64 candidates that were anonymously pulled by digest. The
-`stable` channel remains intentionally unpublished.
+Current next gate: boot `v0.1.0-candidate.1` as one generated Compose project,
+seed every internal service URL, bootstrap the administrator over stdin, and
+pass the first end-to-end private-mode smoke test. All five services now have
+public, signed, scanned amd64/arm64 candidates that were anonymously pulled by
+digest. The `stable` channel remains intentionally unpublished.
 
 ## 1. Outcome
 
@@ -1163,14 +1165,14 @@ The command resolves and prints every target before deletion. No glob, home dire
 
 ### Phase 0: lock release contracts
 
-- [ ] Choose the final GitHub organization and public GHCR namespace.
-- [ ] Create/link the canonical `slab-agents` remote.
-- [ ] Create `slab-stack` repository.
-- [ ] Define stack manifest schema and semver policy.
-- [ ] Define supported OS/architecture matrix.
-- [ ] Define common `/health`, `/ready`, `_FILE`, OCI label, and graceful-shutdown contracts.
-- [ ] Record the exact initial Codex package/version pairing.
-- [ ] Add a release compatibility document shared by all repos.
+- [x] Choose the final GitHub organization and public GHCR namespace.
+- [x] Create/link the canonical `slab-agents` remote.
+- [x] Create `slab-stack` repository.
+- [x] Define stack manifest schema and semver policy.
+- [x] Define supported OS/architecture matrix.
+- [x] Define common `/health`, `/ready`, `_FILE`, OCI label, and graceful-shutdown contracts.
+- [x] Record the exact initial Codex package/version pairing.
+- [x] Add a release compatibility document shared by all repos.
 
 Exit gate: an empty stack manifest can resolve one immutable digest for each service and verify it anonymously.
 
@@ -1189,42 +1191,42 @@ Exit gate: an empty stack manifest can resolve one immutable digest for each ser
 
 #### Slab Runner
 
-- [ ] Add authenticated container-network bind mode.
-- [ ] Add secret `_FILE` support.
-- [ ] Build Runner + pinned Codex image.
-- [ ] Persist the managed Codex home with correct ownership.
-- [ ] Add graceful app-server shutdown and container healthcheck.
+- [x] Add authenticated container-network bind mode.
+- [x] Add secret `_FILE` support.
+- [x] Build Runner + pinned Codex image.
+- [x] Persist the managed Codex home with correct ownership.
+- [x] Add graceful app-server shutdown and container healthcheck.
 
 #### Work, Docs, Email
 
-- [ ] Add consistent `_FILE` secret support.
-- [ ] Add deterministic one-shot migration commands.
-- [ ] Add readiness checks.
-- [ ] Verify graceful shutdown and WAL checkpoint behavior.
-- [ ] Harden Dockerfiles/Compose defaults without changing service APIs.
+- [x] Add consistent `_FILE` secret support.
+- [x] Add deterministic one-shot migration commands.
+- [x] Add readiness checks.
+- [x] Verify graceful shutdown and WAL checkpoint behavior.
+- [x] Harden Dockerfiles/Compose defaults without changing service APIs.
 
 Exit gate: every service boots from an image as non-root, passes health, survives restart, and preserves data.
 
 ### Phase 2: image publication
 
-- [ ] Add CI and GHCR publishing to all five repos.
-- [ ] Build `amd64` and `arm64` images.
-- [ ] Add SBOM, provenance, vulnerability scan, and signature.
-- [ ] Mark GHCR packages public.
-- [ ] Prove anonymous pulls from a clean machine.
-- [ ] Publish first immutable service tags and capture digests.
+- [x] Add CI and GHCR publishing to all five repos.
+- [x] Build `amd64` and `arm64` images.
+- [x] Add SBOM, provenance, vulnerability scan, and signature.
+- [x] Mark GHCR packages public.
+- [x] Prove anonymous pulls from a clean machine.
+- [x] Publish first immutable service tags and capture digests.
 
 Exit gate: the stack can be assembled entirely from registry images with no source checkout and no VPS build.
 
 ### Phase 3: unified stack
 
-- [ ] Implement base Compose and domain/private overrides.
+- [x] Implement base Compose and domain/private overrides.
 - [ ] Add networks, secrets, volumes, resource guidance, healthchecks, and logging.
-- [ ] Add Caddy templates and persistent certificate volumes.
+- [x] Add Caddy templates and persistent certificate volumes.
 - [ ] Add systemd unit to reconcile the Compose project on boot.
 - [ ] Seed internal Work/Docs/Runner/Email URLs automatically.
-- [ ] Add migration/bootstrap jobs and dependency conditions.
-- [ ] Verify no internal service is host-published.
+- [x] Add migration/bootstrap jobs and dependency conditions.
+- [x] Verify no internal service is host-published.
 
 Exit gate: `docker compose up -d` on a clean host reaches healthy UI and services using generated files only.
 
