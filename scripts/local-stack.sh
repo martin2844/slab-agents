@@ -55,8 +55,12 @@ control_plane_pid=""
 
 cleanup() {
   trap - EXIT INT TERM
-  [[ -n "$control_plane_pid" ]] && kill "$control_plane_pid" 2>/dev/null || true
-  [[ -n "$runner_pid" ]] && kill "$runner_pid" 2>/dev/null || true
+  if [[ -n "$control_plane_pid" ]]; then
+    kill "$control_plane_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$runner_pid" ]]; then
+    kill "$runner_pid" 2>/dev/null || true
+  fi
   wait "$control_plane_pid" "$runner_pid" 2>/dev/null || true
 }
 
