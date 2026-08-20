@@ -1,0 +1,146 @@
+name: Publish image
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: slab-agents-image-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare release evidence
+        run: mkdir -p release-evidence
+      - name: Lint shell scripts
+        run: shellcheck scripts/*.sh 2>&1 | tee release-evidence/shellcheck.log
+      - name: Test
+        run: npm test 2>&1 | tee release-evidence/tests.log
+      - name: Lint
+        run: npm run lint 2>&1 | tee release-evidence/lint.log
+      - name: Typecheck
+        run: npm run typecheck 2>&1 | tee release-evidence/typecheck.log
+      - name: Production build
+        run: npm run build 2>&1 | tee release-evidence/build.log
+      - name: Build smoke image
+        run: docker build --tag slab-agents:release-smoke . 2>&1 | tee release-evidence/container-build.log
+      - name: Smoke release image
+        env:
+          SLAB_AGENTS_SMOKE_IMAGE: slab-agents:release-smoke
+        run: ./scripts/container-smoke.sh 2>&1 | tee release-evidence/container-smoke.log
+      - name: Scan release image before publishing
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: slab-agents:release-smoke
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Upload release validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slab-agents-validation-${{ github.run_id }}
+          path: release-evidence/
+          if-no-files-found: warn
+          retention-days: 30
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ steps.image.outputs.value }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: image
+        run: echo "value=${REGISTRY}/${IMAGE_NAME,,}" >> "$GITHUB_OUTPUT"
+      - name: Refuse to overwrite a published release tag
+        if: github.ref_type == 'tag'
+        env:
+          IMAGE: ${{ steps.image.outputs.value }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          if docker buildx imagetools inspect "$IMAGE:$version" >/dev/null 2>&1; then
+            echo "Release tag $IMAGE:$version already exists and is immutable." >&2
+            exit 1
+          fi
+      - id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.value }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=candidate-${{ github.sha }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          labels: |
+            org.opencontainers.image.title=Slab Agents
+            org.opencontainers.image.description=Local control plane for Slab agents, Work, Docs, and integrations
+            org.opencontainers.image.licenses=NOASSERTION
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign immutable digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ${{ steps.image.outputs.value }}
+        run: cosign sign --yes "$IMAGE@$DIGEST"
+      - name: Scan immutable digest
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ steps.image.outputs.value }}@${{ steps.build.outputs.digest }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Record digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ${{ steps.image.outputs.value }}
+        run: printf '%s@%s\n' "$IMAGE" "$DIGEST" | tee image-digest.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slab-agents-image-digest
+          path: image-digest.txt
+          retention-days: 30

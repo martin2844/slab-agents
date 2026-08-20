@@ -36,6 +36,7 @@ ENV NODE_ENV=production \
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates dumb-init \
   && rm -rf /var/lib/apt/lists/* \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
   && groupadd --gid 10001 slab \
   && useradd --uid 10001 --gid slab --system --home-dir /app --shell /usr/sbin/nologin slab \
   && mkdir -p /data \

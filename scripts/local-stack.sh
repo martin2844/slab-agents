@@ -36,8 +36,7 @@ else
   echo "Starting Slab Work on loopback..."
   (
     cd "$work_dir"
-    export BIND_ADDRESS=127.0.0.1
-    docker compose --env-file "$env_file" up -d --build
+    BIND_ADDRESS=127.0.0.1 docker compose --env-file "$env_file" up -d --build
   )
 fi
 
@@ -47,8 +46,7 @@ else
   echo "Starting Slab Docs on loopback..."
   (
     cd "$docs_dir"
-    export BIND_ADDRESS=127.0.0.1
-    docker compose --env-file "$env_file" up -d --build
+    BIND_ADDRESS=127.0.0.1 docker compose --env-file "$env_file" up -d --build
   )
 fi
 
