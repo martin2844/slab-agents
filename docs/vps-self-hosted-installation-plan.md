@@ -33,17 +33,20 @@ Last updated: 2026-08-20
 | Clean VPS install and real Codex runtime smoke   | Complete          | Clean Ubuntu 26.04 amd64 VPS: Docker bootstrapped, private stack healthy, headless device auth completed, `SLAB_RUNTIME_OK` run completed |
 | Real Work + Docs agent run                       | Complete          | UI-created COO run completed with 7/7 successful tool calls, persisted Docs document `demo-operating-notes`, and persisted Work issue `OPS-1` |
 | systemd stack lifecycle                          | Complete          | `slab-stack@0c29c25`; real Ubuntu 26.04 VPS restart preserved Work, Docs, administrator access, and Codex auth with `slab.service` enabled/active |
+| Real domain and TLS                              | Complete          | `agents.c5h.dev`; Caddy obtained a trusted Let's Encrypt certificate, HTTP redirects to HTTPS, public `:3009` is closed, and `slabctl domain verify` promotes state to `READY` (`slab-stack@ecfdc12`) |
 | Public installer                                | Blocked by design | Must not publish before all five immutable image digests pass the VPS matrix                  |
 
-Current next gate: exercise domain mode with real DNS/TLS. Candidate.4 fixes
-the missing CA bundle in Runner, and the clean
+Current next gate: complete the remaining clean-VPS matrix and publish a signed,
+version-pinned public bootstrap. Candidate.4 fixes the missing CA bundle in Runner, and the clean
 Ubuntu 26.04 VPS now proves Docker bootstrap, private installation, headless
 ChatGPT device auth, authenticated readiness, a direct Codex invocation, and a
 UI-created agent run that persisted data through Work and Docs. The managed
 systemd lifecycle also survives a real full-stack restart without losing Work,
-Docs, administrator access, or runtime authentication. The complete clean-VPS
-matrix, domain/TLS verification, and signed public bootstrap remain
-intentionally pending. The `stable` channel is not published yet.
+Docs, administrator access, or runtime authentication. Domain mode is now
+proven at `https://agents.c5h.dev` with a trusted Let's Encrypt certificate,
+Caddy as the only public service, and the direct application port closed. The
+remaining clean-VPS matrix and signed public bootstrap remain intentionally
+pending. The `stable` channel is not published yet.
 
 ## 1. Outcome
 
@@ -1251,7 +1254,7 @@ Exit gate: `docker compose up -d` on a clean host reaches healthy UI and service
 - [x] Generate secret files and templates idempotently.
 - [x] Bootstrap the admin password over stdin.
 - [x] Implement private mode plus domain rendering and Caddy validation.
-- [ ] Implement DNS/TLS diagnostics.
+- [x] Implement DNS/TLS diagnostics.
 - [ ] Implement all required `slabctl` commands.
 - [x] Add install state, resumability, dry-run, and sanitized failure output.
 - [ ] Publish `install.sh` at `slab.ar` with appropriate cache headers.
@@ -1520,7 +1523,7 @@ Each PR must be independently deployable or explicitly marked as infrastructure 
 ### Operations
 
 - [ ] Fresh install passes on supported OS/architecture matrix.
-- [ ] Domain and private access modes pass.
+- [x] Domain and private access modes pass.
 - [x] Codex device login passes on a headless VPS.
 - [x] Work + Docs + agent run E2E passes.
 - [ ] Email service is healthy with zero accounts.
