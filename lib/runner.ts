@@ -371,6 +371,9 @@ export async function testCodexRuntime() {
   };
   const codex = payload.data?.find((runtime) => runtime.id === "codex");
   if (!codex) throw new Error("Runner did not report the Codex runtime.");
-  if (!codex.available) throw new Error("Codex is not available in Runner.");
+  if (!codex.available)
+    throw new Error(
+      "Codex is not authenticated or unavailable. On a self-hosted server, run sudo slabctl codex login.",
+    );
   return codex;
 }
