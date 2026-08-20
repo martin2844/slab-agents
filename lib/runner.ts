@@ -14,6 +14,7 @@ import {
 } from "@/lib/integrations/service";
 import { inspectMcpDefinitions } from "@/lib/mcp/client";
 import { RunnerRequestError } from "@/lib/runner-errors";
+import { readSecret } from "@/lib/server-config";
 import type { RunExecution } from "@/lib/run-execution";
 import {
   measureJson,
@@ -70,7 +71,7 @@ function workCoordinationContext() {
 }
 
 function runnerHeaders(headers: Record<string, string> = {}) {
-  const token = process.env.RUNNER_TOKEN?.trim();
+  const token = readSecret("RUNNER_TOKEN", "RUNNER_TOKEN_FILE");
   return {
     ...headers,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),

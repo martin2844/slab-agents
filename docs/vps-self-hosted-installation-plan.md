@@ -16,14 +16,15 @@ Last updated: 2026-08-20
 | Local `slab-stack` repository                   | Complete          | `slab-stack@df635e4`                                                                          |
 | Manifest, service, image, and Compose contracts | Complete          | `slab-stack@df635e4`                                                                          |
 | Initial Codex version lock                      | Complete          | Codex CLI `0.148.0`, `slab-stack@9fa934e`                                                     |
+| Slab Agents production runtime contract        | Complete locally  | Standalone image, startup migrations, health/readiness, `_FILE` secrets, non-root smoke passed |
 | Runner production image                         | Complete locally  | `slab-runner@715573b`; non-root/container-auth/health smoke passed                            |
 | Runner multi-arch publication                   | Pending           | Workflow exists; release tag, public GHCR package, signature, scan, and digest still required |
 | Remaining service images                        | Pending           | Slab Agents has no image; Work/Docs/Email need release hardening/workflows                    |
 | Public installer                                | Blocked by design | Must not publish before all five immutable image digests pass the VPS matrix                  |
 
-Current next gate: production-hardening and publishing contracts for Slab
-Agents, Work, Docs, and Email. The `stable` channel remains intentionally
-unpublished.
+Current next gate: single-user authentication for Slab Agents, then
+production-hardening and publishing contracts for Work, Docs, and Email. The
+`stable` channel remains intentionally unpublished.
 
 ## 1. Outcome
 

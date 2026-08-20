@@ -1,5 +1,6 @@
 import "server-only";
 
+import { readSecret } from "@/lib/server-config";
 import type { EmailAccount } from "@/lib/types";
 
 type RequestOptions = {
@@ -37,7 +38,7 @@ export type RemoteConnectorToken = {
 };
 
 function adminKey() {
-  const value = process.env.SLAB_EMAIL_ADMIN_KEY?.trim();
+  const value = readSecret("SLAB_EMAIL_ADMIN_KEY", "SLAB_EMAIL_ADMIN_KEY_FILE");
   if (!value) {
     throw new Error(
       "SLAB_EMAIL_ADMIN_KEY is not configured in the slab-agents server environment.",

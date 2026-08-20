@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 import { resolveNextDistDir } from "./lib/next-dist-dir";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   // Never let a verification build replace the artifacts used by the live
   // development server. Mixing those graphs leaves open tabs executing stale
   // React modules against a newer RSC payload.

@@ -1,0 +1,13 @@
+.data
+.env
+.env.*
+.git
+.gstack
+.next
+.next-check
+.next-dev
+coverage
+node_modules
+npm-debug.log*
+Dockerfile*
+docs

@@ -13,6 +13,7 @@ import {
   type PostHogDatacenter,
 } from "@/lib/integrations/posthog";
 import { repository, type IntegrationRecord } from "@/lib/repository";
+import { internalRoute } from "@/lib/server-config";
 import { decryptLocalSecret, encryptLocalSecret } from "@/lib/secrets";
 import type {
   Integration,
@@ -876,11 +877,12 @@ export function getAgentPostHogMcp(agentId: string) {
   if (allowedTools.length === 0) return null;
 
   const credentials = readPosthogCredentials(record);
-  const port = process.env.PORT?.trim() || "3009";
 
   return {
     name: "work_posthog" as const,
-    url: `http://127.0.0.1:${port}/api/integrations/${encodeURIComponent(record.id)}/mcp?agent=${encodeURIComponent(agentId)}`,
+    url: internalRoute(
+      `/api/integrations/${encodeURIComponent(record.id)}/mcp?agent=${encodeURIComponent(agentId)}`,
+    ),
     credentials: { bearerToken: credentials.mcpToken },
   };
 }
@@ -1000,12 +1002,13 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
       tokenHash: hashCapabilityToken(token),
       allowedTools,
     });
-    const port = process.env.PORT?.trim() || "3009";
     return [
       {
         server: {
           name: `${integration.provider}_${integration.slug}`,
-          url: `http://127.0.0.1:${port}/api/integrations/${encodeURIComponent(integration.id)}/mcp?run=${encodeURIComponent(runId)}`,
+          url: internalRoute(
+            `/api/integrations/${encodeURIComponent(integration.id)}/mcp?run=${encodeURIComponent(runId)}`,
+          ),
           credentials: { bearerToken: token },
         },
         snapshot: {

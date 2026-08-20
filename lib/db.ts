@@ -9,11 +9,16 @@ const globalForDb = globalThis as unknown as {
 };
 
 function createDatabase() {
+  const productionBuild = process.env.NEXT_PHASE === "phase-production-build";
   const configured = process.env.SLAB_WORKSPACE_DB;
-  const filename = configured
-    ? path.resolve(configured)
-    : path.join(process.cwd(), ".data", "slab-workspace.db");
-  fs.mkdirSync(path.dirname(filename), { recursive: true });
+  const filename = productionBuild
+    ? ":memory:"
+    : configured
+      ? path.resolve(configured)
+      : path.join(process.cwd(), ".data", "slab-workspace.db");
+  if (!productionBuild) {
+    fs.mkdirSync(path.dirname(filename), { recursive: true });
+  }
 
   const db = new Database(filename);
   db.pragma("journal_mode = WAL");

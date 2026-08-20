@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { repository } from "@/lib/repository";
-import { getPublicSettings } from "@/lib/settings";
+import { getPublicSettings, isAllowedRunnerUrl } from "@/lib/settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,10 +13,10 @@ const schema = z.object({
   docsApiKey: z.string().optional(),
   runnerUrl: z
     .url()
-    .refine((value) => {
-      const hostname = new URL(value).hostname;
-      return ["127.0.0.1", "localhost", "::1", "[::1]"].includes(hostname);
-    }, "Runner must use a loopback URL")
+    .refine(
+      isAllowedRunnerUrl,
+      "Runner host is not allowed by this installation",
+    )
     .optional(),
 });
 

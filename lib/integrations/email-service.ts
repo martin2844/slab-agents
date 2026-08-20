@@ -10,6 +10,7 @@ import {
   storeEmailConnectorToken,
 } from "@/lib/integrations/email-token-vault";
 import { repository } from "@/lib/repository";
+import { readSecret } from "@/lib/server-config";
 import type {
   AgentEmailAccess,
   EmailAccount,
@@ -31,9 +32,12 @@ function client() {
 
 export async function getEmailIntegrationState(): Promise<EmailIntegrationState> {
   const config = currentConfig();
+  const adminConfigured = Boolean(
+    readSecret("SLAB_EMAIL_ADMIN_KEY", "SLAB_EMAIL_ADMIN_KEY_FILE"),
+  );
   let accounts: EmailAccount[] = [];
   let lastError = config?.lastError ?? null;
-  if (config && process.env.SLAB_EMAIL_ADMIN_KEY?.trim()) {
+  if (config && adminConfigured) {
     try {
       accounts = await new EmailAdminClient(config.serviceUrl).listAccounts();
     } catch (error) {
@@ -45,7 +49,7 @@ export async function getEmailIntegrationState(): Promise<EmailIntegrationState>
   }
   return {
     configured: Boolean(config),
-    adminConfigured: Boolean(process.env.SLAB_EMAIL_ADMIN_KEY?.trim()),
+    adminConfigured,
     serviceUrl: config?.serviceUrl ?? DEFAULT_EMAIL_URL,
     status: config?.status ?? "not_tested",
     lastTestedAt: config?.lastTestedAt ?? null,
