@@ -18,28 +18,28 @@ Last updated: 2026-08-20
 | Initial Codex version lock                      | Complete          | Codex CLI `0.148.0`, `slab-stack@9fa934e`                                                     |
 | Slab Agents production runtime contract        | Published         | `ghcr.io/martin2844/slab-agents@sha256:8d831bf5734069aff8ada479a176527af5b37f3b0f931ddba9725c2719ac4090` |
 | Slab Agents single-user authentication         | Published         | scrypt password, stdin bootstrap, revocable sessions, proxy/CSRF/rate-limit image smoke passed  |
-| Runner production image                         | Published         | `ghcr.io/martin2844/slab-runner@sha256:9e0c419e163c6d6de5c3ae3e03ec985a61ff3be99f6febf2d7c99c5825e510bc` |
+| Runner production image                         | Published         | `ghcr.io/martin2844/slab-runner@sha256:7cd7c1da0aa14a710c7b9c2ac59e16679e3a684513b78da6e22dc7976d078377` |
 | Runner multi-arch publication                   | Complete          | Public amd64/arm64 pull, signature, provenance, SBOM, and 0 high/critical scan verified        |
 | Slab Work production image                      | Published         | `ghcr.io/martin2844/slab@sha256:3190a68db66331027605dec6f07dfd12565b0ed9132d518b25367609edf1cfc5`        |
 | Slab Docs production image                      | Published         | `ghcr.io/martin2844/slab-docs@sha256:0521012b5465e92192699eb13a13826f07739995531e1a963c8e09db25a7d59a` |
 | Slab Email production image                     | Published         | `ghcr.io/martin2844/slab-email@sha256:f16eed650211605544fcedd5ac8a7eb1bafdaf7f4df82337288abaca38d7d9f8` |
-| Immutable stack candidate                       | Complete          | `slab-stack/releases/v0.1.0-candidate.3.json` pins all five public images by tag and digest     |
+| Immutable stack candidate                       | Complete          | `slab-stack/releases/v0.1.0-candidate.4.json` pins all five public images by tag and digest     |
 | Private full-stack integration                  | Complete          | `slab-stack#8`: clean Compose boot, bootstrap, connections, CRUD, restart, persistence, and network gate |
 | Versioned functional installer                  | Complete          | `slab-stack#9`, merge `63c3280`: interactive/non-interactive flow, lock, state ledger, admin bootstrap, readiness, and sanitized diagnostics |
 | Installer private-mode integration              | Complete          | Candidate.2 installs, authenticates, reruns without bootstrap credentials, preserves secrets/data, and passes CI full-stack smoke |
 | Codex onboarding and runtime readiness           | Complete          | `slab-runner#2`, `slab-agents#2`, `slab-stack#10`: persistent auth, `slabctl`, UI guidance, restart, and authenticated readiness |
-| Codex-enabled stack candidate                    | Complete          | Candidate.3 passes 69 installer tests, ShellCheck, private full-stack smoke, login/logout, and idempotent installer rerun |
+| Codex-enabled stack candidate                    | Complete          | Candidate.4 passes 69 installer tests, ShellCheck, private full-stack smoke, login/logout, and idempotent installer rerun |
 | Ubuntu 26.04 and Docker host bootstrap           | Complete          | `slab-stack#11`, merge `478e5ec`: official Docker apt repository, pinned signing-key fingerprint, and conflict-safe setup |
+| Clean VPS install and real Codex runtime smoke   | Complete          | Clean Ubuntu 26.04 amd64 VPS: Docker bootstrapped, private stack healthy, headless device auth completed, `SLAB_RUNTIME_OK` run completed |
 | Public installer                                | Blocked by design | Must not publish before all five immutable image digests pass the VPS matrix                  |
 
-Current next gate: authenticate Codex with a real operator account on a clean
-host and prove one real Work + Docs agent run without editing files manually.
-The automated candidate.3 smoke already proves the install, unauthenticated
-state, stdin API-key flow, Runner restart/readiness, UI setup transition, and
-idempotent rerun, but it deliberately does not spend a real model invocation.
-Systemd lifecycle, DNS/TLS diagnostics, the complete clean-VPS matrix, and the
-signed public bootstrap remain intentionally pending. The
-`stable` channel is not published yet.
+Current next gate: create an agent through the installed UI and prove one real
+Work + Docs run without editing files manually. Candidate.4 fixes the missing
+CA bundle in Runner, and the clean Ubuntu 26.04 VPS now proves Docker bootstrap,
+private installation, headless ChatGPT device auth, authenticated readiness,
+and one direct Codex model invocation. Systemd lifecycle, DNS/TLS diagnostics,
+the complete clean-VPS matrix, and the signed public bootstrap remain
+intentionally pending. The `stable` channel is not published yet.
 
 ## 1. Outcome
 
@@ -1261,6 +1261,7 @@ Exit gate: one command installs a usable authenticated stack on all supported VP
 - [x] Support API key through stdin as an alternative.
 - [x] Surface runtime status in Settings and setup checklist.
 - [x] Add first-run COO creation only after runtime is available, or make the disabled state explicit.
+- [x] Authenticate Codex on a headless Ubuntu 26.04 VPS and complete a direct Runner model invocation.
 - [ ] Run a real Work + Docs agent smoke test.
 
 Exit gate: a new operator installs, authenticates Codex, creates an agent, and completes one run without editing files manually.
@@ -1516,7 +1517,7 @@ Each PR must be independently deployable or explicitly marked as infrastructure 
 
 - [ ] Fresh install passes on supported OS/architecture matrix.
 - [ ] Domain and private access modes pass.
-- [ ] Codex device login passes on a headless VPS.
+- [x] Codex device login passes on a headless VPS.
 - [ ] Work + Docs + agent run E2E passes.
 - [ ] Email service is healthy with zero accounts.
 - [ ] Restart preserves all state.
