@@ -25,14 +25,16 @@ Last updated: 2026-08-20
 | Slab Email production image                     | Published         | `ghcr.io/martin2844/slab-email@sha256:f16eed650211605544fcedd5ac8a7eb1bafdaf7f4df82337288abaca38d7d9f8` |
 | Immutable stack candidate                       | Complete          | `slab-stack/releases/v0.1.0-candidate.2.json` pins all five public images by tag and digest     |
 | Private full-stack integration                  | Complete          | `slab-stack#8`: clean Compose boot, bootstrap, connections, CRUD, restart, persistence, and network gate |
-| Installer primitives                            | In progress       | Preflight, prompts, secret generation, and versioned rendering are implemented and tested       |
+| Versioned functional installer                  | Complete          | `slab-stack#9`, merge `63c3280`: interactive/non-interactive flow, lock, state ledger, admin bootstrap, readiness, and sanitized diagnostics |
+| Installer private-mode integration              | Complete          | Candidate.2 installs, authenticates, reruns without bootstrap credentials, preserves secrets/data, and passes CI full-stack smoke |
 | Public installer                                | Blocked by design | Must not publish before all five immutable image digests pass the VPS matrix                  |
 
-Current next gate: connect the tested installer primitives into one idempotent
-`installer/install.sh` flow that renders `v0.1.0-candidate.2`, starts the stack,
-bootstraps the administrator over stdin, waits for readiness, and reports a
-sanitized result. The same candidate now passes the private-mode smoke locally
-and in GitHub Actions. The `stable` channel remains intentionally unpublished.
+Current next gate: Codex onboarding inside the installed stack. Add
+`slabctl codex login/status/logout`, prefer headless device authorization,
+surface runtime readiness to Slab Agents, and prove one real Work + Docs agent
+run. Docker package installation, systemd lifecycle, DNS/TLS diagnostics, the
+clean VPS matrix, and the signed public bootstrap remain intentionally pending.
+The `stable` channel is not published yet.
 
 ## 1. Outcome
 
@@ -1235,13 +1237,14 @@ Exit gate: `docker compose up -d` on a clean host reaches healthy UI and service
 ### Phase 4: installer and `slabctl`
 
 - [ ] Implement verified bootstrap downloader.
-- [ ] Implement interactive and non-interactive configuration.
+- [x] Implement interactive and non-interactive configuration.
 - [ ] Install Docker from official apt repositories when absent.
 - [x] Generate secret files and templates idempotently.
-- [ ] Bootstrap the admin password over stdin.
-- [ ] Implement domain/private flows and DNS diagnostics.
+- [x] Bootstrap the admin password over stdin.
+- [x] Implement private mode plus domain rendering and Caddy validation.
+- [ ] Implement DNS/TLS diagnostics.
 - [ ] Implement all required `slabctl` commands.
-- [ ] Add install state, resumability, dry-run, and sanitized failure output.
+- [x] Add install state, resumability, dry-run, and sanitized failure output.
 - [ ] Publish `install.sh` at `slab.ar` with appropriate cache headers.
 
 Exit gate: one command installs a usable authenticated stack on all supported VPS targets.
