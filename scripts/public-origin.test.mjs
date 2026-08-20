@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { publicRequestOrigin } from "../lib/request-origin.ts";
+import {
+  emailSettingsRedirect,
+  publicRequestOrigin,
+} from "../lib/request-origin.ts";
 
 const read = (filename) =>
   readFile(new URL(`../${filename}`, import.meta.url), "utf8");
@@ -46,5 +49,17 @@ test("both Gmail OAuth handlers use the public origin resolver", async () => {
   ]);
 
   assert.match(connectRoute, /publicRequestOrigin\(request\)/);
-  assert.match(callbackRoute, /publicRequestOrigin\(request\)/);
+  assert.match(callbackRoute, /emailSettingsRedirect\(request/);
+});
+
+test("Gmail OAuth returns to Email settings and preserves the result", () => {
+  const request = new Request(
+    "https://0.0.0.0:3009/api/integrations/email/google/callback",
+  );
+
+  assert.equal(
+    emailSettingsRedirect(request, "connected", "https://agents.c5h.dev")
+      .href,
+    "https://agents.c5h.dev/settings?tab=email&email=connected",
+  );
 });

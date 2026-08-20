@@ -40,12 +40,16 @@ export function SettingsView({
   initialEmail,
   auth,
   agents,
+  initialTab,
+  initialEmailOpen,
 }: {
   initialSettings: WorkspaceSettings;
   initialSetup: SetupStatus;
   initialEmail: EmailIntegrationState;
   auth: { required: boolean; configured: boolean };
   agents: Agent[];
+  initialTab: "sources" | "email";
+  initialEmailOpen: boolean;
 }) {
   const router = useRouter();
   const initialServiceState = (service: Service): State => {
@@ -63,7 +67,7 @@ export function SettingsView({
   const [workKey, setWorkKey] = useState("");
   const [docsKey, setDocsKey] = useState("");
   const [email, setEmail] = useState(initialEmail);
-  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(initialEmailOpen);
   const [gmailCallbackUrl, setGmailCallbackUrl] = useState(
     "/api/integrations/email/google/callback",
   );
@@ -177,7 +181,7 @@ export function SettingsView({
           </Button>
         }
       />
-      <Tabs defaultValue="sources" className="space-y-5">
+      <Tabs defaultValue={initialTab} className="space-y-5">
         <TabsList className="h-9 w-full justify-start overflow-x-auto rounded-lg border bg-card p-1 sm:w-auto">
           <TabsTrigger value="sources">Sources</TabsTrigger>
           <TabsTrigger value="runtime">Runtime</TabsTrigger>
@@ -317,6 +321,20 @@ export function SettingsView({
                 <Mail /> Configure email
               </Button>
             </div>
+            {email.accounts.length > 0 && email.assignments.length === 0 ? (
+              <div className="mt-4 flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm sm:flex-row sm:items-center sm:justify-between dark:border-amber-900 dark:bg-amber-950/30">
+                <div>
+                  <p className="font-semibold">No agent can use Email yet</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Assign a mailbox and permissions to an agent. The capability
+                    becomes available on that agent&apos;s next run.
+                  </p>
+                </div>
+                <Button variant="outline" onClick={() => setEmailOpen(true)}>
+                  Assign agent access
+                </Button>
+              </div>
+            ) : null}
           </section>
         </TabsContent>
 

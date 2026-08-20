@@ -1,24 +1,25 @@
 import { NextResponse } from "next/server";
 import { completeGmailConnection } from "@/lib/integrations/email-service";
-import { publicRequestOrigin } from "@/lib/request-origin";
+import { emailSettingsRedirect } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const redirect = new URL("/integrations", publicRequestOrigin(request));
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   if (!code || !state) {
-    redirect.searchParams.set("email", "oauth_failed");
-    return NextResponse.redirect(redirect);
+    return NextResponse.redirect(
+      emailSettingsRedirect(request, "oauth_failed"),
+    );
   }
   try {
     await completeGmailConnection(code, state);
-    redirect.searchParams.set("email", "connected");
+    return NextResponse.redirect(emailSettingsRedirect(request, "connected"));
   } catch {
-    redirect.searchParams.set("email", "oauth_failed");
+    return NextResponse.redirect(
+      emailSettingsRedirect(request, "oauth_failed"),
+    );
   }
-  return NextResponse.redirect(redirect);
 }

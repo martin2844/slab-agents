@@ -7,7 +7,15 @@ import { getSetupStatus } from "@/lib/setup";
 import { authStatus } from "@/lib/auth/service";
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; email?: string }>;
+}) {
+  const query = await searchParams;
+  const initialTab = query.tab === "email" ? "email" : "sources";
+  const initialEmailOpen =
+    query.email === "connected" || query.email === "oauth_failed";
   return (
     <SettingsView
       initialSettings={getPublicSettings()}
@@ -15,6 +23,8 @@ export default async function SettingsPage() {
       initialEmail={await getEmailIntegrationState()}
       auth={authStatus()}
       agents={repository.listAgents()}
+      initialTab={initialTab}
+      initialEmailOpen={initialEmailOpen}
     />
   );
 }

@@ -21,3 +21,17 @@ export function publicRequestOrigin(
     ? parsePublicOrigin(configured)
     : new URL(request.url).origin;
 }
+
+export function emailSettingsRedirect(
+  request: Request,
+  result: "connected" | "oauth_failed",
+  configuredPublicUrl = process.env.SLAB_PUBLIC_URL ?? "",
+) {
+  const redirect = new URL(
+    "/settings",
+    publicRequestOrigin(request, configuredPublicUrl),
+  );
+  redirect.searchParams.set("tab", "email");
+  redirect.searchParams.set("email", result);
+  return redirect;
+}
