@@ -251,6 +251,15 @@ export function SettingsView({
               <span>Codex runtime</span>
               <ConnectionBadge state={status.codex} />
             </div>
+            {status.codex === "error" ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                On a self-hosted server, authenticate the bundled runtime with{" "}
+                <code className="font-mono text-foreground">
+                  sudo slabctl codex login
+                </code>
+                , then test Runner again.
+              </p>
+            ) : null}
           </section>
         </TabsContent>
 
