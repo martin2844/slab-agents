@@ -1,6 +1,6 @@
 # Slab Self-Hosted VPS Installation Plan
 
-Status: proposed implementation plan  
+Status: implementation in progress  
 Date: 2026-08-20  
 Primary target: single-user installation on one Linux VPS  
 Initial runtime: Codex through `codex app-server`  
@@ -23,7 +23,7 @@ Last updated: 2026-08-20
 | Slab Work production image                      | Published         | `ghcr.io/martin2844/slab@sha256:3190a68db66331027605dec6f07dfd12565b0ed9132d518b25367609edf1cfc5`        |
 | Slab Docs production image                      | Published         | `ghcr.io/martin2844/slab-docs@sha256:0521012b5465e92192699eb13a13826f07739995531e1a963c8e09db25a7d59a` |
 | Slab Email production image                     | Published         | `ghcr.io/martin2844/slab-email@sha256:f16eed650211605544fcedd5ac8a7eb1bafdaf7f4df82337288abaca38d7d9f8` |
-| Immutable stack candidate                       | Complete          | `slab-stack/releases/v0.1.0-candidate.4.json` pins all five public images by tag and digest     |
+| Immutable stack candidate                       | Complete          | `slab-stack/releases/v0.1.0-candidate.6.json` pins all five public images by tag and digest     |
 | Private full-stack integration                  | Complete          | `slab-stack#8`: clean Compose boot, bootstrap, connections, CRUD, restart, persistence, and network gate |
 | Versioned functional installer                  | Complete          | `slab-stack#9`, merge `63c3280`: interactive/non-interactive flow, lock, state ledger, admin bootstrap, readiness, and sanitized diagnostics |
 | Installer private-mode integration              | Complete          | Candidate.2 installs, authenticates, reruns without bootstrap credentials, preserves secrets/data, and passes CI full-stack smoke |
@@ -34,10 +34,15 @@ Last updated: 2026-08-20
 | Real Work + Docs agent run                       | Complete          | UI-created COO run completed with 7/7 successful tool calls, persisted Docs document `demo-operating-notes`, and persisted Work issue `OPS-1` |
 | systemd stack lifecycle                          | Complete          | `slab-stack@0c29c25`; real Ubuntu 26.04 VPS restart preserved Work, Docs, administrator access, and Codex auth with `slab.service` enabled/active |
 | Real domain and TLS                              | Complete          | `agents.c5h.dev`; Caddy obtained a trusted Let's Encrypt certificate, HTTP redirects to HTTPS, public `:3009` is closed, and `slabctl domain verify` promotes state to `READY` (`slab-stack@ecfdc12`) |
-| Public installer                                | Blocked by design | Must not publish before all five immutable image digests pass the VPS matrix                  |
+| Signed public bootstrap candidate               | Complete          | GitHub release `v0.1.0-candidate.6`; Ed25519 signature/checksum verified, byte-reproducible bundle, CI green |
+| Candidate bootstrap VPS dry-run                 | Complete          | Ubuntu 26.04 VPS verified signature/checksum and dry-ran `candidate.6`; production remained ready |
+| Web-managed Gmail OAuth                         | Complete locally  | OAuth client secret encrypted only by `slab-email`; Settings flow and no-secret browser/DB QA passed |
+| Stable public installer                         | Blocked by design | Candidate channel only; backup/restore, update/rollback, and remaining VPS matrix still gate `stable` |
 
-Current next gate: complete the remaining clean-VPS matrix and publish a signed,
-version-pinned public bootstrap. Candidate.4 fixes the missing CA bundle in Runner, and the clean
+Current next gate: complete backup/restore and the remaining clean-VPS matrix, then
+promote the signed, version-pinned bootstrap from `candidate` to `stable`.
+Candidate.6 is published as a signed GitHub Release, its bundle reproduces byte-for-byte with the
+pinned packaging toolchain, and the clean
 Ubuntu 26.04 VPS now proves Docker bootstrap, private installation, headless
 ChatGPT device auth, authenticated readiness, a direct Codex invocation, and a
 UI-created agent run that persisted data through Work and Docs. The managed
@@ -45,7 +50,7 @@ systemd lifecycle also survives a real full-stack restart without losing Work,
 Docs, administrator access, or runtime authentication. Domain mode is now
 proven at `https://agents.c5h.dev` with a trusted Let's Encrypt certificate,
 Caddy as the only public service, and the direct application port closed. The
-remaining clean-VPS matrix and signed public bootstrap remain intentionally
+remaining clean-VPS matrix and stable-channel promotion remain intentionally
 pending. The `stable` channel is not published yet.
 
 ## 1. Outcome
@@ -1161,6 +1166,168 @@ Migration policy for all repositories:
 - manifest declares minimum rollback version;
 - backup is mandatory before schema changes.
 
+### 20.1 Release discovery
+
+Update discovery and update execution are separate trust boundaries.
+
+`slab-agents` may perform a read-only server-side check against a release index:
+
+```text
+GitHub channel JSON (default) or configured release index
+        │
+        ▼
+ReleaseChannelClient in slab-agents
+        │
+        ├── current stack version
+        ├── latest compatible version
+        ├── release notes / severity
+        └── signed asset metadata
+```
+
+The default source is the stable channel in `martin2844/slab-stack`. A future
+Slab-hosted release service may implement the same small versioned contract. The
+UI must not depend directly on GitHub-specific response shapes.
+
+Checks run at startup and then at a bounded interval (initially every six hours,
+with jitter and ETag/If-None-Match support). Failure to reach the index is a
+non-fatal `unknown` update state, not a service-health failure. Store only:
+
+```text
+source
+channel
+current_version
+latest_version
+checked_at
+etag
+status
+sanitized_error
+release_notes_url
+```
+
+The browser never calls GitHub or the release server directly. It reads this
+state through an authenticated `slab-agents` API and can request `Check now`.
+
+Release discovery is advisory. Before any update, the host updater independently
+downloads the versioned manifest and verifies the same Ed25519 signature,
+checksum, immutable image digests, compatibility metadata, and anti-downgrade
+rules used by the installer. A compromised or stale channel pointer cannot cause
+unverified code to run.
+
+### 20.2 Settings UI
+
+Add `Settings → System updates`:
+
+```text
+Current version     0.1.0
+Channel             Stable
+Latest version      0.1.1 available
+Last checked        4 minutes ago
+
+[ Check now ] [ Review update ] [ Install update ]
+```
+
+The detail view shows release notes, compatibility, backup requirement, active
+runs, expected maintenance, and the signed artifact fingerprint. The first
+release supports manual apply only. Automatic detection may be enabled by
+default; unattended automatic installation is disabled.
+
+Only the authenticated workspace administrator can request an update. Existing
+CSRF/session protections apply. Update attempts and outcomes are persisted in a
+small audit log without credentials or raw host logs.
+
+### 20.3 Privilege boundary for panel-triggered updates
+
+Do not mount `/var/run/docker.sock` into `slab-agents`, run the app container as
+root, or expose a generic command endpoint.
+
+Use a narrow host-side systemd boundary:
+
+```text
+authenticated admin clicks Install update
+        │
+        ▼
+slab-agents writes one declarative request
+{ requestId, targetVersion, channel }
+        │
+        ▼
+root-owned systemd.path / oneshot updater
+        │
+        ├── accepts only a strict version/channel schema
+        ├── acquires the existing installation lock
+        ├── invokes versioned slabctl update
+        ├── verifies signed release assets independently
+        └── writes a sanitized status/result record
+        │
+        ▼
+slab-agents polls read-only status and updates the UI
+```
+
+The request/status directory is a dedicated bind mount. The application can
+request only `check` or `install` for a concrete release; it cannot pass shell
+fragments, Compose arguments, paths, URLs, environment variables, or arbitrary
+commands. The host helper chooses every executable and filesystem path.
+
+The helper must treat compromise of `slab-agents` as permission to request a
+valid signed update, not as permission to control Docker or the host. It rejects
+concurrent updates, replayed request IDs, unsupported channels, downgrades, and
+targets outside the signed index.
+
+### 20.4 Update lifecycle from the panel
+
+```text
+requested
+  → waiting_for_idle
+  → preflight
+  → backing_up
+  → pulling
+  → migrating
+  → reconciling
+  → verifying
+  → completed
+```
+
+Terminal alternatives are:
+
+```text
+failed_preflight
+failed_backup
+failed_apply
+rolled_back
+manual_recovery_required
+cancelled_before_apply
+```
+
+Before apply:
+
+1. reject if another installer/update holds the installation lock;
+2. verify disk space, release signature, compatibility, and current identity;
+3. wait for active agent runs to finish, or require an explicit administrator
+   choice to cancel before any containers are stopped;
+4. pause new scheduler/coordination dispatches through a persisted maintenance
+   flag;
+5. create and verify a pre-update backup;
+6. run the existing `slabctl update` lifecycle;
+7. require Work, Docs, Email, Runner, login, and readiness smoke checks;
+8. clear maintenance mode only after success or a completed rollback.
+
+Closing the browser does not cancel the host update. Reopening Settings reads
+the status file and resumes progress display. The UI never claims success based
+only on a started systemd unit.
+
+### 20.5 Delivery sequence
+
+Implement in this order:
+
+1. signed channel contract plus `ReleaseChannelClient` and read-only update UI;
+2. complete and test `slabctl update`, backup, restore, and rollback from CLI;
+3. add the strict request/status protocol and root-owned systemd oneshot;
+4. add panel-triggered manual updates with active-run drain and audit trail;
+5. exercise previous-stable → candidate → rollback on the VPS matrix;
+6. consider unattended security updates only after multiple stable releases.
+
+This sequence keeps update detection useful immediately without giving the web
+application premature host privileges.
+
 ## 21. Uninstall
 
 `slabctl uninstall` defaults to removing containers, network, systemd unit, and CLI while preserving data, secrets, and backups.
@@ -1248,7 +1415,7 @@ Exit gate: `docker compose up -d` on a clean host reaches healthy UI and service
 
 ### Phase 4: installer and `slabctl`
 
-- [ ] Implement verified bootstrap downloader.
+- [x] Implement verified bootstrap downloader.
 - [x] Implement interactive and non-interactive configuration.
 - [x] Install Docker from official apt repositories when absent.
 - [x] Generate secret files and templates idempotently.
@@ -1277,6 +1444,9 @@ Exit gate: a new operator installs, authenticates Codex, creates an agent, and c
 
 - [ ] Implement backup and verified restore.
 - [ ] Implement signed update channels and pre-update backup.
+- [ ] Add server-side release detection and `Settings → System updates`.
+- [ ] Add the narrow systemd request/status bridge for manual panel updates.
+- [ ] Verify the web container has no Docker socket or arbitrary host command path.
 - [ ] Implement compatible rollback behavior.
 - [ ] Implement support bundle and doctor.
 - [ ] Implement safe uninstall and preserve-data default.
@@ -1580,7 +1750,7 @@ The VPS must not need:
 - automatic horizontal scaling;
 - LiteLLM or another mandatory model gateway;
 - Claude/Kimi native adapters in the `v0.1.0` installer;
-- web-based host/Caddy/Docker administration;
+- generic web-based host/Caddy/Docker administration;
 - Proton Bridge running on a remote user's laptop;
 - automatic Gmail OAuth client creation;
 - zero-downtime SQLite backups;
@@ -1601,12 +1771,17 @@ These exclusions keep the first release a safe single-host product rather than a
 
 ## 31. Immediate next action
 
-Start with Phase 0 and open three parallel implementation lanes:
+1. Publish the tested `slab-email` and `slab-agents` images containing
+   web-managed Gmail OAuth configuration.
+2. Cut the next immutable candidate manifest with those two new digests.
+3. Reconcile the Ubuntu 26.04 VPS through the signed update/install lifecycle.
+4. Configure a real Google Web OAuth client from Settings, register the exact
+   `https://agents.c5h.dev/api/integrations/email/google/callback` URI, and
+   complete one Gmail connection smoke test.
+5. Implement and verify backup/restore before adding panel-triggered update
+   execution.
+6. Add read-only release detection to Settings while the CLI update/rollback
+   path is hardened.
 
-```text
-Lane A: Slab Agents login + production image
-Lane B: Slab Runner container + pinned Codex
-Lane C: Work/Docs/Email release hardening
-```
-
-Create `slab-stack` at the same time with only the manifest schema, test harness, and Compose skeleton. Do not publish `install.sh` as stable until all five images pass the clean-VPS matrix and backup restore has been demonstrated.
+Do not publish the `stable` channel until all five images pass the clean-VPS
+matrix and backup/restore plus update/rollback have been demonstrated.

@@ -64,6 +64,9 @@ export function SettingsView({
   const [docsKey, setDocsKey] = useState("");
   const [email, setEmail] = useState(initialEmail);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [gmailCallbackUrl, setGmailCallbackUrl] = useState(
+    "/api/integrations/email/google/callback",
+  );
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -302,7 +305,15 @@ export function SettingsView({
                 </span>
                 <strong>{email.assignments.length}</strong>
               </div>
-              <Button variant="outline" onClick={() => setEmailOpen(true)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setGmailCallbackUrl(
+                    `${window.location.origin}/api/integrations/email/google/callback`,
+                  );
+                  setEmailOpen(true);
+                }}
+              >
                 <Mail /> Configure email
               </Button>
             </div>
@@ -401,6 +412,7 @@ export function SettingsView({
         open={emailOpen}
         initialState={email}
         agents={agents}
+        gmailCallbackUrl={gmailCallbackUrl}
         onOpenChange={setEmailOpen}
         onUpdated={setEmail}
       />

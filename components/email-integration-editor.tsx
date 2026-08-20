@@ -81,17 +81,23 @@ export function EmailIntegrationEditor({
   open,
   initialState,
   agents,
+  gmailCallbackUrl,
   onOpenChange,
   onUpdated,
 }: {
   open: boolean;
   initialState: EmailIntegrationState;
   agents: Agent[];
+  gmailCallbackUrl: string;
   onOpenChange: (open: boolean) => void;
   onUpdated: (state: EmailIntegrationState) => void;
 }) {
   const [state, setState] = useState(initialState);
   const [serviceUrl, setServiceUrl] = useState(initialState.serviceUrl);
+  const [gmailClientId, setGmailClientId] = useState(
+    initialState.gmailOAuth.clientId,
+  );
+  const [gmailClientSecret, setGmailClientSecret] = useState("");
   const [proton, setProton] = useState(emptyProton);
   const [showProton, setShowProton] = useState(false);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
@@ -100,7 +106,35 @@ export function EmailIntegrationEditor({
   function update(next: EmailIntegrationState) {
     setState(next);
     setServiceUrl(next.serviceUrl);
+    setGmailClientId(next.gmailOAuth.clientId);
     onUpdated(next);
+  }
+
+  async function saveGmailOAuth() {
+    setBusy("gmail-oauth");
+    try {
+      const next = await api<EmailIntegrationState>(
+        "/api/integrations/email/gmail/settings",
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            clientId: gmailClientId,
+            ...(gmailClientSecret ? { clientSecret: gmailClientSecret } : {}),
+          }),
+        },
+      );
+      update(next);
+      toast.success("Google OAuth credentials saved");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Google OAuth credentials could not be saved",
+      );
+    } finally {
+      setGmailClientSecret("");
+      setBusy(null);
+    }
   }
 
   async function saveConnection() {
@@ -320,6 +354,76 @@ export function EmailIntegrationEditor({
           </section>
 
           <section className="border-b py-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <MailCheck className="size-4" />
+              <h3 className="font-semibold">Google OAuth</h3>
+              <Badge
+                variant={state.gmailOAuth.configured ? "default" : "outline"}
+              >
+                {state.gmailOAuth.configured ? "Configured" : "Required"}
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Create a Google Cloud OAuth client for a Web application and add
+              the exact redirect URI below. The client secret is encrypted by
+              slab-email and is never returned to this page.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <Field
+                label="Google client ID"
+                value={gmailClientId}
+                onChange={setGmailClientId}
+                autoComplete="off"
+              />
+              <Field
+                label={
+                  state.gmailOAuth.source === "stored"
+                    ? "Replace client secret (optional)"
+                    : "Google client secret"
+                }
+                type="password"
+                value={gmailClientSecret}
+                onChange={setGmailClientSecret}
+                autoComplete="new-password"
+              />
+            </div>
+            <label className="mt-3 grid gap-1.5 text-xs font-semibold">
+              Authorized redirect URI
+              <Input
+                value={gmailCallbackUrl}
+                readOnly
+                aria-label="Google OAuth redirect URI"
+              />
+            </label>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                {state.gmailOAuth.source === "environment"
+                  ? "Currently supplied by the slab-email environment. Saving here moves configuration to encrypted service storage."
+                  : state.gmailOAuth.updatedAt
+                    ? `Updated ${new Date(state.gmailOAuth.updatedAt).toISOString().replace("T", " ").slice(0, 19)} UTC`
+                    : "OAuth must be configured before connecting a Gmail mailbox."}
+              </p>
+              <Button
+                variant="outline"
+                onClick={saveGmailOAuth}
+                disabled={
+                  busy === "gmail-oauth" ||
+                  !gmailClientId.trim() ||
+                  (state.gmailOAuth.source !== "stored" &&
+                    !gmailClientSecret.trim())
+                }
+              >
+                {busy === "gmail-oauth" ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <ShieldCheck />
+                )}
+                Save OAuth credentials
+              </Button>
+            </div>
+          </section>
+
+          <section className="border-b py-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="font-semibold">Mailboxes</h3>
@@ -338,7 +442,11 @@ export function EmailIntegrationEditor({
                 <Button
                   variant="outline"
                   onClick={connectGmail}
-                  disabled={!state.configured || busy === "gmail"}
+                  disabled={
+                    !state.configured ||
+                    !state.gmailOAuth.configured ||
+                    busy === "gmail"
+                  }
                 >
                   <MailCheck /> Connect Gmail
                 </Button>

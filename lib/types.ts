@@ -423,6 +423,13 @@ export type AgentEmailAccess = {
   createdAt: string;
   updatedAt: string;
 };
+export type GmailOAuthSettings = {
+  configured: boolean;
+  clientId: string;
+  hasClientSecret: boolean;
+  source: "stored" | "environment" | "missing";
+  updatedAt: string | null;
+};
 export type EmailIntegrationState = {
   configured: boolean;
   adminConfigured: boolean;
@@ -430,6 +437,7 @@ export type EmailIntegrationState = {
   status: IntegrationStatus;
   lastTestedAt: string | null;
   lastError: string | null;
+  gmailOAuth: GmailOAuthSettings;
   accounts: EmailAccount[];
   assignments: AgentEmailAccess[];
 };

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { readSecret } from "@/lib/server-config";
-import type { EmailAccount } from "@/lib/types";
+import type { EmailAccount, GmailOAuthSettings } from "@/lib/types";
 
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
@@ -201,6 +201,20 @@ export class EmailAdminClient {
       `/api/oauth/google/callback?${query.toString()}`,
       { admin: false },
     );
+  }
+
+  getGoogleOAuthSettings() {
+    return this.request<GmailOAuthSettings>("/api/settings/google-oauth");
+  }
+
+  saveGoogleOAuthSettings(input: {
+    clientId: string;
+    clientSecret?: string;
+  }) {
+    return this.request<GmailOAuthSettings>("/api/settings/google-oauth", {
+      method: "PATCH",
+      body: input,
+    });
   }
 
   createProfile(

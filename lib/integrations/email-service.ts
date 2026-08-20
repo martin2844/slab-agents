@@ -16,6 +16,7 @@ import type {
   EmailAccount,
   EmailIntegrationState,
   EmailSendPolicy,
+  GmailOAuthSettings,
 } from "@/lib/types";
 
 const DEFAULT_EMAIL_URL = "http://127.0.0.1:6981";
@@ -45,10 +46,19 @@ export async function getEmailIntegrationState(): Promise<EmailIntegrationState>
     readSecret("SLAB_EMAIL_ADMIN_KEY", "SLAB_EMAIL_ADMIN_KEY_FILE"),
   );
   let accounts: EmailAccount[] = [];
+  let gmailOAuth: GmailOAuthSettings = {
+    configured: false,
+    clientId: "",
+    hasClientSecret: false,
+    source: "missing",
+    updatedAt: null,
+  };
   let lastError = config?.lastError ?? null;
-  if (config && adminConfigured) {
+  if ((config || process.env.SLAB_EMAIL_URL?.trim()) && adminConfigured) {
     try {
-      accounts = await new EmailAdminClient(config.serviceUrl).listAccounts();
+      const emailClient = new EmailAdminClient(currentServiceUrl());
+      accounts = await emailClient.listAccounts();
+      gmailOAuth = await emailClient.getGoogleOAuthSettings();
     } catch (error) {
       lastError =
         error instanceof Error
@@ -63,6 +73,7 @@ export async function getEmailIntegrationState(): Promise<EmailIntegrationState>
     status: config?.status ?? "not_tested",
     lastTestedAt: config?.lastTestedAt ?? null,
     lastError,
+    gmailOAuth,
     accounts,
     assignments: repository.listAgentEmailAccess(),
   };
@@ -145,6 +156,14 @@ export function connectGmail(returnUrl: string) {
 
 export function completeGmailConnection(code: string, state: string) {
   return client().completeGmail(code, state);
+}
+
+export async function saveGoogleOAuthSettings(input: {
+  clientId: string;
+  clientSecret?: string;
+}) {
+  await client().saveGoogleOAuthSettings(input);
+  return getEmailIntegrationState();
 }
 
 function validateAccess(input: {
