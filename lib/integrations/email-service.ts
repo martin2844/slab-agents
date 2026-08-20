@@ -24,10 +24,19 @@ function currentConfig() {
   return repository.getEmailIntegrationRecord();
 }
 
+function configuredServiceUrl() {
+  const environmentUrl = process.env.SLAB_EMAIL_URL?.trim();
+  return environmentUrl
+    ? normalizeEmailServiceUrl(environmentUrl)
+    : DEFAULT_EMAIL_URL;
+}
+
+function currentServiceUrl() {
+  return currentConfig()?.serviceUrl ?? configuredServiceUrl();
+}
+
 function client() {
-  const config = currentConfig();
-  if (!config) throw new Error("Configure the Email service URL first.");
-  return new EmailAdminClient(config.serviceUrl);
+  return new EmailAdminClient(currentServiceUrl());
 }
 
 export async function getEmailIntegrationState(): Promise<EmailIntegrationState> {
@@ -48,9 +57,9 @@ export async function getEmailIntegrationState(): Promise<EmailIntegrationState>
     }
   }
   return {
-    configured: Boolean(config),
+    configured: Boolean(config || process.env.SLAB_EMAIL_URL?.trim()),
     adminConfigured,
-    serviceUrl: config?.serviceUrl ?? DEFAULT_EMAIL_URL,
+    serviceUrl: config?.serviceUrl ?? configuredServiceUrl(),
     status: config?.status ?? "not_tested",
     lastTestedAt: config?.lastTestedAt ?? null,
     lastError,
@@ -85,9 +94,7 @@ export async function saveAndTestEmailIntegration(serviceUrl: string) {
 }
 
 export async function testEmailIntegration() {
-  const config = currentConfig();
-  if (!config) throw new Error("Configure the Email service URL first.");
-  return saveAndTestEmailIntegration(config.serviceUrl);
+  return saveAndTestEmailIntegration(currentServiceUrl());
 }
 
 export async function createEmailAccount(
