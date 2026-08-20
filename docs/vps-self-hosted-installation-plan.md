@@ -31,14 +31,15 @@ Last updated: 2026-08-20
 | Codex-enabled stack candidate                    | Complete          | Candidate.4 passes 69 installer tests, ShellCheck, private full-stack smoke, login/logout, and idempotent installer rerun |
 | Ubuntu 26.04 and Docker host bootstrap           | Complete          | `slab-stack#11`, merge `478e5ec`: official Docker apt repository, pinned signing-key fingerprint, and conflict-safe setup |
 | Clean VPS install and real Codex runtime smoke   | Complete          | Clean Ubuntu 26.04 amd64 VPS: Docker bootstrapped, private stack healthy, headless device auth completed, `SLAB_RUNTIME_OK` run completed |
+| Real Work + Docs agent run                       | Complete          | UI-created COO run completed with 7/7 successful tool calls, persisted Docs document `demo-operating-notes`, and persisted Work issue `OPS-1` |
 | Public installer                                | Blocked by design | Must not publish before all five immutable image digests pass the VPS matrix                  |
 
-Current next gate: create an agent through the installed UI and prove one real
-Work + Docs run without editing files manually. Candidate.4 fixes the missing
-CA bundle in Runner, and the clean Ubuntu 26.04 VPS now proves Docker bootstrap,
-private installation, headless ChatGPT device auth, authenticated readiness,
-and one direct Codex model invocation. Systemd lifecycle, DNS/TLS diagnostics,
-the complete clean-VPS matrix, and the signed public bootstrap remain
+Current next gate: implement systemd lifecycle and exercise domain mode with
+real DNS/TLS. Candidate.4 fixes the missing CA bundle in Runner, and the clean
+Ubuntu 26.04 VPS now proves Docker bootstrap, private installation, headless
+ChatGPT device auth, authenticated readiness, a direct Codex invocation, and a
+UI-created agent run that persisted data through Work and Docs. The complete
+clean-VPS matrix, lifecycle operations, and signed public bootstrap remain
 intentionally pending. The `stable` channel is not published yet.
 
 ## 1. Outcome
@@ -1262,7 +1263,7 @@ Exit gate: one command installs a usable authenticated stack on all supported VP
 - [x] Surface runtime status in Settings and setup checklist.
 - [x] Add first-run COO creation only after runtime is available, or make the disabled state explicit.
 - [x] Authenticate Codex on a headless Ubuntu 26.04 VPS and complete a direct Runner model invocation.
-- [ ] Run a real Work + Docs agent smoke test.
+- [x] Run a real Work + Docs agent smoke test.
 
 Exit gate: a new operator installs, authenticates Codex, creates an agent, and completes one run without editing files manually.
 
@@ -1518,7 +1519,7 @@ Each PR must be independently deployable or explicitly marked as infrastructure 
 - [ ] Fresh install passes on supported OS/architecture matrix.
 - [ ] Domain and private access modes pass.
 - [x] Codex device login passes on a headless VPS.
-- [ ] Work + Docs + agent run E2E passes.
+- [x] Work + Docs + agent run E2E passes.
 - [ ] Email service is healthy with zero accounts.
 - [ ] Restart preserves all state.
 - [ ] Backup restores on a different clean VPS.
