@@ -16,21 +16,23 @@ Last updated: 2026-08-20
 | Local `slab-stack` repository                   | Complete          | `slab-stack@df635e4`                                                                          |
 | Manifest, service, image, and Compose contracts | Complete          | `slab-stack@df635e4`                                                                          |
 | Initial Codex version lock                      | Complete          | Codex CLI `0.148.0`, `slab-stack@9fa934e`                                                     |
-| Slab Agents production runtime contract        | Published         | `ghcr.io/martin2844/slab-agents@sha256:741296dc6915f4c7411d7ccc7ee75c341aaa25b05d3462b3cf7cd33c94dd9e15` |
+| Slab Agents production runtime contract        | Published         | `ghcr.io/martin2844/slab-agents@sha256:18628a3e2c4dfbd55519d0bf2dd2b3ff7bbac243639a84add9a27ce79df693f4` |
 | Slab Agents single-user authentication         | Published         | scrypt password, stdin bootstrap, revocable sessions, proxy/CSRF/rate-limit image smoke passed  |
 | Runner production image                         | Published         | `ghcr.io/martin2844/slab-runner@sha256:d2cc9c9c2154d5e8673ce90350d84ac2d77586af5045bfed938ba36694475971` |
 | Runner multi-arch publication                   | Complete          | Public amd64/arm64 pull, signature, provenance, SBOM, and 0 high/critical scan verified        |
 | Slab Work production image                      | Published         | `ghcr.io/martin2844/slab@sha256:3190a68db66331027605dec6f07dfd12565b0ed9132d518b25367609edf1cfc5`        |
 | Slab Docs production image                      | Published         | `ghcr.io/martin2844/slab-docs@sha256:0521012b5465e92192699eb13a13826f07739995531e1a963c8e09db25a7d59a` |
 | Slab Email production image                     | Published         | `ghcr.io/martin2844/slab-email@sha256:f16eed650211605544fcedd5ac8a7eb1bafdaf7f4df82337288abaca38d7d9f8` |
-| Immutable stack candidate                       | Complete          | `slab-stack/releases/v0.1.0-candidate.1.json` pins all five public images by tag and digest     |
+| Immutable stack candidate                       | Complete          | `slab-stack/releases/v0.1.0-candidate.2.json` pins all five public images by tag and digest     |
+| Private full-stack integration                  | Complete          | `slab-stack#8`: clean Compose boot, bootstrap, connections, CRUD, restart, persistence, and network gate |
+| Installer primitives                            | In progress       | Preflight, prompts, secret generation, and versioned rendering are implemented and tested       |
 | Public installer                                | Blocked by design | Must not publish before all five immutable image digests pass the VPS matrix                  |
 
-Current next gate: boot `v0.1.0-candidate.1` as one generated Compose project,
-seed every internal service URL, bootstrap the administrator over stdin, and
-pass the first end-to-end private-mode smoke test. All five services now have
-public, signed, scanned amd64/arm64 candidates that were anonymously pulled by
-digest. The `stable` channel remains intentionally unpublished.
+Current next gate: connect the tested installer primitives into one idempotent
+`installer/install.sh` flow that renders `v0.1.0-candidate.2`, starts the stack,
+bootstraps the administrator over stdin, waits for readiness, and reports a
+sanitized result. The same candidate now passes the private-mode smoke locally
+and in GitHub Actions. The `stable` channel remains intentionally unpublished.
 
 ## 1. Outcome
 
@@ -237,11 +239,11 @@ Repository responsibilities:
 
 | Service     | Image now | CI now              | Main release gaps                                                                    |
 | ----------- | --------- | ------------------- | ------------------------------------------------------------------------------------ |
-| Slab Agents | Yes       | CI + image release  | candidate published; remaining gate is unified VPS integration                       |
-| Slab Work   | Yes       | CI + image release  | candidate published; remaining gate is unified VPS integration                       |
-| Slab Docs   | Yes       | CI + image release  | production contract implemented in PR; merge, publish, and verify candidate           |
-| Slab Email  | Yes       | test workflow only  | publish workflow, Compose hardening, healthcheck, OAuth deployment docs              |
-| Slab Runner | No        | test workflow       | Dockerfile, bundled Codex, authenticated container bind, auth volume, image workflow |
+| Slab Agents | Yes       | CI + image release  | candidate published and unified private-stack smoke passed                            |
+| Slab Work   | Yes       | CI + image release  | candidate published and unified private-stack smoke passed                            |
+| Slab Docs   | Yes       | CI + image release  | candidate published and unified private-stack smoke passed                            |
+| Slab Email  | Yes       | CI + image release  | candidate published and unified private-stack smoke passed                            |
+| Slab Runner | Yes       | CI + image release  | bundled Codex candidate published and unified private-stack smoke passed              |
 
 Important implementation facts already present and reusable:
 
@@ -1221,10 +1223,10 @@ Exit gate: the stack can be assembled entirely from registry images with no sour
 ### Phase 3: unified stack
 
 - [x] Implement base Compose and domain/private overrides.
-- [ ] Add networks, secrets, volumes, resource guidance, healthchecks, and logging.
+- [x] Add networks, secrets, volumes, resource guidance, healthchecks, and logging.
 - [x] Add Caddy templates and persistent certificate volumes.
 - [ ] Add systemd unit to reconcile the Compose project on boot.
-- [ ] Seed internal Work/Docs/Runner/Email URLs automatically.
+- [x] Seed internal Work/Docs/Runner/Email URLs automatically.
 - [x] Add migration/bootstrap jobs and dependency conditions.
 - [x] Verify no internal service is host-published.
 
@@ -1235,7 +1237,7 @@ Exit gate: `docker compose up -d` on a clean host reaches healthy UI and service
 - [ ] Implement verified bootstrap downloader.
 - [ ] Implement interactive and non-interactive configuration.
 - [ ] Install Docker from official apt repositories when absent.
-- [ ] Generate secret files and templates idempotently.
+- [x] Generate secret files and templates idempotently.
 - [ ] Bootstrap the admin password over stdin.
 - [ ] Implement domain/private flows and DNS diagnostics.
 - [ ] Implement all required `slabctl` commands.
