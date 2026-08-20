@@ -28,7 +28,8 @@ Last updated: 2026-08-20
 | Versioned functional installer                  | Complete          | `slab-stack#9`, merge `63c3280`: interactive/non-interactive flow, lock, state ledger, admin bootstrap, readiness, and sanitized diagnostics |
 | Installer private-mode integration              | Complete          | Candidate.2 installs, authenticates, reruns without bootstrap credentials, preserves secrets/data, and passes CI full-stack smoke |
 | Codex onboarding and runtime readiness           | Complete          | `slab-runner#2`, `slab-agents#2`, `slab-stack#10`: persistent auth, `slabctl`, UI guidance, restart, and authenticated readiness |
-| Codex-enabled stack candidate                    | Complete          | Candidate.3 passes 64 installer tests, ShellCheck, private full-stack smoke, login/logout, and idempotent installer rerun |
+| Codex-enabled stack candidate                    | Complete          | Candidate.3 passes 69 installer tests, ShellCheck, private full-stack smoke, login/logout, and idempotent installer rerun |
+| Ubuntu 26.04 and Docker host bootstrap           | Complete          | `slab-stack#11`, merge `478e5ec`: official Docker apt repository, pinned signing-key fingerprint, and conflict-safe setup |
 | Public installer                                | Blocked by design | Must not publish before all five immutable image digests pass the VPS matrix                  |
 
 Current next gate: authenticate Codex with a real operator account on a clean
@@ -36,8 +37,8 @@ host and prove one real Work + Docs agent run without editing files manually.
 The automated candidate.3 smoke already proves the install, unauthenticated
 state, stdin API-key flow, Runner restart/readiness, UI setup transition, and
 idempotent rerun, but it deliberately does not spend a real model invocation.
-Docker package installation, systemd lifecycle, DNS/TLS diagnostics, the clean
-VPS matrix, and the signed public bootstrap remain intentionally pending. The
+Systemd lifecycle, DNS/TLS diagnostics, the complete clean-VPS matrix, and the
+signed public bootstrap remain intentionally pending. The
 `stable` channel is not published yet.
 
 ## 1. Outcome
@@ -746,7 +747,7 @@ Passwords are never accepted as command-line values. Non-interactive mode uses a
 
 Supported initial hosts:
 
-- Ubuntu 22.04/24.04 LTS;
+- Ubuntu 22.04/24.04/26.04 LTS;
 - Debian 12;
 - `amd64` and `arm64`.
 
@@ -1242,7 +1243,7 @@ Exit gate: `docker compose up -d` on a clean host reaches healthy UI and service
 
 - [ ] Implement verified bootstrap downloader.
 - [x] Implement interactive and non-interactive configuration.
-- [ ] Install Docker from official apt repositories when absent.
+- [x] Install Docker from official apt repositories when absent.
 - [x] Generate secret files and templates idempotently.
 - [x] Bootstrap the admin password over stdin.
 - [x] Implement private mode plus domain rendering and Caddy validation.
@@ -1334,6 +1335,7 @@ Every repository must cover:
 | ------------------------------------ | ----- | ------------------------------- |
 | Ubuntu 22.04, Docker absent, domain  | Yes   | Yes                             |
 | Ubuntu 24.04, Docker present, domain | Yes   | Yes                             |
+| Ubuntu 26.04, Docker absent, private | Yes   | Yes                             |
 | Debian 12, Docker absent, private    | Yes   | Yes                             |
 | DNS not ready                        | Yes   | one representative architecture |
 | Ports 80/443 occupied                | Yes   | one representative architecture |
