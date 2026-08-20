@@ -16,16 +16,19 @@ Last updated: 2026-08-20
 | Local `slab-stack` repository                   | Complete          | `slab-stack@df635e4`                                                                          |
 | Manifest, service, image, and Compose contracts | Complete          | `slab-stack@df635e4`                                                                          |
 | Initial Codex version lock                      | Complete          | Codex CLI `0.148.0`, `slab-stack@9fa934e`                                                     |
-| Slab Agents production runtime contract        | Complete locally  | Standalone image, startup migrations, health/readiness, `_FILE` secrets, non-root smoke passed |
-| Slab Agents single-user authentication         | Complete locally  | scrypt password, stdin bootstrap, revocable sessions, proxy/CSRF/rate-limit Docker smoke passed |
+| Slab Agents production runtime contract        | Published         | `ghcr.io/martin2844/slab-agents@sha256:741296dc6915f4c7411d7ccc7ee75c341aaa25b05d3462b3cf7cd33c94dd9e15` |
+| Slab Agents single-user authentication         | Published         | scrypt password, stdin bootstrap, revocable sessions, proxy/CSRF/rate-limit image smoke passed  |
 | Runner production image                         | Complete locally  | `slab-runner@715573b`; non-root/container-auth/health smoke passed                            |
 | Runner multi-arch publication                   | Pending           | Workflow exists; release tag, public GHCR package, signature, scan, and digest still required |
-| Remaining service images                        | Pending           | Slab Agents has no image; Work/Docs/Email need release hardening/workflows                    |
+| Slab Work production image                      | Published         | `ghcr.io/martin2844/slab@sha256:3190a68db66331027605dec6f07dfd12565b0ed9132d518b25367609edf1cfc5`        |
+| Slab Docs production image                      | PR ready          | Runtime/image hardening in [`slab-docs#1`](https://github.com/martin2844/slab-docs/pull/1)     |
+| Remaining service images                        | Pending           | Docs must merge/publish; Email and Runner still need published candidate digests               |
 | Public installer                                | Blocked by design | Must not publish before all five immutable image digests pass the VPS matrix                  |
 
-Current next gate: publish the Slab Agents candidate image for amd64/arm64,
-then complete the production-hardening and publishing contracts for Work,
-Docs, and Email. The `stable` channel remains intentionally unpublished.
+Current next gate: merge and publish the Docs candidate, then complete Email
+hardening and Runner publication. Agents and Work now have public, signed,
+scanned amd64/arm64 candidates that were anonymously pulled by digest. The
+`stable` channel remains intentionally unpublished.
 
 ## 1. Outcome
 
@@ -232,9 +235,9 @@ Repository responsibilities:
 
 | Service     | Image now | CI now              | Main release gaps                                                                    |
 | ----------- | --------- | ------------------- | ------------------------------------------------------------------------------------ |
-| Slab Agents | No        | No workflow in repo | Dockerfile, container bind, health, login, release workflow, runtime-safe migrations |
-| Slab Work   | Yes       | No workflow in repo | publish to GHCR, coordinated migrations, readiness, multi-arch smoke test            |
-| Slab Docs   | Yes       | No workflow in repo | publish to GHCR, readiness contract, multi-arch smoke test                           |
+| Slab Agents | Yes       | CI + image release  | candidate published; remaining gate is unified VPS integration                       |
+| Slab Work   | Yes       | CI + image release  | candidate published; remaining gate is unified VPS integration                       |
+| Slab Docs   | Yes       | CI + image release  | production contract implemented in PR; merge, publish, and verify candidate           |
 | Slab Email  | Yes       | test workflow only  | publish workflow, Compose hardening, healthcheck, OAuth deployment docs              |
 | Slab Runner | No        | test workflow       | Dockerfile, bundled Codex, authenticated container bind, auth volume, image workflow |
 
@@ -1175,14 +1178,14 @@ Exit gate: an empty stack manifest can resolve one immutable digest for each ser
 
 #### Slab Agents
 
-- [ ] Add application login, sessions, logout, password change, reset CLI, CSRF/origin checks, and rate limiting.
-- [ ] Add `/health` and `/ready`.
-- [ ] Separate build from migrations.
-- [ ] Add container entrypoint and admin bootstrap CLI.
-- [ ] Add secret `_FILE` support.
-- [ ] Use `CONTROL_PLANE_INTERNAL_URL` for run-scoped PostHog and Custom Integration MCP URLs instead of loopback.
+- [x] Add application login, sessions, logout, password change, reset CLI, CSRF/origin checks, and rate limiting.
+- [x] Add `/health` and `/ready`.
+- [x] Separate build from migrations.
+- [x] Add container entrypoint and admin bootstrap CLI.
+- [x] Add secret `_FILE` support.
+- [x] Use `CONTROL_PLANE_INTERNAL_URL` for run-scoped PostHog and Custom Integration MCP URLs instead of loopback.
 - [ ] Add graceful scheduler/run shutdown.
-- [ ] Add production Dockerfile and `.dockerignore`.
+- [x] Add production Dockerfile and `.dockerignore`.
 
 #### Slab Runner
 
