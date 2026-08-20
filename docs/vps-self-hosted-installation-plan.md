@@ -16,14 +16,14 @@ Last updated: 2026-08-20
 | Local `slab-stack` repository                   | Complete          | `slab-stack@df635e4`                                                                          |
 | Manifest, service, image, and Compose contracts | Complete          | `slab-stack@df635e4`                                                                          |
 | Initial Codex version lock                      | Complete          | Codex CLI `0.148.0`, `slab-stack@9fa934e`                                                     |
-| Slab Agents production runtime contract        | Published         | `ghcr.io/martin2844/slab-agents@sha256:8d831bf5734069aff8ada479a176527af5b37f3b0f931ddba9725c2719ac4090` |
+| Slab Agents production runtime contract        | Published         | `ghcr.io/martin2844/slab-agents@sha256:ef8309d534e4f75a39ae78f5fb58ea89cc16e7d1457a66a3d477809fbca4de39` |
 | Slab Agents single-user authentication         | Published         | scrypt password, stdin bootstrap, revocable sessions, proxy/CSRF/rate-limit image smoke passed  |
 | Runner production image                         | Published         | `ghcr.io/martin2844/slab-runner@sha256:7cd7c1da0aa14a710c7b9c2ac59e16679e3a684513b78da6e22dc7976d078377` |
 | Runner multi-arch publication                   | Complete          | Public amd64/arm64 pull, signature, provenance, SBOM, and 0 high/critical scan verified        |
 | Slab Work production image                      | Published         | `ghcr.io/martin2844/slab@sha256:3190a68db66331027605dec6f07dfd12565b0ed9132d518b25367609edf1cfc5`        |
 | Slab Docs production image                      | Published         | `ghcr.io/martin2844/slab-docs@sha256:0521012b5465e92192699eb13a13826f07739995531e1a963c8e09db25a7d59a` |
-| Slab Email production image                     | Published         | `ghcr.io/martin2844/slab-email@sha256:f16eed650211605544fcedd5ac8a7eb1bafdaf7f4df82337288abaca38d7d9f8` |
-| Immutable stack candidate                       | Complete          | `slab-stack/releases/v0.1.0-candidate.6.json` pins all five public images by tag and digest     |
+| Slab Email production image                     | Published         | `ghcr.io/martin2844/slab-email@sha256:1e3b48c612e70ec5afdbe364c3435d55df7654122a586e10909e0bb5392e02b3` |
+| Immutable stack candidate                       | Complete          | `slab-stack/releases/v0.1.0-candidate.7.json` pins all five public images by tag and digest     |
 | Private full-stack integration                  | Complete          | `slab-stack#8`: clean Compose boot, bootstrap, connections, CRUD, restart, persistence, and network gate |
 | Versioned functional installer                  | Complete          | `slab-stack#9`, merge `63c3280`: interactive/non-interactive flow, lock, state ledger, admin bootstrap, readiness, and sanitized diagnostics |
 | Installer private-mode integration              | Complete          | Candidate.2 installs, authenticates, reruns without bootstrap credentials, preserves secrets/data, and passes CI full-stack smoke |
@@ -34,14 +34,15 @@ Last updated: 2026-08-20
 | Real Work + Docs agent run                       | Complete          | UI-created COO run completed with 7/7 successful tool calls, persisted Docs document `demo-operating-notes`, and persisted Work issue `OPS-1` |
 | systemd stack lifecycle                          | Complete          | `slab-stack@0c29c25`; real Ubuntu 26.04 VPS restart preserved Work, Docs, administrator access, and Codex auth with `slab.service` enabled/active |
 | Real domain and TLS                              | Complete          | `agents.c5h.dev`; Caddy obtained a trusted Let's Encrypt certificate, HTTP redirects to HTTPS, public `:3009` is closed, and `slabctl domain verify` promotes state to `READY` (`slab-stack@ecfdc12`) |
-| Signed public bootstrap candidate               | Complete          | GitHub release `v0.1.0-candidate.6`; Ed25519 signature/checksum verified, byte-reproducible bundle, CI green |
-| Candidate bootstrap VPS dry-run                 | Complete          | Ubuntu 26.04 VPS verified signature/checksum and dry-ran `candidate.6`; production remained ready |
-| Web-managed Gmail OAuth                         | Complete locally  | OAuth client secret encrypted only by `slab-email`; Settings flow and no-secret browser/DB QA passed |
+| Signed public bootstrap candidate               | Complete          | GitHub release `v0.1.0-candidate.7`; Ed25519 signature/checksum verified, byte-reproducible bundle, CI green |
+| Candidate bootstrap VPS dry-run                 | Complete          | Ubuntu 26.04 VPS verified signature/checksum and dry-ran `candidate.7`; production remained ready |
+| Candidate.7 production reconciliation           | Complete          | Seven-volume verified backup, additive Email migration to schema 2, exact image digests, systemd active, HTTPS ready, and direct port closed |
+| Web-managed Gmail OAuth                         | Deployed          | Settings owns the server-side admin flow; OAuth secret is encrypted only by `slab-email`, absent from API/UI reads, and production reports an actionable `missing` state |
 | Stable public installer                         | Blocked by design | Candidate channel only; backup/restore, update/rollback, and remaining VPS matrix still gate `stable` |
 
 Current next gate: complete backup/restore and the remaining clean-VPS matrix, then
 promote the signed, version-pinned bootstrap from `candidate` to `stable`.
-Candidate.6 is published as a signed GitHub Release, its bundle reproduces byte-for-byte with the
+Candidate.7 is published as a signed GitHub Release, its bundle reproduces byte-for-byte with the
 pinned packaging toolchain, and the clean
 Ubuntu 26.04 VPS now proves Docker bootstrap, private installation, headless
 ChatGPT device auth, authenticated readiness, a direct Codex invocation, and a
@@ -1771,16 +1772,12 @@ These exclusions keep the first release a safe single-host product rather than a
 
 ## 31. Immediate next action
 
-1. Publish the tested `slab-email` and `slab-agents` images containing
-   web-managed Gmail OAuth configuration.
-2. Cut the next immutable candidate manifest with those two new digests.
-3. Reconcile the Ubuntu 26.04 VPS through the signed update/install lifecycle.
-4. Configure a real Google Web OAuth client from Settings, register the exact
+1. Configure a real Google Web OAuth client from Settings, register the exact
    `https://agents.c5h.dev/api/integrations/email/google/callback` URI, and
    complete one Gmail connection smoke test.
-5. Implement and verify backup/restore before adding panel-triggered update
+2. Implement and verify backup/restore before adding panel-triggered update
    execution.
-6. Add read-only release detection to Settings while the CLI update/rollback
+3. Add read-only release detection to Settings while the CLI update/rollback
    path is hardened.
 
 Do not publish the `stable` channel until all five images pass the clean-VPS
