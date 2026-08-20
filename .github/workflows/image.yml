@@ -50,7 +50,7 @@ jobs:
           SLAB_AGENTS_SMOKE_IMAGE: slab-agents:release-smoke
         run: ./scripts/container-smoke.sh 2>&1 | tee release-evidence/container-smoke.log
       - name: Scan release image before publishing
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: slab-agents:release-smoke
           format: table
@@ -120,14 +120,14 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@v4.1.2
       - name: Sign immutable digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           IMAGE: ${{ steps.image.outputs.value }}
         run: cosign sign --yes "$IMAGE@$DIGEST"
       - name: Scan immutable digest
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.image.outputs.value }}@${{ steps.build.outputs.digest }}
           format: table
