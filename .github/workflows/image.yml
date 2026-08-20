@@ -59,7 +59,7 @@ jobs:
           exit-code: "1"
       - name: Upload release validation evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: slab-agents-validation-${{ github.run_id }}
           path: release-evidence/
@@ -139,7 +139,7 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
           IMAGE: ${{ steps.image.outputs.value }}
         run: printf '%s@%s\n' "$IMAGE" "$DIGEST" | tee image-digest.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: slab-agents-image-digest
           path: image-digest.txt
