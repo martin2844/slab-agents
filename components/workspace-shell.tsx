@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Activity,
   Bot,
@@ -16,6 +16,7 @@ import {
   Settings,
   Workflow,
   CircleCheck,
+  LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -139,8 +140,24 @@ function HowItWorksLink({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function WorkspaceShell({ children }: { children: React.ReactNode }) {
+export function WorkspaceShell({
+  children,
+  authEnabled,
+}: {
+  children: React.ReactNode;
+  authEnabled: boolean;
+}) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+  const router = useRouter();
+
+  if (pathname === "/login") return children;
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    router.push("/login");
+    router.refresh();
+  }
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <a href="#main-content" className="skip-link">
@@ -155,6 +172,16 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           <span className="mb-2 block h-px bg-border" />
           <SystemState />
           <HowItWorksLink />
+          {authEnabled ? (
+            <Button
+              variant="ghost"
+              className="mt-1 w-full justify-start"
+              onClick={logout}
+            >
+              <LogOut />
+              Sign out
+            </Button>
+          ) : null}
         </div>
       </aside>
       <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/95 px-4 backdrop-blur lg:hidden">
@@ -180,6 +207,16 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             <div className="mt-auto px-3 pb-2">
               <span className="mb-3 block h-px bg-border" />
               <HowItWorksLink onNavigate={() => setMobileOpen(false)} />
+              {authEnabled ? (
+                <Button
+                  variant="ghost"
+                  className="mt-2 w-full justify-start"
+                  onClick={logout}
+                >
+                  <LogOut />
+                  Sign out
+                </Button>
+              ) : null}
             </div>
           </SheetContent>
         </Sheet>

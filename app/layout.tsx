@@ -3,6 +3,7 @@ import "./globals.css";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { WorkspaceShell } from "@/components/workspace-shell";
+import { authenticationRequired } from "@/lib/auth/service";
 
 export const metadata: Metadata = {
   title: { default: "Slab Workspace", template: "%s · Slab Workspace" },
@@ -14,7 +15,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full">
         <TooltipProvider>
-          <WorkspaceShell>{children}</WorkspaceShell>
+          <WorkspaceShell authEnabled={authenticationRequired()}>
+            {children}
+          </WorkspaceShell>
           <Toaster richColors position="bottom-right" />
         </TooltipProvider>
       </body>

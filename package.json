@@ -13,6 +13,7 @@
     "lint": "eslint",
     "test": "node --experimental-strip-types --test scripts/*.test.mjs",
     "typecheck": "tsc --noEmit",
+    "admin:bootstrap": "node scripts/admin-bootstrap.mjs",
     "migrate:make": "knex --knexfile knexfile.cjs migrate:make",
     "migrate:latest": "knex --knexfile knexfile.cjs migrate:latest",
     "migrate:rollback": "knex --knexfile knexfile.cjs migrate:rollback",

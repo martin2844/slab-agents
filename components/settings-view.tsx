@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Check,
   EyeOff,
   LoaderCircle,
+  KeyRound,
   Mail,
   PlugZap,
   Save,
@@ -36,13 +38,16 @@ export function SettingsView({
   initialSettings,
   initialSetup,
   initialEmail,
+  auth,
   agents,
 }: {
   initialSettings: WorkspaceSettings;
   initialSetup: SetupStatus;
   initialEmail: EmailIntegrationState;
+  auth: { required: boolean; configured: boolean };
   agents: Agent[];
 }) {
+  const router = useRouter();
   const initialServiceState = (service: Service): State => {
     const value = initialSetup.checks.find(
       (item) => item.service === service,
@@ -59,6 +64,10 @@ export function SettingsView({
   const [docsKey, setDocsKey] = useState("");
   const [email, setEmail] = useState(initialEmail);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
   const [status, setStatus] = useState<Record<Service, State>>({
     work: initialServiceState("work"),
     docs: initialServiceState("docs"),
@@ -125,6 +134,29 @@ export function SettingsView({
       toast.error(
         cause instanceof Error ? cause.message : `${service} is unavailable`,
       );
+    }
+  }
+
+  async function changePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (newPassword !== confirmPassword) {
+      toast.error("New password confirmation does not match");
+      return;
+    }
+    setPasswordSaving(true);
+    try {
+      await api<{ changed: boolean }>("/api/auth/password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      toast.success("Password changed. Sign in again.");
+      router.push("/login");
+      router.refresh();
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "Could not change password",
+      );
+      setPasswordSaving(false);
     }
   }
 
@@ -300,6 +332,59 @@ export function SettingsView({
                 </div>
               ))}
             </dl>
+            {auth.required && auth.configured ? (
+              <form
+                onSubmit={changePassword}
+                className="mt-5 grid gap-3 border-t pt-4 sm:grid-cols-3"
+              >
+                <label className="grid gap-1.5 text-xs font-semibold">
+                  Current password
+                  <Input
+                    type="password"
+                    autoComplete="current-password"
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    required
+                  />
+                </label>
+                <label className="grid gap-1.5 text-xs font-semibold">
+                  New password
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    minLength={12}
+                    required
+                  />
+                </label>
+                <label className="grid gap-1.5 text-xs font-semibold">
+                  Confirm password
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    minLength={12}
+                    required
+                  />
+                </label>
+                <div className="sm:col-span-3">
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={passwordSaving}
+                  >
+                    {passwordSaving ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : (
+                      <KeyRound />
+                    )}
+                    {passwordSaving ? "Changing…" : "Change password"}
+                  </Button>
+                </div>
+              </form>
+            ) : null}
           </section>
         </TabsContent>
       </Tabs>

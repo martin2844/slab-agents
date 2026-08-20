@@ -38,7 +38,8 @@ test("the production image exposes distinct liveness and readiness contracts", a
 
   assert.match(health, /status: "ok"/);
   assert.match(ready, /databaseReadiness/);
-  assert.match(ready, /status: readiness\.ready \? 200 : 503/);
+  assert.match(ready, /authenticationReadiness/);
+  assert.match(ready, /status: ready \? 200 : 503/);
   assert.match(dockerfile, /127\.0\.0\.1:3009\/health/);
 });
 
