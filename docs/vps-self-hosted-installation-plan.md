@@ -6,6 +6,25 @@ Primary target: single-user installation on one Linux VPS
 Initial runtime: Codex through `codex app-server`  
 Public entry point: `https://slab.ar/install.sh`
 
+## Implementation progress
+
+Last updated: 2026-08-20
+
+| Milestone                                       | Status            | Evidence                                                                                      |
+| ----------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------------- |
+| Plan committed                                  | Complete          | `slab-agents@8dc598e`                                                                         |
+| Local `slab-stack` repository                   | Complete          | `slab-stack@df635e4`                                                                          |
+| Manifest, service, image, and Compose contracts | Complete          | `slab-stack@df635e4`                                                                          |
+| Initial Codex version lock                      | Complete          | Codex CLI `0.148.0`, `slab-stack@9fa934e`                                                     |
+| Runner production image                         | Complete locally  | `slab-runner@715573b`; non-root/container-auth/health smoke passed                            |
+| Runner multi-arch publication                   | Pending           | Workflow exists; release tag, public GHCR package, signature, scan, and digest still required |
+| Remaining service images                        | Pending           | Slab Agents has no image; Work/Docs/Email need release hardening/workflows                    |
+| Public installer                                | Blocked by design | Must not publish before all five immutable image digests pass the VPS matrix                  |
+
+Current next gate: production-hardening and publishing contracts for Slab
+Agents, Work, Docs, and Email. The `stable` channel remains intentionally
+unpublished.
+
 ## 1. Outcome
 
 The finished installation experience should be:
