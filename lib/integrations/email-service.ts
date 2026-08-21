@@ -17,6 +17,7 @@ import type {
   EmailIntegrationState,
   EmailSendPolicy,
   GmailOAuthSettings,
+  ManagedProtonBridgeState,
 } from "@/lib/types";
 
 const DEFAULT_EMAIL_URL = "http://127.0.0.1:6981";
@@ -53,12 +54,27 @@ export async function getEmailIntegrationState(): Promise<EmailIntegrationState>
     source: "missing",
     updatedAt: null,
   };
+  let protonBridge: ManagedProtonBridgeState = {
+    available: false,
+    version: null,
+    state: "unavailable",
+    message: "Managed Proton Bridge status is unavailable.",
+    accounts: [],
+  };
   let lastError = config?.lastError ?? null;
   if ((config || process.env.SLAB_EMAIL_URL?.trim()) && adminConfigured) {
     try {
       const emailClient = new EmailAdminClient(currentServiceUrl());
-      accounts = await emailClient.listAccounts();
-      gmailOAuth = await emailClient.getGoogleOAuthSettings();
+      [accounts, gmailOAuth] = await Promise.all([
+        emailClient.listAccounts(),
+        emailClient.getGoogleOAuthSettings(),
+      ]);
+      try {
+        protonBridge = await emailClient.getManagedProtonBridgeStatus();
+      } catch {
+        // Older slab-email releases do not expose managed Bridge yet. Keep
+        // existing account/Gmail management available during rolling updates.
+      }
     } catch (error) {
       lastError =
         error instanceof Error
@@ -74,6 +90,7 @@ export async function getEmailIntegrationState(): Promise<EmailIntegrationState>
     lastTestedAt: config?.lastTestedAt ?? null,
     lastError,
     gmailOAuth,
+    protonBridge,
     accounts,
     assignments: repository.listAgentEmailAccess(),
   };
@@ -146,7 +163,32 @@ export async function deleteEmailAccount(accountId: string) {
       "Remove this account from every agent profile before deleting it.",
     );
   }
-  await client().deleteAccount(accountId);
+  const account = (await client().listAccounts()).find(({ id }) => id === accountId);
+  if (!account) throw new Error("Email account not found.");
+  if (account.managed) await client().deleteManagedProtonBridgeAccount(accountId);
+  else await client().deleteAccount(accountId);
+  return getEmailIntegrationState();
+}
+
+export async function connectManagedProtonBridge(input: {
+  emailAddress: string;
+  displayName: string;
+  password: string;
+}) {
+  const setup = await client().connectManagedProtonBridge(input);
+  return { setup, state: await getEmailIntegrationState() };
+}
+
+export async function continueManagedProtonBridge(input: {
+  challengeId: string;
+  value?: string;
+}) {
+  const setup = await client().continueManagedProtonBridge(input);
+  return { setup, state: await getEmailIntegrationState() };
+}
+
+export async function abortManagedProtonBridge(challengeId: string) {
+  await client().abortManagedProtonBridge(challengeId);
   return getEmailIntegrationState();
 }
 

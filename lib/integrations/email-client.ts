@@ -1,12 +1,18 @@
 import "server-only";
 
 import { readSecret } from "@/lib/server-config";
-import type { EmailAccount, GmailOAuthSettings } from "@/lib/types";
+import type {
+  EmailAccount,
+  GmailOAuthSettings,
+  ManagedProtonBridgeState,
+  ManagedProtonChallenge,
+} from "@/lib/types";
 
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   admin?: boolean;
+  timeoutMs?: number;
 };
 
 type RemoteEmailAccount = Omit<EmailAccount, "connection"> & {
@@ -17,6 +23,7 @@ type RemoteEmailAccount = Omit<EmailAccount, "connection"> & {
     smtpHost?: string;
     smtpPort?: number;
     smtpTlsMode?: "ssl" | "starttls" | "none";
+    managedBridge?: boolean;
   };
 };
 
@@ -67,6 +74,7 @@ function safeAccount(account: RemoteEmailAccount): EmailAccount {
     emailAddress: account.emailAddress,
     displayName: account.displayName,
     enabled: account.enabled,
+    managed: account.config?.managedBridge === true,
     capabilities: account.capabilities,
     createdAt: account.createdAt,
     updatedAt: account.updatedAt,
@@ -101,7 +109,7 @@ export class EmailAdminClient {
       body:
         options.body === undefined ? undefined : JSON.stringify(options.body),
       cache: "no-store",
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
     });
     if (!response.ok) {
       const payload = (await response.json().catch(() => null)) as {
@@ -120,6 +128,57 @@ export class EmailAdminClient {
 
   health() {
     return this.request<{ status: string }>("/health", { admin: false });
+  }
+
+  getManagedProtonBridgeStatus() {
+    return this.request<ManagedProtonBridgeState>("/api/proton-bridge");
+  }
+
+  async connectManagedProtonBridge(input: {
+    emailAddress: string;
+    displayName: string;
+    password: string;
+  }) {
+    const result = await this.request<
+      ManagedProtonChallenge | { state: "connected"; account: RemoteEmailAccount }
+    >("/api/proton-bridge/connect", {
+      method: "POST",
+      body: input,
+      timeoutMs: 120_000,
+    });
+    return result.state === "connected"
+      ? { state: "connected" as const, account: safeAccount(result.account) }
+      : result;
+  }
+
+  async continueManagedProtonBridge(input: {
+    challengeId: string;
+    value?: string;
+  }) {
+    const result = await this.request<
+      ManagedProtonChallenge | { state: "connected"; account: RemoteEmailAccount }
+    >("/api/proton-bridge/challenge", {
+      method: "POST",
+      body: input,
+      timeoutMs: 120_000,
+    });
+    return result.state === "connected"
+      ? { state: "connected" as const, account: safeAccount(result.account) }
+      : result;
+  }
+
+  abortManagedProtonBridge(challengeId: string) {
+    return this.request<void>("/api/proton-bridge/abort", {
+      method: "POST",
+      body: { challengeId },
+    });
+  }
+
+  deleteManagedProtonBridgeAccount(accountId: string) {
+    return this.request<void>(
+      `/api/proton-bridge/accounts/${encodeURIComponent(accountId)}`,
+      { method: "DELETE" },
+    );
   }
 
   async listAccounts() {

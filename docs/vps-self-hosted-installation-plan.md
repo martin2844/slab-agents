@@ -8,7 +8,7 @@ Public entry point: `https://slab.ar/install.sh`
 
 ## Implementation progress
 
-Last updated: 2026-08-20
+Last updated: 2026-08-21
 
 | Milestone                                       | Status            | Evidence                                                                                      |
 | ----------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------------- |
@@ -38,6 +38,7 @@ Last updated: 2026-08-20
 | Candidate bootstrap VPS dry-run                 | Complete          | Ubuntu 26.04 VPS verified signature/checksum and dry-ran `candidate.7`; production remained ready |
 | Candidate.7 production reconciliation           | Complete          | Seven-volume verified backup, additive Email migration to schema 2, exact image digests, systemd active, HTTPS ready, and direct port closed |
 | Web-managed Gmail OAuth                         | Deployed          | Settings owns the server-side admin flow; OAuth secret is encrypted only by `slab-email`, absent from API/UI reads, and production reports an actionable `missing` state |
+| Managed Proton Bridge                           | In progress       | One `slab-email` lifecycle packages Proton Bridge 3.26.0 by pinned SHA; private PTY controller, encrypted generated credentials, Settings flow, and `slabctl proton setup` are implemented pending candidate publication and real-account QA |
 | Stable public installer                         | Blocked by design | Candidate channel only; backup/restore, update/rollback, and remaining VPS matrix still gate `stable` |
 
 Current next gate: complete backup/restore and the remaining clean-VPS matrix, then
@@ -477,6 +478,12 @@ Retain the existing image and add:
 - graceful shutdown that closes the SQLite connection and active IMAP/SMTP clients;
 - clear readiness when the service is healthy but no mailbox exists;
 - deployment documentation for Gmail OAuth redirect URLs;
+- a managed Proton Bridge lifecycle in the same `slab-email` container on amd64;
+- a pinned, checksum-verified official Proton binary and preserved GPL license;
+- a private controller that never exposes Proton login credentials through API,
+  MCP, logs, environment, argv, or persistence;
+- the same challenge-based setup flow through Settings and `slabctl`;
+- manual/external Bridge support for existing deployments;
 - explicit warning that a Proton Bridge running on a laptop is not reachable from a remote VPS.
 
 Email is optional at the product layer but its service can run with zero accounts. A missing mailbox must not make the whole stack unhealthy.
@@ -1697,7 +1704,7 @@ Each PR must be independently deployable or explicitly marked as infrastructure 
 - [x] Domain and private access modes pass.
 - [x] Codex device login passes on a headless VPS.
 - [x] Work + Docs + agent run E2E passes.
-- [ ] Email service is healthy with zero accounts.
+- [x] Email service is healthy with zero accounts.
 - [x] Restart preserves all state.
 - [ ] Backup restores on a different clean VPS.
 - [ ] Update and rollback paths pass.

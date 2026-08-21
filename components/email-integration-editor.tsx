@@ -41,6 +41,7 @@ import type {
   AgentEmailAccess,
   EmailIntegrationState,
   EmailSendPolicy,
+  ManagedProtonChallenge,
 } from "@/lib/types";
 
 type ProtonForm = {
@@ -67,6 +68,22 @@ const emptyProton: ProtonForm = {
   smtpTlsMode: "starttls",
   username: "",
   password: "",
+};
+
+type ManagedProtonForm = {
+  emailAddress: string;
+  displayName: string;
+  password: string;
+  challenge: ManagedProtonChallenge | null;
+  challengeValue: string;
+};
+
+const emptyManagedProton: ManagedProtonForm = {
+  emailAddress: "",
+  displayName: "",
+  password: "",
+  challenge: null,
+  challengeValue: "",
 };
 
 export function EmailMark() {
@@ -99,7 +116,9 @@ export function EmailIntegrationEditor({
   );
   const [gmailClientSecret, setGmailClientSecret] = useState("");
   const [proton, setProton] = useState(emptyProton);
+  const [managedProton, setManagedProton] = useState(emptyManagedProton);
   const [showProton, setShowProton] = useState(false);
+  const [protonMode, setProtonMode] = useState<"managed" | "manual">("managed");
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -177,14 +196,120 @@ export function EmailIntegrationEditor({
     }
   }
 
+  async function connectManagedProton() {
+    setBusy("proton-managed");
+    try {
+      const result = await api<{
+        setup:
+          | ManagedProtonChallenge
+          | { state: "connected"; account: EmailIntegrationState["accounts"][number] };
+        state: EmailIntegrationState;
+      }>("/api/integrations/email/proton", {
+        method: "POST",
+        body: JSON.stringify({
+          emailAddress: managedProton.emailAddress,
+          displayName: managedProton.displayName,
+          password: managedProton.password,
+        }),
+      });
+      setManagedProton((value) => ({ ...value, password: "" }));
+      if (result.setup.state === "challenge_required") {
+        const challenge = result.setup;
+        setManagedProton((value) => ({
+          ...value,
+          password: "",
+          challenge,
+          challengeValue: "",
+        }));
+        return;
+      }
+      update(result.state);
+      setManagedProton(emptyManagedProton);
+      setShowProton(false);
+      toast.success("Proton mailbox connected");
+    } catch (error) {
+      setManagedProton((value) => ({ ...value, password: "" }));
+      toast.error(error instanceof Error ? error.message : "Proton login failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function continueManagedProton() {
+    const challenge = managedProton.challenge;
+    if (!challenge) return;
+    setBusy("proton-challenge");
+    try {
+      const result = await api<{
+        setup:
+          | ManagedProtonChallenge
+          | { state: "connected"; account: EmailIntegrationState["accounts"][number] };
+        state: EmailIntegrationState;
+      }>("/api/integrations/email/proton/challenge", {
+        method: "POST",
+        body: JSON.stringify({
+          challengeId: challenge.challengeId,
+          ...(challenge.challengeType === "human_verification"
+            ? {}
+            : { value: managedProton.challengeValue }),
+        }),
+      });
+      setManagedProton((value) => ({ ...value, challengeValue: "" }));
+      if (result.setup.state === "challenge_required") {
+        const nextChallenge = result.setup;
+        setManagedProton((value) => ({
+          ...value,
+          challenge: nextChallenge,
+          challengeValue: "",
+        }));
+        return;
+      }
+      update(result.state);
+      setManagedProton(emptyManagedProton);
+      setShowProton(false);
+      toast.success("Proton mailbox connected");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Proton verification failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function closeProtonSetup() {
+    const challengeId = managedProton.challenge?.challengeId;
+    setShowProton(false);
+    setManagedProton(emptyManagedProton);
+    setProton(emptyProton);
+    if (!challengeId) return;
+    try {
+      update(
+        await api<EmailIntegrationState>("/api/integrations/email/proton/abort", {
+          method: "POST",
+          body: JSON.stringify({ challengeId }),
+        }),
+      );
+    } catch {
+      // The setup expires server-side; closing the dialog must remain responsive.
+    }
+  }
+
   function startCreateProton() {
     setEditingAccountId(null);
+    setManagedProton(emptyManagedProton);
+    setProtonMode(state.protonBridge.available ? "managed" : "manual");
+    setShowProton(true);
+  }
+
+  function startManualProton() {
+    setEditingAccountId(null);
     setProton(emptyProton);
+    setProtonMode("manual");
     setShowProton(true);
   }
 
   function startEditAccount(account: EmailIntegrationState["accounts"][number]) {
     setEditingAccountId(account.id);
+    setProtonMode("manual");
     setProton({
       emailAddress: account.emailAddress,
       displayName: account.displayName,
@@ -198,6 +323,11 @@ export function EmailIntegrationEditor({
       password: "",
     });
     setShowProton(true);
+  }
+
+  function handleEditorOpenChange(nextOpen: boolean) {
+    if (!nextOpen && showProton) void closeProtonSetup();
+    onOpenChange(nextOpen);
   }
 
   async function updateAccount() {
@@ -303,7 +433,7 @@ export function EmailIntegrationEditor({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleEditorOpenChange}>
       <DialogContent className="h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="border-b p-5 pr-14">
           <div className="flex items-center gap-3">
@@ -431,12 +561,14 @@ export function EmailIntegrationEditor({
                   Credentials pass once to the Next.js backend and are stored
                   only by slab-email.
                 </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Managed Proton Bridge: {state.protonBridge.available
+                    ? `${state.protonBridge.state}${state.protonBridge.version ? ` · v${state.protonBridge.version}` : ""}`
+                    : "unavailable on this installation"}
+                </p>
               </div>
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={startCreateProton}
-                >
+                <Button variant="outline" onClick={startCreateProton}>
                   <KeyRound /> Proton Bridge
                 </Button>
                 <Button
@@ -459,113 +591,148 @@ export function EmailIntegrationEditor({
                   <h4 className="font-semibold">
                     {editingAccountId
                       ? "Edit mailbox connection"
-                      : "Connect Proton Bridge"}
+                      : protonMode === "managed"
+                        ? "Connect Proton account"
+                        : "Connect existing Bridge"}
                   </h4>
-                  {editingAccountId && (
+                  {protonMode === "managed" && !editingAccountId ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Slab runs Bridge privately on this server. Your Proton
+                      password is used for this login only and is never stored.
+                    </p>
+                  ) : editingAccountId ? (
                     <p className="mt-1 text-xs text-muted-foreground">
                       Leave username and password empty to keep the stored
                       credentials.
                     </p>
-                  )}
+                  ) : null}
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field
-                    label="Email address"
-                    value={proton.emailAddress}
-                    onChange={(emailAddress) =>
-                      setProton((value) => ({ ...value, emailAddress }))
-                    }
-                    disabled={editingAccountId !== null}
-                  />
-                  <Field
-                    label="Display name"
-                    value={proton.displayName}
-                    onChange={(displayName) =>
-                      setProton((value) => ({ ...value, displayName }))
-                    }
-                  />
-                  <Field
-                    label="Bridge username"
-                    value={proton.username}
-                    onChange={(username) =>
-                      setProton((value) => ({ ...value, username }))
-                    }
-                    autoComplete="off"
-                  />
-                  <Field
-                    label="Bridge password"
-                    type="password"
-                    value={proton.password}
-                    onChange={(password) =>
-                      setProton((value) => ({ ...value, password }))
-                    }
-                    autoComplete="new-password"
-                  />
-                </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_7rem_9rem]">
-                  <Field
-                    label="IMAP host"
-                    value={proton.imapHost}
-                    onChange={(imapHost) =>
-                      setProton((value) => ({ ...value, imapHost }))
-                    }
-                  />
-                  <Field
-                    label="Port"
-                    value={proton.imapPort}
-                    onChange={(imapPort) =>
-                      setProton((value) => ({ ...value, imapPort }))
-                    }
-                  />
-                  <TlsSelect
-                    label="IMAP TLS"
-                    value={proton.imapTlsMode}
-                    onChange={(imapTlsMode) =>
-                      setProton((value) => ({ ...value, imapTlsMode }))
-                    }
-                  />
-                  <Field
-                    label="SMTP host"
-                    value={proton.smtpHost}
-                    onChange={(smtpHost) =>
-                      setProton((value) => ({ ...value, smtpHost }))
-                    }
-                  />
-                  <Field
-                    label="Port"
-                    value={proton.smtpPort}
-                    onChange={(smtpPort) =>
-                      setProton((value) => ({ ...value, smtpPort }))
-                    }
-                  />
-                  <TlsSelect
-                    label="SMTP TLS"
-                    value={proton.smtpTlsMode}
-                    onChange={(smtpTlsMode) =>
-                      setProton((value) => ({ ...value, smtpTlsMode }))
-                    }
-                  />
-                </div>
-                <div className="mt-4 flex justify-end gap-2">
-                  <Button variant="ghost" onClick={() => setShowProton(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={editingAccountId ? updateAccount : createProton}
-                    disabled={
-                      busy === "proton" || busy === "account-edit" ||
-                      !proton.emailAddress ||
-                      (!editingAccountId && !proton.password)
-                    }
-                  >
-                    {busy === "proton" || busy === "account-edit" ? (
-                      <LoaderCircle className="animate-spin" />
+                {protonMode === "managed" && !editingAccountId ? (
+                  <>
+                    {managedProton.challenge ? (
+                      <div className="grid gap-3">
+                        {managedProton.challenge.challengeType === "human_verification" ? (
+                          <div className="rounded-lg border bg-background p-3 text-sm">
+                            Complete Proton&apos;s human verification, then continue.
+                            {managedProton.challenge.verificationUrl && (
+                              <a
+                                className="ml-1 font-semibold text-primary underline"
+                                href={managedProton.challenge.verificationUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Open verification
+                              </a>
+                            )}
+                          </div>
+                        ) : (
+                          <Field
+                            label={
+                              managedProton.challenge.challengeType === "two_factor"
+                                ? "Two-factor code"
+                                : "Mailbox password"
+                            }
+                            type="password"
+                            value={managedProton.challengeValue}
+                            onChange={(challengeValue) =>
+                              setManagedProton((value) => ({ ...value, challengeValue }))
+                            }
+                            autoComplete="one-time-code"
+                          />
+                        )}
+                      </div>
                     ) : (
-                      <Check />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field
+                          label="Proton email"
+                          value={managedProton.emailAddress}
+                          onChange={(emailAddress) =>
+                            setManagedProton((value) => ({ ...value, emailAddress }))
+                          }
+                          autoComplete="username"
+                        />
+                        <Field
+                          label="Display name"
+                          value={managedProton.displayName}
+                          onChange={(displayName) =>
+                            setManagedProton((value) => ({ ...value, displayName }))
+                          }
+                        />
+                        <div className="sm:col-span-2">
+                          <Field
+                            label="Proton password"
+                            type="password"
+                            value={managedProton.password}
+                            onChange={(password) =>
+                              setManagedProton((value) => ({ ...value, password }))
+                            }
+                            autoComplete="current-password"
+                          />
+                        </div>
+                      </div>
                     )}
-                    {editingAccountId ? "Save changes" : "Connect account"}
-                  </Button>
-                </div>
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                      <Button variant="link" className="px-0" onClick={startManualProton}>
+                        Connect an existing Bridge instead
+                      </Button>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" onClick={() => void closeProtonSetup()}>
+                          Cancel
+                        </Button>
+                        <Button
+                          onClick={
+                            managedProton.challenge
+                              ? continueManagedProton
+                              : connectManagedProton
+                          }
+                          disabled={
+                            busy === "proton-managed" ||
+                            busy === "proton-challenge" ||
+                            (!managedProton.challenge &&
+                              (!managedProton.emailAddress ||
+                                !managedProton.displayName ||
+                                !managedProton.password)) ||
+                            (managedProton.challenge?.challengeType !==
+                              "human_verification" &&
+                              Boolean(managedProton.challenge) &&
+                              !managedProton.challengeValue)
+                          }
+                        >
+                          {busy === "proton-managed" || busy === "proton-challenge" ? (
+                            <LoaderCircle className="animate-spin" />
+                          ) : (
+                            <Check />
+                          )}
+                          {managedProton.challenge ? "Continue" : "Connect account"}
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Email address" value={proton.emailAddress} onChange={(emailAddress) => setProton((value) => ({ ...value, emailAddress }))} disabled={editingAccountId !== null} />
+                      <Field label="Display name" value={proton.displayName} onChange={(displayName) => setProton((value) => ({ ...value, displayName }))} />
+                      <Field label="Bridge username" value={proton.username} onChange={(username) => setProton((value) => ({ ...value, username }))} autoComplete="off" />
+                      <Field label="Bridge password" type="password" value={proton.password} onChange={(password) => setProton((value) => ({ ...value, password }))} autoComplete="new-password" />
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_7rem_9rem]">
+                      <Field label="IMAP host" value={proton.imapHost} onChange={(imapHost) => setProton((value) => ({ ...value, imapHost }))} />
+                      <Field label="Port" value={proton.imapPort} onChange={(imapPort) => setProton((value) => ({ ...value, imapPort }))} />
+                      <TlsSelect label="IMAP TLS" value={proton.imapTlsMode} onChange={(imapTlsMode) => setProton((value) => ({ ...value, imapTlsMode }))} />
+                      <Field label="SMTP host" value={proton.smtpHost} onChange={(smtpHost) => setProton((value) => ({ ...value, smtpHost }))} />
+                      <Field label="Port" value={proton.smtpPort} onChange={(smtpPort) => setProton((value) => ({ ...value, smtpPort }))} />
+                      <TlsSelect label="SMTP TLS" value={proton.smtpTlsMode} onChange={(smtpTlsMode) => setProton((value) => ({ ...value, smtpTlsMode }))} />
+                    </div>
+                    <div className="mt-4 flex justify-end gap-2">
+                      <Button variant="ghost" onClick={() => void closeProtonSetup()}>Cancel</Button>
+                      <Button onClick={editingAccountId ? updateAccount : createProton} disabled={busy === "proton" || busy === "account-edit" || !proton.emailAddress || (!editingAccountId && !proton.password)}>
+                        {busy === "proton" || busy === "account-edit" ? <LoaderCircle className="animate-spin" /> : <Check />}
+                        {editingAccountId ? "Save changes" : "Connect account"}
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -581,6 +748,7 @@ export function EmailIntegrationEditor({
                       <p className="truncate text-xs text-muted-foreground">
                         {account.emailAddress} ·{" "}
                         {account.provider.replace("_", " ")}
+                        {account.managed ? " · managed by Slab" : ""}
                       </p>
                     </div>
                     <Badge variant={account.enabled ? "outline" : "secondary"}>
@@ -590,15 +758,17 @@ export function EmailIntegrationEditor({
                       status={account.lastConnectionStatus}
                     />
                     <div className="flex gap-1">
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Edit account"
-                        onClick={() => startEditAccount(account)}
-                        disabled={busy !== null}
-                      >
-                        <Pencil />
-                      </Button>
+                      {!account.managed && (
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label="Edit account"
+                          onClick={() => startEditAccount(account)}
+                          disabled={busy !== null}
+                        >
+                          <Pencil />
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -639,6 +809,7 @@ export function EmailIntegrationEditor({
                       </Button>
                     </div>
                     {account.provider === "proton_bridge" &&
+                      !account.managed &&
                       account.lastConnectionStatus === "error" &&
                       ["127.0.0.1", "localhost", "[::1]"].includes(
                         account.connection.imapHost,

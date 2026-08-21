@@ -387,6 +387,7 @@ export type EmailAccount = {
   emailAddress: string;
   displayName: string;
   enabled: boolean;
+  managed: boolean;
   capabilities: {
     read: boolean;
     search: boolean;
@@ -407,6 +408,20 @@ export type EmailAccount = {
     smtpPort: number;
     smtpTlsMode: "ssl" | "starttls" | "none";
   };
+};
+export type ManagedProtonBridgeState = {
+  available: boolean;
+  version: string | null;
+  state: "unavailable" | "stopped" | "starting" | "ready" | "error";
+  message?: string;
+  accounts: Array<{ emailAddress: string; state: string }>;
+};
+export type ManagedProtonChallenge = {
+  state: "challenge_required";
+  challengeId: string;
+  challengeType: "two_factor" | "mailbox_password" | "human_verification";
+  expiresAt: string;
+  verificationUrl?: string;
 };
 export type AgentEmailAccess = {
   agentId: string;
@@ -438,6 +453,7 @@ export type EmailIntegrationState = {
   lastTestedAt: string | null;
   lastError: string | null;
   gmailOAuth: GmailOAuthSettings;
+  protonBridge: ManagedProtonBridgeState;
   accounts: EmailAccount[];
   assignments: AgentEmailAccess[];
 };

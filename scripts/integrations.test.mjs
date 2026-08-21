@@ -22,6 +22,10 @@ test("Integrations stays focused on external tools while Email is an optional Se
   assert.match(settings, /Configure email/);
   assert.match(emailEditor, /Email service/);
   assert.match(emailEditor, /Proton Bridge/);
+  assert.match(emailEditor, /Managed Proton Bridge/);
+  assert.match(emailEditor, /Proton\s+password is used for this login only/);
+  assert.match(emailEditor, /Connect an existing Bridge instead/);
+  assert.match(emailEditor, /Two-factor code/);
   assert.match(emailEditor, /Connect Gmail/);
   assert.match(emailEditor, /Google OAuth/);
   assert.match(emailEditor, /Google client ID/);
@@ -44,6 +48,28 @@ test("Integrations stays focused on external tools while Email is an optional Se
   assert.match(catalog, /Custom integration/);
   assert.match(source, /custom HTTP integration/);
   assert.match(source, /custom MCP integration/);
+});
+
+test("managed Proton Bridge stays behind the Next.js server boundary", async () => {
+  const [client, service, connectRoute, challengeRoute, abortRoute] = await Promise.all([
+    read("lib/integrations/email-client.ts"),
+    read("lib/integrations/email-service.ts"),
+    read("app/api/integrations/email/proton/route.ts"),
+    read("app/api/integrations/email/proton/challenge/route.ts"),
+    read("app/api/integrations/email/proton/abort/route.ts"),
+  ]);
+  assert.match(client, /import "server-only"/);
+  assert.match(client, /\/api\/proton-bridge\/connect/);
+  assert.match(client, /\/api\/proton-bridge\/challenge/);
+  assert.match(service, /connectManagedProtonBridge/);
+  assert.match(service, /account\.managed/);
+  assert.match(connectRoute, /connectManagedProtonBridge/);
+  assert.match(challengeRoute, /continueManagedProtonBridge/);
+  assert.match(abortRoute, /abortManagedProtonBridge/);
+  for (const source of [connectRoute, challengeRoute, abortRoute]) {
+    assert.doesNotMatch(source, /process\.env/);
+    assert.doesNotMatch(source, /SLAB_EMAIL_ADMIN_KEY/);
+  }
 });
 
 test("Email credentials and one-time connector tokens stay outside browser payloads and SQLite", async () => {
