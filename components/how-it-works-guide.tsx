@@ -1,109 +1,102 @@
 import Link from "next/link";
 import {
   Activity,
-  AlertTriangle,
   ArrowDown,
   ArrowRight,
-  BookOpenText,
   Bot,
-  BrainCircuit,
-  CalendarClock,
+  Boxes,
   Check,
-  CircleDot,
-  Clock3,
+  ChevronRight,
+  CircleAlert,
   Cloud,
   Code2,
   Database,
   FileText,
   FolderKanban,
+  Gauge,
+  Globe2,
   KeyRound,
   Laptop,
+  ListChecks,
   LockKeyhole,
-  MessageSquare,
+  Mail,
   Network,
   Play,
-  Radio,
+  PlugZap,
   RefreshCw,
-  RotateCcw,
+  Server,
   Settings2,
   ShieldCheck,
-  Sparkles,
   TerminalSquare,
-  UserRound,
+  TestTube2,
+  UserRoundPlus,
   Workflow,
-  X,
-  Zap,
+  Wrench,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 const chapters = [
-  ["01", "The system", "#system"],
-  ["02", "Source of truth", "#truth"],
-  ["03", "Get started", "#quickstart"],
-  ["04", "Operating loop", "#operating-loop"],
-  ["05", "Agents & threads", "#agents"],
-  ["06", "Runs & approvals", "#runs"],
-  ["07", "Automations", "#automations"],
-  ["08", "Data & security", "#security"],
-  ["09", "Failure modes", "#failures"],
-  ["10", "MVP boundaries", "#boundaries"],
+  ["01", "Ecosystem", "#ecosystem"],
+  ["02", "Bring it online", "#setup"],
+  ["03", "Create agents", "#agents"],
+  ["04", "Create tools", "#tools"],
+  ["05", "Email", "#email"],
+  ["06", "Gmail", "#gmail"],
+  ["07", "Proton Bridge", "#proton"],
+  ["08", "Run lifecycle", "#runs"],
+  ["09", "Troubleshooting", "#troubleshooting"],
 ] as const;
 
-type NodeTone = "default" | "primary" | "muted" | "dark";
+type Icon = React.ComponentType<{ className?: string }>;
+type Tone = "default" | "accent" | "dark" | "muted" | "success";
 
 function DiagramNode({
-  eyebrow,
+  label,
   title,
   detail,
-  icon: Icon,
+  icon: IconComponent,
   tone = "default",
   className,
 }: {
-  eyebrow: string;
+  label: string;
   title: string;
   detail: string;
-  icon: React.ComponentType<{ className?: string }>;
-  tone?: NodeTone;
+  icon: Icon;
+  tone?: Tone;
   className?: string;
 }) {
   return (
     <div
       className={cn(
-        "relative min-w-0 border p-4",
-        tone === "primary" &&
-          "border-primary bg-primary text-primary-foreground",
-        tone === "muted" && "bg-muted/70",
-        tone === "dark" && "border-foreground bg-foreground text-background",
+        "min-w-0 rounded-lg border p-4",
         tone === "default" && "bg-card",
+        tone === "muted" && "bg-muted/50",
+        tone === "accent" && "border-primary/40 bg-primary/8",
+        tone === "dark" && "border-foreground bg-foreground text-background",
+        tone === "success" &&
+          "border-emerald-700/25 bg-emerald-700/8 dark:border-emerald-500/30",
         className,
       )}
     >
-      <div className="flex items-start justify-between gap-4">
-        <p
+      <div className="flex items-center justify-between gap-3">
+        <span
           className={cn(
-            "text-[0.62rem] font-bold uppercase tracking-[.16em]",
-            tone === "primary" || tone === "dark"
-              ? "text-current opacity-70"
-              : "text-muted-foreground",
+            "text-[0.68rem] font-semibold uppercase tracking-[.09em]",
+            tone === "dark" ? "text-background/60" : "text-muted-foreground",
           )}
         >
-          {eyebrow}
-        </p>
-        <Icon className="size-4 shrink-0" />
+          {label}
+        </span>
+        <IconComponent className="size-4 shrink-0" />
       </div>
-      <p className="mt-5 font-heading text-2xl font-semibold leading-tight">
-        {title}
-      </p>
+      <p className="mt-4 text-base font-semibold">{title}</p>
       <p
         className={cn(
-          "mt-2 text-xs leading-5",
-          tone === "primary" || tone === "dark"
-            ? "text-current opacity-75"
-            : "text-muted-foreground",
+          "mt-1.5 text-xs leading-5",
+          tone === "dark" ? "text-background/70" : "text-muted-foreground",
         )}
       >
         {detail}
@@ -115,119 +108,173 @@ function DiagramNode({
 function FlowArrow({ label }: { label?: string }) {
   return (
     <div className="flex shrink-0 flex-col items-center justify-center gap-1 px-2 py-1 text-muted-foreground">
-      <ArrowDown className="size-5 lg:hidden" aria-hidden />
-      <ArrowRight className="hidden size-5 lg:block" aria-hidden />
-      {label && (
-        <span className="font-mono text-[0.58rem] uppercase tracking-wider">
+      <ArrowDown className="size-4 lg:hidden" aria-hidden />
+      <ArrowRight className="hidden size-4 lg:block" aria-hidden />
+      {label ? (
+        <span className="text-[0.62rem] font-medium uppercase tracking-[.08em]">
           {label}
         </span>
-      )}
+      ) : null}
     </div>
   );
 }
 
-function SectionHeading({
+function GuideSection({
+  id,
   number,
-  eyebrow,
   title,
+  description,
+  icon: IconComponent,
   children,
 }: {
+  id: string;
   number: string;
-  eyebrow: string;
   title: string;
+  description: string;
+  icon: Icon;
   children: React.ReactNode;
 }) {
   return (
-    <header className="grid gap-5 border-t-2 border-foreground pt-5 lg:grid-cols-[9rem_1fr]">
-      <div>
-        <span className="font-mono text-xs text-primary">{number}</span>
-        <p className="mt-1 text-xs font-bold uppercase tracking-[.16em] text-muted-foreground">
-          {eyebrow}
-        </p>
-      </div>
-      <div className="max-w-4xl">
-        <h2 className="font-heading text-[clamp(2.2rem,4vw,4rem)] font-semibold leading-[.95] tracking-[-.035em]">
-          {title}
-        </h2>
-        <div className="mt-5 max-w-3xl text-[0.95rem] leading-7 text-muted-foreground">
-          {children}
+    <section id={id} className="scroll-mt-20 border-t pt-7">
+      <header className="grid gap-4 md:grid-cols-[3rem_minmax(0,1fr)]">
+        <div className="flex size-9 items-center justify-center rounded-md border bg-card font-mono text-xs text-primary">
+          {number}
         </div>
-      </div>
-    </header>
-  );
-}
-
-function Principle({
-  label,
-  owner,
-  children,
-}: {
-  label: string;
-  owner: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="grid gap-3 border-t py-5 sm:grid-cols-[11rem_1fr]">
-      <div>
-        <p className="text-sm font-semibold">{label}</p>
-        <Badge variant="outline" className="mt-2">
-          {owner}
-        </Badge>
-      </div>
-      <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-        {children}
-      </p>
-    </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <IconComponent className="size-4 text-primary" />
+            <h2 className="font-heading text-3xl font-semibold tracking-[-.025em] sm:text-4xl">
+              {title}
+            </h2>
+          </div>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+            {description}
+          </p>
+        </div>
+      </header>
+      <div className="mt-7">{children}</div>
+    </section>
   );
 }
 
 function Step({
   number,
   title,
-  description,
+  children,
   result,
 }: {
   number: string;
   title: string;
-  description: string;
-  result: string;
+  children: React.ReactNode;
+  result?: string;
 }) {
   return (
-    <li className="grid gap-4 border-t py-6 md:grid-cols-[3rem_13rem_1fr_12rem] md:items-start">
-      <span className="font-mono text-xs text-primary">{number}</span>
-      <p className="font-heading text-xl font-semibold leading-tight">
-        {title}
-      </p>
-      <p className="text-sm leading-6 text-muted-foreground">{description}</p>
-      <div className="flex items-start gap-2 text-xs font-semibold">
-        <Check className="mt-0.5 size-4 shrink-0 text-emerald-700" />
-        {result}
+    <li className="grid gap-3 border-t py-4 first:border-t-0 sm:grid-cols-[2rem_11rem_minmax(0,1fr)]">
+      <span className="pt-0.5 font-mono text-xs text-primary">{number}</span>
+      <strong className="text-sm leading-6">{title}</strong>
+      <div className="text-sm leading-6 text-muted-foreground">
+        {children}
+        {result ? (
+          <p className="mt-2 flex items-start gap-2 text-xs font-medium text-foreground">
+            <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-700" />
+            {result}
+          </p>
+        ) : null}
       </div>
     </li>
   );
 }
 
-function SequenceRow({
-  number,
-  actor,
-  action,
-  stored,
+function FieldRow({
+  field,
+  enter,
+  note,
 }: {
-  number: string;
-  actor: string;
-  action: string;
-  stored: string;
+  field: string;
+  enter: string;
+  note?: string;
 }) {
   return (
-    <li className="grid gap-3 border-t py-4 sm:grid-cols-[2.5rem_9rem_1fr] lg:grid-cols-[2.5rem_9rem_1fr_13rem] lg:items-center">
-      <span className="font-mono text-[0.65rem] text-primary">{number}</span>
-      <p className="text-sm font-bold">{actor}</p>
-      <p className="text-sm leading-6 text-muted-foreground">{action}</p>
-      <p className="text-xs leading-5 text-muted-foreground sm:col-start-3 lg:col-start-auto">
-        <span className="font-semibold text-foreground">Recorded:</span>{" "}
-        {stored}
-      </p>
-    </li>
+    <div className="grid gap-1 border-t py-3 first:border-t-0 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-5">
+      <dt className="font-mono text-xs font-semibold text-foreground">
+        {field}
+      </dt>
+      <dd className="text-sm leading-5 text-muted-foreground">
+        {enter}
+        {note ? <span className="block text-xs opacity-80">{note}</span> : null}
+      </dd>
+    </div>
+  );
+}
+
+function Callout({
+  title,
+  children,
+  tone = "default",
+  icon: IconComponent = CircleAlert,
+}: {
+  title: string;
+  children: React.ReactNode;
+  tone?: "default" | "warning" | "success";
+  icon?: Icon;
+}) {
+  return (
+    <div
+      className={cn(
+        "min-w-0 grid gap-3 rounded-lg border p-4 sm:grid-cols-[auto_1fr]",
+        tone === "default" && "bg-muted/35",
+        tone === "warning" && "border-amber-700/25 bg-amber-500/10",
+        tone === "success" && "border-emerald-700/25 bg-emerald-700/8",
+      )}
+    >
+      <IconComponent
+        className={cn(
+          "mt-0.5 size-4",
+          tone === "warning" && "text-amber-800",
+          tone === "success" && "text-emerald-700",
+          tone === "default" && "text-primary",
+        )}
+      />
+      <div>
+        <p className="text-sm font-semibold">{title}</p>
+        <div className="mt-1 text-xs leading-5 text-muted-foreground">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CodeBlock({ children }: { children: React.ReactNode }) {
+  return (
+    <pre className="min-w-0 max-w-full overflow-x-auto rounded-lg border bg-foreground px-4 py-3 font-mono text-xs leading-5 text-background">
+      <code>{children}</code>
+    </pre>
+  );
+}
+
+function TroubleshootingItem({
+  title,
+  symptom,
+  children,
+}: {
+  title: string;
+  symptom: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="group border-t first:border-t-0">
+      <summary className="flex cursor-pointer list-none items-start justify-between gap-4 py-4 marker:hidden">
+        <div>
+          <p className="text-sm font-semibold">{title}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{symptom}</p>
+        </div>
+        <ChevronRight className="mt-1 size-4 shrink-0 transition-transform group-open:rotate-90" />
+      </summary>
+      <div className="max-w-3xl pb-5 text-sm leading-6 text-muted-foreground">
+        {children}
+      </div>
+    </details>
   );
 }
 
@@ -235,1098 +282,1098 @@ export function HowItWorksGuide() {
   return (
     <>
       <PageHeader
-        eyebrow="System field guide"
-        title="How the Slab ecosystem works"
-        description="A practical map of where work lives, where knowledge lives, how agents execute, what this local app remembers, and how to get from an empty workspace to a repeatable operating loop."
+        title="How it works"
+        description="Architecture, setup, providers, tools, agents, and the exact path from a fresh workspace to a running software team."
         actions={
           <>
             <Button variant="outline" asChild>
               <Link href="/settings">
-                <Settings2 />
-                Configure services
+                <Settings2 /> Settings
               </Link>
             </Button>
             <Button asChild>
-              <Link href="/">
-                <Play />
-                Start a loop
+              <Link href="/agents">
+                <UserRoundPlus /> Create agent
               </Link>
             </Button>
           </>
         }
       />
 
-      <div className="grid gap-10 xl:grid-cols-[15rem_minmax(0,1fr)]">
-        <aside className="xl:sticky xl:top-24 xl:h-fit">
-          <p className="text-xs font-bold uppercase tracking-[.16em] text-muted-foreground">
-            In this guide
+      <div className="mb-10 grid overflow-hidden rounded-lg border bg-card md:grid-cols-[1.25fr_.75fr]">
+        <div className="p-5 sm:p-7">
+          <Badge variant="outline">Operator handbook</Badge>
+          <p className="mt-4 max-w-3xl font-heading text-[clamp(2.1rem,5vw,4.4rem)] font-semibold leading-[.98] tracking-[-.04em]">
+            Connect the company. Give agents a job. Keep every action visible.
           </p>
-          <nav className="mt-3 divide-y border-y" aria-label="Guide chapters">
+          <p className="mt-5 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Slab is a self-hosted control plane around separate sources of
+            truth. Work owns execution, Docs owns durable knowledge, Email and
+            custom integrations add capabilities, Runner executes Codex, and
+            this app decides which agent acts and when.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Button size="sm" asChild>
+              <Link href="#setup">
+                <Play /> Start setup
+              </Link>
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link href="#gmail">
+                <Mail /> Connect Gmail
+              </Link>
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link href="#proton">
+                <KeyRound /> Connect Proton
+              </Link>
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link href="#tools">
+                <Wrench /> Create a tool
+              </Link>
+            </Button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 border-t bg-muted/25 md:border-l md:border-t-0">
+          {[
+            [FolderKanban, "Work", "Operational truth"],
+            [FileText, "Docs", "Company knowledge"],
+            [Bot, "Agents", "Identity and policy"],
+            [Activity, "Runs", "Execution and audit"],
+          ].map(([IconComponent, title, detail], index) => (
+            <div
+              key={title as string}
+              className={cn(
+                "min-h-32 p-4",
+                index % 2 === 0 && "border-r",
+                index < 2 && "border-b",
+              )}
+            >
+              <IconComponent className="size-4 text-primary" />
+              <p className="mt-8 text-sm font-semibold">{title as string}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {detail as string}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-10 xl:grid-cols-[13rem_minmax(0,1fr)]">
+        <aside className="xl:sticky xl:top-20 xl:h-fit">
+          <p className="text-xs font-semibold text-muted-foreground">
+            On this page
+          </p>
+          <nav className="mt-2 divide-y border-y" aria-label="Guide chapters">
             {chapters.map(([number, label, href]) => (
               <Link
                 key={href}
                 href={href}
-                className="group flex items-center gap-3 py-2.5 text-sm"
+                className="group flex min-h-9 items-center gap-3 text-sm"
               >
                 <span className="font-mono text-[0.62rem] text-muted-foreground">
                   {number}
                 </span>
-                <span className="font-semibold group-hover:text-primary">
+                <span className="font-medium group-hover:text-primary">
                   {label}
                 </span>
               </Link>
             ))}
           </nav>
-          <div className="mt-6 border-l-2 border-primary pl-4 text-xs leading-5 text-muted-foreground">
-            The shortest version: Slab knows what to do, Slab Docs knows what
-            the company knows, Next decides who acts and when, and Runner knows
-            how to execute the agent.
-          </div>
+          <p className="mt-5 border-l-2 border-primary pl-3 text-xs leading-5 text-muted-foreground">
+            Start with Settings, then create one agent, assign only the tools it
+            needs, and test one real operating loop.
+          </p>
         </aside>
 
-        <article className="min-w-0 space-y-28 pb-24">
-          <section id="system" className="scroll-mt-24">
-            <SectionHeading
-              number="01"
-              eyebrow="The system"
-              title="Four products, one operating surface."
-            >
-              <p>
-                Slab Agent Workspace is a local control plane. It unifies the
-                human experience of Work, Docs, Agents, Automations, and Runs,
-                but it does not absorb the responsibilities of the services
-                behind those views.
+        <article className="min-w-0 space-y-20 pb-20">
+          <GuideSection
+            id="ecosystem"
+            number="01"
+            title="The ecosystem"
+            description="The UI is unified, but ownership remains explicit. The browser never talks directly to MCP services and never receives their credentials."
+            icon={Boxes}
+          >
+            <div className="rounded-lg border bg-muted/20 p-4 sm:p-5">
+              <p className="mb-4 text-xs font-semibold text-muted-foreground">
+                Public request path
               </p>
-            </SectionHeading>
-
-            <div className="mt-10 border bg-muted/25 p-4 sm:p-6">
-              <p className="mb-5 text-xs font-bold uppercase tracking-[.16em] text-muted-foreground">
-                Runtime architecture
-              </p>
-              <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-center">
+              <div className="flex flex-col items-stretch lg:flex-row lg:items-center">
                 <DiagramNode
-                  eyebrow="Human surface"
+                  label="Human"
                   title="Browser"
-                  detail="Navigation, forms, Kanban, Docs, chat, approvals, and run history. No MCP credentials."
+                  detail="Workspace password, UI, approvals, chat, configuration, and audit views."
                   icon={Laptop}
                   tone="muted"
+                  className="lg:flex-1"
                 />
-                <div className="flex flex-col items-center text-muted-foreground">
-                  <ArrowDown className="size-5 md:hidden" />
-                  <ArrowRight className="hidden size-5 md:block" />
-                  <span className="font-mono text-[0.58rem] uppercase tracking-wider">
-                    HTTP
-                  </span>
-                </div>
+                <FlowArrow label="HTTPS" />
                 <DiagramNode
-                  eyebrow="Control plane"
-                  title="Next.js"
-                  detail="Frontend, BFF, MCP adapters, persistence, scheduler, and Runner orchestration on localhost:3009."
+                  label="Public edge"
+                  title="Caddy"
+                  detail="TLS certificates, HTTP to HTTPS redirect, and reverse proxy. The only public container."
+                  icon={Globe2}
+                  className="lg:flex-1"
+                />
+                <FlowArrow label="private network" />
+                <DiagramNode
+                  label="Control plane"
+                  title="Slab Agents"
+                  detail="Next.js UI, BFF, local SQLite, scheduler, agent policy, capability snapshots, and orchestration."
                   icon={Workflow}
-                  tone="primary"
+                  tone="accent"
+                  className="lg:flex-[1.2]"
                 />
               </div>
-              <div className="my-3 flex flex-col items-center text-muted-foreground">
-                <ArrowDown className="size-5" />
-                <span className="font-mono text-[0.58rem] uppercase tracking-wider">
-                  server only
-                </span>
+              <div className="my-4 flex justify-center text-muted-foreground">
+                <ArrowDown className="size-4" />
               </div>
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 <DiagramNode
-                  eyebrow="Remote"
-                  title="Slab Work"
-                  detail="Projects, issues, status, priority, comments, relationships, and blockers via MCP / HTTP."
+                  label="Source of truth"
+                  title="Work"
+                  detail="Projects, issues, comments, assignments, versions, blockers, and review state."
                   icon={FolderKanban}
                 />
                 <DiagramNode
-                  eyebrow="Remote"
-                  title="Slab Docs"
-                  detail="Documents, hierarchy, Markdown, search, archive state, and revisions via MCP / HTTP."
+                  label="Source of truth"
+                  title="Docs"
+                  detail="Markdown documents, hierarchy, search, revisions, and durable knowledge."
                   icon={FileText}
                 />
                 <DiagramNode
-                  eyebrow="Loopback"
-                  title="Slab Runner"
-                  detail="Starts Codex, resumes runtime threads, exposes tools, streams events, and handles approvals."
+                  label="Capability service"
+                  title="Email"
+                  detail="Gmail, Proton Bridge, scoped mailbox profiles, encrypted provider credentials, and MCP tools."
+                  icon={Mail}
+                />
+                <DiagramNode
+                  label="Execution"
+                  title="Runner"
+                  detail="Codex app-server, event streaming, runtime threads, tool wiring, and approvals."
                   icon={TerminalSquare}
                   tone="dark"
                 />
-              </div>
-              <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-t pt-4 text-xs text-muted-foreground">
-                <span className="flex items-center gap-2">
-                  <Cloud className="size-3.5" /> Remote truth
-                </span>
-                <span className="flex items-center gap-2">
-                  <Laptop className="size-3.5" /> Local control
-                </span>
-                <span className="flex items-center gap-2">
-                  <LockKeyhole className="size-3.5" /> Server-side credentials
-                </span>
+                <DiagramNode
+                  label="Capabilities"
+                  title="Integrations"
+                  detail="PostHog, declarative read-only HTTP APIs, and remote Streamable HTTP MCP servers."
+                  icon={PlugZap}
+                  tone="success"
+                />
               </div>
             </div>
 
-            <div className="mt-10 grid gap-px overflow-hidden border bg-border md:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-5 grid overflow-hidden rounded-lg border bg-border sm:grid-cols-2 xl:grid-cols-4">
               {[
-                {
-                  name: "Slab",
-                  role: "What needs to happen",
-                  detail:
-                    "The operational ledger. It owns work state and collaboration around execution.",
-                  icon: FolderKanban,
-                },
-                {
-                  name: "Slab Docs",
-                  role: "What the company knows",
-                  detail:
-                    "The knowledge base. It owns context, decisions, plans, standards, and historical documentation.",
-                  icon: BookOpenText,
-                },
-                {
-                  name: "Next.js",
-                  role: "Who acts and when",
-                  detail:
-                    "The control plane. It owns local agents, threads, runs, approvals, settings, and schedules.",
-                  icon: Workflow,
-                },
-                {
-                  name: "Runner",
-                  role: "How the agent executes",
-                  detail:
-                    "The execution bridge. It turns an agent definition and prompt into a live Codex run.",
-                  icon: Code2,
-                },
-              ].map((item) => (
-                <div key={item.name} className="bg-card p-5">
-                  <item.icon className="size-4 text-primary" />
-                  <p className="mt-7 text-xs font-bold uppercase tracking-[.14em] text-muted-foreground">
-                    {item.name}
-                  </p>
-                  <p className="mt-2 font-heading text-2xl font-semibold leading-tight">
-                    {item.role}
-                  </p>
-                  <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                    {item.detail}
+                ["Work", "What needs to happen", "Slab"],
+                ["Docs", "What the company knows", "Slab Docs"],
+                ["Control", "Who acts and when", "Slab Agents"],
+                ["Runtime", "How the agent executes", "Slab Runner + Codex"],
+              ].map(([label, meaning, owner]) => (
+                <div key={label} className="bg-card p-4">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="mt-2 text-sm font-semibold">{meaning}</p>
+                  <p className="mt-1 font-mono text-[0.65rem] text-muted-foreground">
+                    owner: {owner}
                   </p>
                 </div>
               ))}
             </div>
-          </section>
 
-          <section id="truth" className="scroll-mt-24">
-            <SectionHeading
-              number="02"
-              eyebrow="Source of truth"
-              title="The interface is unified. Ownership is not."
-            >
-              <p>
-                Every screen has a clear owner behind it. The control plane may
-                present and mutate remote data through an adapter, but it never
-                becomes a shadow database for Work or Docs.
-              </p>
-            </SectionHeading>
-            <div className="mt-10 border-y">
-              <Principle label="Projects & issues" owner="Slab Work">
-                Projects, issue descriptions, assignees, priorities, states,
-                comments, links, and blockers remain in Slab. Moving a Kanban
-                card invokes WorkClient, which invokes the remote MCP tool.
-              </Principle>
-              <Principle label="Documents" owner="Slab Docs">
-                Markdown bodies, hierarchy, tags, archived state, and revisions
-                remain in Slab Docs. The editor writes through DocsClient; no
-                document mirror is created locally.
-              </Principle>
-              <Principle label="Agents" owner="Next.js + SQLite">
-                Agent identity, role, instructions, runtime, model, enabled
-                state, and Work/Docs access policy are local orchestration
-                resources. Creating an agent does not start a background
-                process.
-              </Principle>
-              <Principle label="Conversation" owner="Next.js + Runner">
-                Product messages and thread metadata are durable in SQLite. The
-                runtime thread lives in Codex and is referenced through
-                runtime_thread_id so the conversation can resume.
-              </Principle>
-              <Principle label="Execution" owner="Next.js + Runner">
-                Next creates the durable Run record. Runner owns the live Codex
-                process and emits the event stream that advances that Run.
-              </Principle>
-              <Principle label="Schedule" owner="Next.js + SQLite">
-                Cron definitions and their local scheduler state live here. They
-                fire only while this local application is running.
-              </Principle>
-            </div>
+            <Callout title="Each service keeps its own truth" icon={Database}>
+              Slab Agents stores orchestration: agents, product threads, runs,
+              approvals, automations, settings, capability snapshots, and audit
+              events. It does not mirror Work issues, Docs bodies, or mailbox
+              contents into its database.
+            </Callout>
+          </GuideSection>
 
-            <div className="mt-8 grid gap-6 border border-primary/30 bg-primary/5 p-5 md:grid-cols-[auto_1fr]">
-              <ShieldCheck className="size-6 text-primary" />
-              <div>
-                <p className="font-heading text-2xl font-semibold">
-                  The anti-copy rule
-                </p>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                  If Work or Docs is unavailable, this app shows that source as
-                  unavailable. It does not silently serve stale local replicas.
-                  That keeps ownership legible and prevents two competing
-                  versions of company reality.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <section id="quickstart" className="scroll-mt-24">
-            <SectionHeading
-              number="03"
-              eyebrow="Get started"
-              title="From zero to a working operating loop."
-            >
-              <p>
-                The shortest useful path is connection → verification → agent →
-                task → approval → result. You can complete it entirely from the
-                local workspace.
-              </p>
-            </SectionHeading>
-            <ol className="mt-10 border-b">
-              <Step
-                number="01"
-                title="Open Settings"
-                description="Enter the remote Slab MCP URL and API key, the remote Slab Docs MCP URL and API key, and the loopback Runner URL. Secrets are submitted to Next and are never returned to React."
-                result="Three endpoints configured"
-              />
-              <Step
-                number="02"
-                title="Run setup check"
-                description="The backend opens each MCP connection, lists available tools, checks Runner health, and asks Runner whether the Codex runtime is available. Results and timestamps are stored locally."
-                result="Four green checks"
-              />
-              <Step
-                number="03"
-                title="Confirm COO"
-                description="Use the existing COO agent or create one. An agent is a reusable definition: name, role, instructions, runtime, model, enabled state, and guarded or full Work/Docs access—not a permanently running process."
-                result="One enabled operator"
-              />
-              <Step
-                number="04"
-                title="Create operating loop"
-                description="Choose Slab as Work, Slab Docs as Knowledge, COO as the operator, and start with a concrete prompt such as reviewing open work and summarizing next actions."
-                result="Thread and Run created"
-              />
-              <Step
-                number="05"
-                title="Resolve approvals"
-                description="Guarded agents auto-run reads and ask before Work/Docs writes. Full-access agents auto-run both. Local runtime commands and file permissions remain separately guarded."
-                result="Execution continues safely"
-              />
-              <Step
-                number="06"
-                title="Keep the result"
-                description="The completed assistant response is persisted as a normal message. Reloading the browser returns to the same product thread and retains the conversation."
-                result="Durable first outcome"
-              />
-            </ol>
-            <div className="mt-6 flex flex-wrap gap-2">
-              <Button asChild>
-                <Link href="/">
-                  <Play /> Run the first loop
-                </Link>
-              </Button>
-              <Button variant="outline" asChild>
-                <Link href="/settings">
-                  <Settings2 /> Review connection settings
-                </Link>
-              </Button>
-            </div>
-          </section>
-
-          <section id="operating-loop" className="scroll-mt-24">
-            <SectionHeading
-              number="04"
-              eyebrow="Operating loop"
-              title="A prompt becomes an auditable company action."
-            >
-              <p>
-                The operating loop is the product&apos;s core unit of value. It
-                joins a human intent, a durable local record, a runtime agent,
-                and live company sources without flattening them into one
-                system.
-              </p>
-            </SectionHeading>
-
-            <div className="mt-10 overflow-hidden border">
-              <div className="grid gap-px bg-border md:grid-cols-4">
-                <DiagramNode
-                  eyebrow="Intent"
-                  title="Human asks"
-                  detail="A specific desired outcome: review, summarize, identify, draft, or update."
-                  icon={UserRound}
-                  className="border-0"
-                />
-                <DiagramNode
-                  eyebrow="Control"
-                  title="Next records"
-                  detail="Creates the product thread, user message, queued Run, and execution context."
-                  icon={Database}
-                  tone="muted"
-                  className="border-0"
-                />
-                <DiagramNode
-                  eyebrow="Execution"
-                  title="Codex works"
-                  detail="Runner starts or resumes Codex with Work and Docs tools available."
-                  icon={BrainCircuit}
-                  tone="dark"
-                  className="border-0"
-                />
-                <DiagramNode
-                  eyebrow="Outcome"
-                  title="Thread persists"
-                  detail="The answer, run status, usage, tool events, and approvals remain inspectable."
-                  icon={MessageSquare}
-                  tone="primary"
-                  className="border-0"
-                />
-              </div>
-            </div>
-
-            <ol className="mt-8 border-b">
-              <SequenceRow
-                number="01"
-                actor="Browser"
-                action="Submits a message to the Next.js chat or operating-loop route."
-                stored="Nothing sensitive in the browser."
-              />
-              <SequenceRow
-                number="02"
-                actor="Next.js"
-                action="Validates the request, finds the enabled agent, creates a thread when needed, creates a queued Run, and persists the user message."
-                stored="thread, run, user message"
-              />
-              <SequenceRow
-                number="03"
-                actor="Runner"
-                action="Receives agent identity, model selection, prompt, minimal conversation context, and server-side MCP configuration."
-                stored="Runner execution ID"
-              />
-              <SequenceRow
-                number="04"
-                actor="Codex"
-                action="Starts a new runtime thread or resumes the existing runtime_thread_id. It decides when Work or Docs tools are needed."
-                stored="runtime_thread_id"
-              />
-              <SequenceRow
-                number="05"
-                actor="MCP tools"
-                action="Read or mutate the authoritative Work and Docs services. Protected actions can pause the run for human approval."
-                stored="important tool events only"
-              />
-              <SequenceRow
-                number="06"
-                actor="Next.js"
-                action="Consumes Runner events, streams progressive assistant output, updates status, records approvals, and persists the final assistant message."
-                stored="events, approval, message"
-              />
-              <SequenceRow
-                number="07"
-                actor="Browser"
-                action="Shows the final result in the thread. A reload reads completed messages from SQLite instead of depending on the old stream."
-                stored="durable conversation"
-              />
-            </ol>
-
-            <div className="mt-8 grid gap-5 md:grid-cols-2">
-              <div className="border-t-2 border-primary pt-5">
-                <RotateCcw className="size-5 text-primary" />
-                <h3 className="mt-4 font-heading text-2xl font-semibold">
-                  Runtime continuity
-                </h3>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                  The first run begins with runtime_thread_id = null. Runner
-                  returns the Codex thread identifier, and Next persists it.
-                  Later messages resume that runtime thread.
-                </p>
-              </div>
-              <div className="border-t-2 border-foreground pt-5">
-                <RefreshCw className="size-5" />
-                <h3 className="mt-4 font-heading text-2xl font-semibold">
-                  Recovery when runtime state disappears
-                </h3>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                  If Runner reports THREAD_NOT_FOUND, the product conversation
-                  is not discarded. Next clears the broken runtime reference,
-                  creates a new Codex thread, and rehydrates a bounded slice of
-                  user and assistant messages.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-14 border-t-2 border-foreground pt-6">
-              <p className="text-xs font-bold uppercase tracking-[.16em] text-muted-foreground">
-                Work-driven coordination
-              </p>
-              <h3 className="mt-3 max-w-3xl font-heading text-3xl font-semibold">
-                Agents coordinate through the work item, not a private chat.
-              </h3>
-              <p className="mt-4 max-w-3xl text-sm leading-6 text-muted-foreground">
-                Assigning an issue to an enabled agent slug creates a local Run.
-                The agent reads the authoritative issue and Docs, records its
-                result as a Work comment, and moves the issue to a meaningful
-                state. Review and blocked states wake the COO; removing either
-                state resumes the assigned agent.
-              </p>
-              <div className="mt-8 flex flex-col items-stretch lg:flex-row lg:items-center">
-                <DiagramNode
-                  eyebrow="Direction"
-                  title="COO delegates"
-                  detail="Creates one concrete issue with an assignee slug and definition of done."
-                  icon={Bot}
-                  className="lg:flex-1"
-                />
-                <FlowArrow label="assigns" />
-                <DiagramNode
-                  eyebrow="Source of truth"
-                  title="Work item"
-                  detail="Owns status, priority, description, comments, relationships, and evidence."
-                  icon={FolderKanban}
-                  tone="primary"
-                  className="lg:flex-1"
-                />
-                <FlowArrow label="wakes" />
-                <DiagramNode
-                  eyebrow="Execution"
-                  title="Sales acts"
-                  detail="Reads Work and Docs, performs the task, comments the result, and changes state."
-                  icon={Zap}
-                  tone="dark"
-                  className="lg:flex-1"
-                />
-                <FlowArrow label="review / block" />
-                <DiagramNode
-                  eyebrow="Decision"
-                  title="COO reviews"
-                  detail="Approves to done, gives feedback to resume Sales, or asks Martin for one decision."
-                  icon={ShieldCheck}
-                  tone="muted"
-                  className="lg:flex-1"
-                />
-              </div>
-              <div className="mt-8 grid gap-px border bg-border sm:grid-cols-3">
-                {[
-                  [
-                    "Assignment",
-                    "assignee = sales starts Sales once and maps the issue to a persistent agent thread.",
-                  ],
-                  [
-                    "Semantic state",
-                    "review and blocked use adapter-owned labels while Slab keeps its native three-state model.",
-                  ],
-                  [
-                    "Mentions",
-                    "A new @coo or @sales comment starts the mentioned agent with the issue as its operating context.",
-                  ],
-                ].map(([title, detail]) => (
-                  <div key={title} className="bg-card p-5">
-                    <p className="text-sm font-semibold">{title}</p>
-                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                      {detail}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section id="agents" className="scroll-mt-24">
-            <SectionHeading
-              number="05"
-              eyebrow="Agents & threads"
-              title="An agent is identity. A thread is continuity."
-            >
-              <p>
-                Agents are first-class control-plane resources, but they are not
-                daemons. They wake up for a user message, a manual run, an
-                automation, or a structured Work event such as an assignment,
-                review, blocker, resumed task, or mention.
-              </p>
-            </SectionHeading>
-            <div className="mt-10 flex flex-col items-stretch lg:flex-row lg:items-center">
-              <DiagramNode
-                eyebrow="Reusable definition"
-                title="Agent"
-                detail="Name, slug, role, instructions, runtime, model, enabled state, and Work/Docs access policy."
-                icon={Bot}
-                tone="primary"
-                className="lg:flex-1"
-              />
-              <FlowArrow label="has many" />
-              <DiagramNode
-                eyebrow="Product continuity"
-                title="Thread"
-                detail="Title, agent_id, runtime_thread_id, timestamps, and durable messages."
-                icon={MessageSquare}
-                className="lg:flex-1"
-              />
-              <FlowArrow label="creates" />
-              <DiagramNode
-                eyebrow="Execution attempt"
-                title="Run"
-                detail="Trigger, execution mode, optional issue scope, run policy, status, usage, events, and approvals."
-                icon={Activity}
-                tone="dark"
-                className="lg:flex-1"
-              />
-            </div>
-            <div className="mt-8 grid gap-px overflow-hidden border bg-border md:grid-cols-3">
-              {[
-                [
-                  "Trigger",
-                  "Who woke the agent: chat, a manual action, the scheduler, an assignment, or another Work event.",
-                ],
-                [
-                  "Execution mode",
-                  "How the run should operate: conversation, specific task, operational review, assignment, or issue event.",
-                ],
-                [
-                  "Scope",
-                  "The associated issue only when the mode is intentionally Work-item scoped. Reviews and ad-hoc tasks start without one.",
-                ],
-              ].map(([label, detail]) => (
-                <div key={label} className="bg-card p-5">
-                  <p className="text-sm font-semibold">{label}</p>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                    {detail}
+          <GuideSection
+            id="setup"
+            number="02"
+            title="Bring the workspace online"
+            description="A self-hosted installation runs the stack in Docker. Inside the product, the first operating check is Work, Docs, Runner, and Codex."
+            icon={Server}
+          >
+            <div className="grid gap-5 lg:grid-cols-[1fr_.8fr]">
+              <ol className="rounded-lg border bg-card px-4">
+                <Step number="01" title="Sign in">
+                  Open your Slab Agents URL and enter the global workspace
+                  password chosen during installation. The session is stored in
+                  an HTTP-only cookie; the app is single-user but not publicly
+                  open.
+                </Step>
+                <Step number="02" title="Connect Work">
+                  Go to{" "}
+                  <strong className="text-foreground">
+                    Settings → Sources
+                  </strong>
+                  . Enter the Slab Work MCP URL and API key, save, then run the
+                  connection test.
+                </Step>
+                <Step number="03" title="Connect Docs">
+                  In the same tab, enter the Slab Docs MCP URL and API key. The
+                  browser submits replacements to the Next.js backend and never
+                  receives stored keys back.
+                </Step>
+                <Step number="04" title="Verify Runner">
+                  Open{" "}
+                  <strong className="text-foreground">
+                    Settings → Runtime
+                  </strong>
+                  . Test Runner and Codex separately. A healthy Runner with an
+                  unauthenticated Codex installation is not ready to execute
+                  agents.
+                </Step>
+                <Step
+                  number="05"
+                  title="Run setup check"
+                  result="Work, Docs, Runner, and Codex report connected"
+                >
+                  Return to Overview and run the setup check. Once all four core
+                  systems are healthy, onboarding collapses into the operational
+                  dashboard.
+                </Step>
+              </ol>
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <p className="text-sm font-semibold">
+                    Self-hosted service layout
                   </p>
+                  <dl className="mt-3 divide-y border-y">
+                    <FieldRow
+                      field="Caddy"
+                      enter="Public ports 80/443 and automatic TLS"
+                    />
+                    <FieldRow
+                      field="Slab Agents"
+                      enter="Private Docker network; reached through Caddy"
+                    />
+                    <FieldRow
+                      field="Work / Docs"
+                      enter="Private services; no public host ports"
+                    />
+                    <FieldRow
+                      field="Runner"
+                      enter="Private execution service; never browser-facing"
+                    />
+                    <FieldRow
+                      field="Email"
+                      enter="Optional private connector and managed Proton lifecycle"
+                    />
+                  </dl>
                 </div>
-              ))}
-            </div>
-            <div className="mt-10 grid gap-8 lg:grid-cols-2">
-              <div>
-                <h3 className="font-heading text-3xl font-semibold">
-                  Stable identity
-                </h3>
-                <div className="mt-4 border-y">
-                  {[
-                    [
-                      "Role",
-                      "The operating lens: COO, Sales, Finance, Product, or another function.",
-                    ],
-                    [
-                      "Instructions",
-                      "Durable behavioral guidance applied to every execution.",
-                    ],
-                    [
-                      "Runtime",
-                      "Codex in the MVP, with the model designed to expand later.",
-                    ],
-                    [
-                      "Enabled",
-                      "A local safety switch that prevents new executions without deleting history.",
-                    ],
-                  ].map(([label, detail]) => (
-                    <div
-                      key={label}
-                      className="grid gap-2 border-t py-4 first:border-t-0 sm:grid-cols-[8rem_1fr]"
-                    >
-                      <strong className="text-sm">{label}</strong>
-                      <span className="text-sm leading-6 text-muted-foreground">
-                        {detail}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h3 className="font-heading text-3xl font-semibold">
-                  Available context
-                </h3>
-                <div className="mt-4 border-y">
-                  {[
-                    [
-                      "Conversation",
-                      "The persistent Codex thread, or bounded message rehydration when recovery is needed.",
-                    ],
-                    [
-                      "Company knowledge",
-                      "Slab Docs tools, queried when the task needs policies, plans, OKRs, or historical context.",
-                    ],
-                    [
-                      "Operational state",
-                      "Slab Work tools, queried when the task needs projects, issues, priorities, blockers, or comments.",
-                    ],
-                    [
-                      "No memory service",
-                      "There is no Honcho, vector memory, or semantic memory layer in this MVP.",
-                    ],
-                  ].map(([label, detail]) => (
-                    <div
-                      key={label}
-                      className="grid gap-2 border-t py-4 first:border-t-0 sm:grid-cols-[9rem_1fr]"
-                    >
-                      <strong className="text-sm">{label}</strong>
-                      <span className="text-sm leading-6 text-muted-foreground">
-                        {detail}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section id="runs" className="scroll-mt-24">
-            <SectionHeading
-              number="06"
-              eyebrow="Runs & approvals"
-              title="Execution is a state machine, not a spinner."
-            >
-              <p>
-                Every attempt is a durable Run with a defined lifecycle.
-                Relevant events are retained for debugging, while raw token
-                deltas remain ephemeral.
-              </p>
-            </SectionHeading>
-
-            <div className="mt-10 overflow-x-auto border-y py-6">
-              <div className="flex min-w-[760px] items-center">
-                {[
-                  ["queued", Clock3, "Next accepted the job"],
-                  ["running", Radio, "Runner is executing"],
-                  ["waiting approval", ShieldCheck, "Human decision required"],
-                  ["running", Radio, "Execution resumes"],
-                  ["completed", Check, "Final message persisted"],
-                ].map(([label, Icon, detail], index) => (
-                  <div key={`${label}-${index}`} className="contents">
-                    <div className="min-w-32 flex-1 text-center">
-                      <span className="mx-auto grid size-10 place-items-center rounded-full bg-foreground text-background">
-                        <Icon className="size-4" />
-                      </span>
-                      <p className="mt-3 text-xs font-bold uppercase tracking-wider">
-                        {label as string}
-                      </p>
-                      <p className="mt-1 text-[0.65rem] text-muted-foreground">
-                        {detail as string}
-                      </p>
-                    </div>
-                    {index < 4 && (
-                      <ArrowRight className="size-5 shrink-0 text-muted-foreground" />
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-8 grid gap-px overflow-hidden border bg-border sm:grid-cols-2 lg:grid-cols-3">
-              {[
-                ["run_started", "A queued Run has entered execution."],
-                [
-                  "tool_started",
-                  "Codex began a meaningful Work, Docs, or local tool call.",
-                ],
-                [
-                  "tool_completed",
-                  "The tool returned or failed with inspectable output metadata.",
-                ],
-                ["approval_required", "Runner paused for a human decision."],
-                [
-                  "assistant_message",
-                  "The final assistant body is ready to persist.",
-                ],
-                [
-                  "run_completed / failed",
-                  "The terminal outcome and error context are recorded.",
-                ],
-              ].map(([event, detail]) => (
-                <div key={event} className="bg-card p-4">
-                  <code className="font-mono text-xs font-semibold text-primary">
-                    {event}
+                <Callout title="Codex login on a VPS" icon={TerminalSquare}>
+                  If runtime verification fails, authenticate the bundled
+                  runtime from the server with:
+                  <code className="mt-2 block font-mono text-foreground">
+                    sudo slabctl codex login
                   </code>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                    {detail}
-                  </p>
+                  Then test Runner again from Settings.
+                </Callout>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" asChild>
+                    <Link href="/settings">Open Settings</Link>
+                  </Button>
+                  <Button size="sm" variant="outline" asChild>
+                    <Link href="/">Open Overview</Link>
+                  </Button>
                 </div>
-              ))}
+              </div>
             </div>
+          </GuideSection>
 
-            <div className="mt-10 border border-amber-700/25 bg-amber-500/10 p-5 sm:p-7">
-              <div className="grid gap-5 md:grid-cols-[auto_1fr]">
-                <AlertTriangle className="size-6 text-amber-800" />
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[.16em] text-amber-900">
-                    Approval lifecycle
-                  </p>
-                  <h3 className="mt-2 font-heading text-3xl font-semibold">
-                    The agent pauses. The human decides.
+          <GuideSection
+            id="agents"
+            number="03"
+            title="Create and equip an agent"
+            description="An agent is a reusable identity and policy. It is not a permanent process. A process starts only when chat, a task, Work coordination, or an automation creates a Run."
+            icon={Bot}
+          >
+            <div className="grid gap-5 lg:grid-cols-[1fr_.9fr]">
+              <ol className="rounded-lg border bg-card px-4">
+                <Step number="01" title="Create the identity">
+                  Go to{" "}
+                  <strong className="text-foreground">
+                    Agents → New agent
+                  </strong>
+                  . Enter a short name, business role, and stable instructions.
+                  Instructions should define responsibility, judgment,
+                  boundaries, and how the agent records results.
+                </Step>
+                <Step number="02" title="Choose runtime policy">
+                  Keep Codex as the runtime and choose the model. Enabled agents
+                  can receive new work. Disabled agents keep their history but
+                  do not start new runs.
+                </Step>
+                <Step number="03" title="Set Work and Docs access">
+                  Guarded access auto-runs reads and asks before protected
+                  writes. Full access lets the agent create and modify Work and
+                  Docs without repeated MCP approvals. Local shell approvals
+                  remain separate.
+                </Step>
+                <Step number="04" title="Assign capabilities">
+                  Open the agent&apos;s{" "}
+                  <strong className="text-foreground">Capabilities</strong> tab
+                  and enable PostHog or custom integrations. Configure Email
+                  account scope and read/draft/send policy from Settings →
+                  Email.
+                </Step>
+                <Step
+                  number="05"
+                  title="Give it work"
+                  result="The run receives a fixed capability snapshot"
+                >
+                  Use Chat for a continuing conversation, Give task for ad-hoc
+                  execution, assign a Work item to the agent slug, or attach the
+                  agent to an automation.
+                </Step>
+              </ol>
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <p className="text-sm font-semibold">What belongs where</p>
+                  <dl className="mt-3 divide-y border-y">
+                    <FieldRow
+                      field="Role"
+                      enter="Who the agent is accountable for being"
+                    />
+                    <FieldRow
+                      field="Instructions"
+                      enter="Stable decision rules and operating boundaries"
+                    />
+                    <FieldRow
+                      field="Run policy"
+                      enter="Why this execution started and how it should act now"
+                    />
+                    <FieldRow
+                      field="Capabilities"
+                      enter="The integrations available at run start"
+                    />
+                    <FieldRow
+                      field="Work item"
+                      enter="Operational scope for assignment/work_item runs"
+                    />
+                  </dl>
+                </div>
+                <Callout title="Do not put every workflow into the system prompt">
+                  Chat, assignment, review, automation, and Work-event runs
+                  carry separate execution semantics. Keep permanent
+                  instructions about identity; keep the immediate objective in
+                  the task, automation, or Work item.
+                </Callout>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" asChild>
+                    <Link href="/agents">Create agent</Link>
+                  </Button>
+                  <Button size="sm" variant="outline" asChild>
+                    <Link href="/automations">View automations</Link>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </GuideSection>
+
+          <GuideSection
+            id="tools"
+            number="04"
+            title="Create tools from an API or MCP server"
+            description="Custom Integrations turns curated external capabilities into named agent tools. The model never receives a generic HTTP client and never chooses an arbitrary host or header."
+            icon={Wrench}
+          >
+            <div className="grid gap-5 xl:grid-cols-2">
+              <div className="rounded-lg border bg-card p-4 sm:p-5">
+                <div className="flex items-center gap-2">
+                  <Code2 className="size-4 text-primary" />
+                  <h3 className="text-base font-semibold">
+                    HTTP API from documentation
                   </h3>
-                  <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                    Runner emits approval.required with the proposed action.
-                    Next persists a pending Approval and marks the Run as
-                    waiting_approval. Approve or Deny is posted back to Runner.
-                    The local record moves through resolving to approved or
-                    denied, preventing duplicate decisions from racing each
-                    other.
-                  </p>
-                  <div className="mt-6 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-                    <Badge variant="outline">Pending</Badge>
-                    <ArrowRight className="hidden size-4 sm:block" />
-                    <Badge variant="outline">Resolving</Badge>
-                    <ArrowRight className="hidden size-4 sm:block" />
-                    <Badge className="bg-emerald-700 text-white">
-                      Approved
-                    </Badge>
-                    <span className="text-center text-xs text-muted-foreground">
-                      or
-                    </span>
-                    <Badge variant="destructive">Denied</Badge>
-                  </div>
                 </div>
+                <ol className="mt-4 border-y px-1">
+                  <Step number="01" title="Start connector">
+                    Open{" "}
+                    <strong className="text-foreground">
+                      Integrations → Custom integration → HTTP API
+                    </strong>
+                    .
+                  </Step>
+                  <Step number="02" title="Import or define">
+                    Paste Markdown API documentation or a Slab JSON manifest to
+                    create an unsaved draft, or add GET/HEAD operations
+                    manually. Import never calls the upstream service.
+                  </Step>
+                  <Step number="03" title="Review the contract">
+                    Confirm name, base URL, authentication type, operation
+                    paths, path/query parameters, response path, timeout, byte
+                    limit, and array item limit.
+                  </Step>
+                  <Step number="04" title="Enter the secret separately">
+                    Choose None, Bearer, or API-key header. Never paste
+                    credentials into the documentation importer. The secret
+                    field is encrypted server-side and omitted from tool
+                    definitions and profiling.
+                  </Step>
+                  <Step
+                    number="05"
+                    title="Save, test, and assign"
+                    result="The next run sees semantic tools such as metrics__get_sales"
+                  >
+                    Test the connector, save it, then grant agent access from
+                    the integration editor or the agent&apos;s Capabilities tab.
+                  </Step>
+                </ol>
               </div>
-            </div>
-          </section>
 
-          <section id="automations" className="scroll-mt-24">
-            <SectionHeading
-              number="07"
-              eyebrow="Automations"
-              title="A schedule is simply another way to create a Run."
+              <div className="rounded-lg border bg-card p-4 sm:p-5">
+                <div className="flex items-center gap-2">
+                  <Network className="size-4 text-primary" />
+                  <h3 className="text-base font-semibold">
+                    Existing MCP server
+                  </h3>
+                </div>
+                <ol className="mt-4 border-y px-1">
+                  <Step number="01" title="Choose MCP Server">
+                    Enter the Streamable HTTP URL and optional Bearer or API-key
+                    header authentication.
+                  </Step>
+                  <Step number="02" title="Discover tools">
+                    Test performs initialize and tools/list. Slab Agents stores
+                    names, descriptions, input schemas, and provider
+                    annotations, never the auth secret in discovery metadata.
+                  </Step>
+                  <Step number="03" title="Review exposure">
+                    Enable only the discovered tools the selected agent should
+                    use. Provider annotations are useful context but are not
+                    treated as security enforcement.
+                  </Step>
+                  <Step
+                    number="04"
+                    title="Refresh deliberately"
+                    result="New runs receive the refreshed tool set"
+                  >
+                    Use Refresh tools after the remote server changes. Runs
+                    already in progress keep their original capability version.
+                  </Step>
+                </ol>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-5 lg:grid-cols-[1.1fr_.9fr]">
+              <div className="min-w-0">
+                <p className="mb-2 text-sm font-semibold">
+                  Example: curated metrics API
+                </p>
+                <CodeBlock>{`Integration: Clasificar Metrics
+Base URL:   https://clasific.ar
+Auth:       Bearer <CLASIFICAR_METRICS_SECRET>
+Operation:  GET /api/admin/metrics/sales
+Shape:      responsePath = data
+Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
+              </div>
+              <Callout
+                title="Use the reader credential, not the server pseudonym key"
+                icon={KeyRound}
+              >
+                For the documented Agent Metrics API, the normal Bearer is the
+                value of{" "}
+                <code className="font-mono text-foreground">
+                  CLASIFICAR_METRICS_SECRET
+                </code>
+                . The PII secret belongs in a separate, intentionally privileged
+                connector. The pseudonym HMAC secret must never leave the API
+                server.
+              </Callout>
+            </div>
+
+            <Callout
+              title="Capability snapshots are immutable during a run"
+              icon={ShieldCheck}
             >
-              <p>
-                Manual and cron automations reuse one execution pipeline. The
-                automation owns the execution mode and prompt; manual Run now
-                and the scheduler differ only in their trigger.
-              </p>
-            </SectionHeading>
-            <div className="mt-10 flex flex-col items-stretch lg:flex-row lg:items-center">
-              <DiagramNode
-                eyebrow="Definition"
-                title="Automation"
-                detail="Name, agent, execution mode, cron expression or manual trigger, prompt, enabled state, and last run time."
-                icon={CalendarClock}
-                className="lg:flex-1"
-              />
-              <FlowArrow label="fires" />
-              <DiagramNode
-                eyebrow="Local scheduler"
-                title="Next.js"
-                detail="Checks due cron expressions while the application process is running."
-                icon={Clock3}
-                tone="primary"
-                className="lg:flex-1"
-              />
-              <FlowArrow label="creates" />
-              <DiagramNode
-                eyebrow="Normal pipeline"
-                title="Thread + Run"
-                detail="A traceable conversation, persisted prompt, Runner execution, events, approvals, and final answer."
-                icon={Zap}
-                tone="dark"
-                className="lg:flex-1"
-              />
-            </div>
-            <div className="mt-8 grid gap-6 md:grid-cols-2">
-              <div className="border-t-2 border-foreground pt-5">
-                <h3 className="font-heading text-2xl font-semibold">Manual</h3>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                  A human presses Run now. Useful for templates and repeatable
-                  reviews that should remain deliberate.
-                </p>
-              </div>
-              <div className="border-t-2 border-primary pt-5">
-                <h3 className="font-heading text-2xl font-semibold">Cron</h3>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                  The local scheduler evaluates the cron expression in the
-                  computer&apos;s timezone. Weekly OKR review is the default
-                  starter template.
-                </p>
-              </div>
-            </div>
-            <div className="mt-8 flex gap-3 border-l-2 border-primary bg-muted/45 p-5">
-              <Laptop className="mt-0.5 size-5 shrink-0 text-primary" />
-              <p className="text-sm leading-6 text-muted-foreground">
-                <strong className="text-foreground">MVP limitation:</strong>{" "}
-                cron jobs only fire while this Next.js application is running.
-                There is no missed-job replay, durable queue, clustering,
-                distributed lock, or remote scheduler yet.
-              </p>
-            </div>
-            <Button className="mt-6" variant="outline" asChild>
-              <Link href="/automations">
-                <CalendarClock /> Create an automation
+              Adding an operation, rotating a secret, enabling an integration,
+              or granting access does not hot-plug tools into a running Codex
+              context. Start a new run to receive the new capability version.
+            </Callout>
+            <Button className="mt-4" size="sm" asChild>
+              <Link href="/integrations">
+                <PlugZap /> Open Integrations
               </Link>
             </Button>
-          </section>
+          </GuideSection>
 
-          <section id="security" className="scroll-mt-24">
-            <SectionHeading
-              number="08"
-              eyebrow="Data & security"
-              title="The browser is a view, not a trust boundary."
-            >
-              <p>
-                The application is single-user and local, but the separation
-                between browser, Next server, loopback Runner, and remote MCP
-                services is still explicit.
-              </p>
-            </SectionHeading>
-
-            <div className="mt-10 border p-4 sm:p-6">
-              <p className="mb-5 text-xs font-bold uppercase tracking-[.16em] text-muted-foreground">
-                Credential boundary
-              </p>
-              <div className="grid gap-4 lg:grid-cols-[1fr_auto_1.2fr_auto_1fr] lg:items-stretch">
+          <GuideSection
+            id="email"
+            number="05"
+            title="Email architecture and permissions"
+            description="Email is optional and deliberately split: Slab Agents owns agent policy; slab-email owns mailbox credentials, provider tokens, and MCP execution."
+            icon={Mail}
+          >
+            <div className="rounded-lg border bg-muted/20 p-4 sm:p-5">
+              <div className="flex flex-col items-stretch lg:flex-row lg:items-center">
                 <DiagramNode
-                  eyebrow="Untrusted presentation"
-                  title="React / Browser"
-                  detail="Receives public URLs and key-configured booleans. Never receives MCP API keys or Runner tokens."
-                  icon={Laptop}
-                  tone="muted"
+                  label="Configuration"
+                  title="Settings → Email"
+                  detail="Connect providers, test mailboxes, and choose account scope plus read/draft/send policy per agent."
+                  icon={Settings2}
+                  className="lg:flex-1"
                 />
-                <FlowArrow label="app API" />
+                <FlowArrow label="server-side admin API" />
                 <DiagramNode
-                  eyebrow="Trusted local server"
-                  title="Next Node runtime"
-                  detail="Reads secrets from server-side settings, validates requests, opens MCP sessions, and signs Runner requests."
-                  icon={KeyRound}
-                  tone="primary"
+                  label="Credential owner"
+                  title="slab-email"
+                  detail="Encrypts OAuth client secrets, Gmail refresh tokens, Bridge mailbox credentials, and scoped connector tokens."
+                  icon={LockKeyhole}
+                  tone="accent"
+                  className="lg:flex-1"
                 />
-                <FlowArrow label="auth headers" />
-                <div className="grid gap-3">
-                  <DiagramNode
-                    eyebrow="Remote"
-                    title="MCP services"
-                    detail="Bearer credentials are attached only by the server adapter."
-                    icon={Cloud}
-                  />
-                  <DiagramNode
-                    eyebrow="127.0.0.1 only"
-                    title="Runner"
-                    detail="Execution API stays on loopback and may use a separate local token."
-                    icon={TerminalSquare}
-                    tone="dark"
-                  />
-                </div>
+                <FlowArrow label="run-scoped MCP" />
+                <DiagramNode
+                  label="Runtime"
+                  title="Agent tools"
+                  detail="Search, read, draft, reply, and send are visible only when the profile grants them."
+                  icon={Bot}
+                  tone="dark"
+                  className="lg:flex-1"
+                />
               </div>
             </div>
 
-            <div className="mt-10 grid gap-8 xl:grid-cols-2">
-              <div>
-                <h3 className="font-heading text-3xl font-semibold">
-                  SQLite stores orchestration
-                </h3>
-                <div className="mt-4 divide-y border-y">
-                  {[
-                    "Connection configuration and check status",
-                    "Agent definitions",
-                    "Product threads and completed messages",
-                    "Runs, usage, errors, and relevant run events",
-                    "Approvals and their resolution state",
-                    "Manual and cron automation definitions",
-                  ].map((item) => (
-                    <div key={item} className="flex gap-3 py-3 text-sm">
-                      <Database className="mt-0.5 size-4 shrink-0 text-primary" />
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h3 className="font-heading text-3xl font-semibold">
-                  SQLite does not replicate truth
-                </h3>
-                <div className="mt-4 divide-y border-y">
-                  {[
-                    "Slab projects",
-                    "Slab issues or comments",
-                    "Slab issue relationships",
-                    "Slab Docs documents",
-                    "Slab Docs hierarchy or revisions",
-                    "A vector index or semantic memory store",
-                  ].map((item) => (
-                    <div
-                      key={item}
-                      className="flex gap-3 py-3 text-sm text-muted-foreground"
-                    >
-                      <X className="mt-0.5 size-4 shrink-0" />
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 grid gap-px overflow-hidden border bg-border sm:grid-cols-3">
+            <div className="mt-5 grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-3">
               {[
+                ["Disabled", "No send capability is issued to the agent."],
                 [
-                  ShieldCheck,
-                  "Single user",
-                  "No login or multi-tenant account model in the MVP.",
+                  "Approval required",
+                  "Send/reply pauses the Run for a human decision.",
                 ],
                 [
-                  LockKeyhole,
-                  "Server-side secrets",
-                  "Credentials are accepted by Next routes and withheld from client payloads.",
+                  "Autonomous",
+                  "The scoped profile can send without another Slab approval.",
                 ],
-                [
-                  Network,
-                  "Loopback Runner",
-                  "Runner URLs are validated to localhost, 127.0.0.1, or ::1.",
-                ],
-              ].map(([Icon, title, detail]) => (
-                <div className="bg-card p-5" key={title as string}>
-                  <Icon className="size-5 text-primary" />
-                  <p className="mt-5 font-semibold">{title as string}</p>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                    {detail as string}
+              ].map(([title, detail]) => (
+                <div key={title} className="bg-card p-4">
+                  <p className="text-sm font-semibold">{title}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {detail}
                   </p>
                 </div>
               ))}
             </div>
-          </section>
+            <Callout title="Connecting a mailbox is not enough" tone="warning">
+              After the provider test succeeds, assign one or more accounts to
+              an agent and choose read, draft, and send permissions. A connected
+              mailbox with no agent access profile produces no Email tools.
+            </Callout>
+          </GuideSection>
 
-          <section id="failures" className="scroll-mt-24">
-            <SectionHeading
-              number="09"
-              eyebrow="Failure modes"
-              title="What happens when part of the ecosystem is unavailable."
-            >
-              <p>
-                The control plane favors explicit status and recoverable local
-                records over pretending that a failed dependency succeeded.
-              </p>
-            </SectionHeading>
-            <div className="mt-10 overflow-x-auto border-y">
-              <div className="min-w-[760px]">
-                <div className="grid grid-cols-[12rem_1fr_1fr] gap-6 border-b bg-muted/50 px-4 py-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  <span>Failure</span>
-                  <span>What the user sees</span>
-                  <span>Recovery</span>
+          <GuideSection
+            id="gmail"
+            number="06"
+            title="Connect Gmail with Google OAuth"
+            description="Gmail uses the official Gmail API and OAuth 2.0. You create the OAuth client in Google Cloud, save it in Settings, and explicitly add test users while the app remains in Testing."
+            icon={Cloud}
+          >
+            <div className="grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
+              <ol className="rounded-lg border bg-card px-4">
+                <Step number="01" title="Create a Google Cloud project">
+                  Open Google Cloud Console, select or create the project that
+                  will own this integration, and make sure billing/organization
+                  policy does not prevent OAuth client creation.
+                </Step>
+                <Step number="02" title="Enable Gmail API">
+                  Go to{" "}
+                  <strong className="text-foreground">
+                    APIs & Services → Library
+                  </strong>
+                  , search for{" "}
+                  <strong className="text-foreground">Gmail API</strong>, and
+                  enable it for this project.
+                </Step>
+                <Step number="03" title="Configure Google Auth Platform">
+                  Open{" "}
+                  <strong className="text-foreground">
+                    Google Auth Platform
+                  </strong>
+                  . Under Branding, enter an app name, support email, and
+                  developer contact. Under Audience, choose External unless your
+                  Workspace organization intentionally requires Internal.
+                </Step>
+                <Step number="04" title="Add scopes">
+                  Under Data Access, add Gmail readonly, compose, and send. Slab
+                  Email requests these scopes so profiles can independently
+                  expose read, draft, and send tools.
+                </Step>
+                <Step number="05" title="Add testing accounts">
+                  While publishing status is{" "}
+                  <strong className="text-foreground">Testing</strong>, open
+                  Audience → Test users and add every Google account that may
+                  complete the connection. The Gmail address you select during
+                  OAuth must be in this list.
+                </Step>
+                <Step number="06" title="Create OAuth client">
+                  Go to Clients → Create client → Web application. You do not
+                  need a JavaScript origin for this server-side flow.
+                </Step>
+                <Step number="07" title="Register the exact callback">
+                  In Slab Agents, open Settings → Email → Configure email and
+                  copy the Authorized redirect URI exactly. Paste it into
+                  Google&apos;s Authorized redirect URIs. It must use your real
+                  HTTPS domain.
+                </Step>
+                <Step number="08" title="Save credentials in Slab">
+                  Copy the Google client ID and client secret into the Google
+                  OAuth section, then select Save OAuth credentials. The secret
+                  is sent server-to-server to slab-email and stored encrypted.
+                </Step>
+                <Step
+                  number="09"
+                  title="Connect and test"
+                  result="The Gmail mailbox appears as Enabled and Connected"
+                >
+                  Select Connect Gmail, choose a test user, approve the
+                  requested scopes, return to Slab, and run Test on the new
+                  mailbox.
+                </Step>
+                <Step number="10" title="Assign the mailbox">
+                  In Agent access profiles, select the agent, allowed account,
+                  read/draft/send permissions, and send policy. Start a new run
+                  to make Email tools available.
+                </Step>
+              </ol>
+
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <p className="text-sm font-semibold">
+                    Google configuration map
+                  </p>
+                  <dl className="mt-3 divide-y border-y">
+                    <FieldRow field="API" enter="Gmail API" />
+                    <FieldRow field="Client type" enter="Web application" />
+                    <FieldRow
+                      field="Audience"
+                      enter="External → Testing for initial setup"
+                    />
+                    <FieldRow
+                      field="Test users"
+                      enter="Every Gmail/Workspace account that will connect"
+                    />
+                    <FieldRow
+                      field="Redirect URI"
+                      enter="Copy the exact HTTPS callback displayed by Slab Agents"
+                    />
+                    <FieldRow
+                      field="Scopes"
+                      enter="gmail.readonly, gmail.compose, gmail.send"
+                    />
+                  </dl>
                 </div>
-                {[
-                  [
-                    "Missing MCP config",
-                    "Setup shows Missing config; Work or Docs cannot be tested.",
-                    "Add the URL and API key in Settings, then run the check again.",
-                  ],
-                  [
-                    "MCP unavailable",
-                    "The view shows a connection error and keeps an actionable empty state.",
-                    "Test the connection, refresh the source, or open the remote product.",
-                  ],
-                  [
-                    "Runner offline",
-                    "The run fails with a persisted error; existing threads and messages remain.",
-                    "Start Runner on loopback, verify Codex, and send a new message.",
-                  ],
-                  [
-                    "Codex unavailable",
-                    "Runner can be healthy while runtime verification fails separately.",
-                    "Repair the Codex installation or Runner adapter, then rerun setup checks.",
-                  ],
-                  [
-                    "Approval pending",
-                    "The thread displays the requested action with Approve and Deny controls.",
-                    "Make an explicit decision; duplicate resolution attempts are rejected safely.",
-                  ],
-                  [
-                    "Runtime thread missing",
-                    "The product keeps the conversation while recreating runtime continuity.",
-                    "A new Codex thread is created and recent product messages rehydrate context.",
-                  ],
-                  [
-                    "Browser reload",
-                    "Completed messages remain; an in-flight stream may reconnect through persisted Run state.",
-                    "Open the thread or Runs view to inspect current state and continue.",
-                  ],
-                  [
-                    "Next app stopped",
-                    "The UI, scheduler, and local orchestration are unavailable.",
-                    "Restart npm run dev or npm start. Remote Work and Docs remain authoritative.",
-                  ],
-                ].map(([failure, visible, recovery]) => (
-                  <div
-                    key={failure}
-                    className="grid grid-cols-[12rem_1fr_1fr] gap-6 border-b px-4 py-4 text-sm last:border-b-0"
-                  >
-                    <strong>{failure}</strong>
-                    <span className="leading-6 text-muted-foreground">
-                      {visible}
-                    </span>
-                    <span className="leading-6 text-muted-foreground">
-                      {recovery}
-                    </span>
-                  </div>
-                ))}
+                <Callout
+                  title="Correct redirect URI"
+                  tone="success"
+                  icon={Check}
+                >
+                  Use:
+                  <code className="mt-2 block break-all font-mono text-foreground">
+                    https://&lt;your-domain&gt;/api/integrations/email/google/callback
+                  </code>
+                </Callout>
+                <Callout title="Never register 0.0.0.0" tone="warning">
+                  <code className="font-mono text-foreground">0.0.0.0</code> is
+                  a server bind address, not a browser origin. Google will
+                  reject it. On a domain deployment, do not register localhost,
+                  the private slab-email callback, or an IP callback instead of
+                  the exact URL shown in Settings.
+                </Callout>
+                <div className="rounded-lg border bg-card p-4">
+                  <p className="text-sm font-semibold">What is stored</p>
+                  <ul className="mt-3 space-y-2 text-xs leading-5 text-muted-foreground">
+                    <li>
+                      • Client ID and encrypted client secret in slab-email.
+                    </li>
+                    <li>• Encrypted Gmail refresh token in slab-email.</li>
+                    <li>• Account/profile/token metadata in Slab Agents.</li>
+                    <li>
+                      • No Google secret or refresh token in React or agent
+                      prompts.
+                    </li>
+                  </ul>
+                </div>
               </div>
             </div>
-          </section>
+          </GuideSection>
 
-          <section id="boundaries" className="scroll-mt-24">
-            <SectionHeading
-              number="10"
-              eyebrow="MVP boundaries"
-              title="Deliberately local, simple, and operational."
-            >
-              <p>
-                The MVP proves one relationship well: Agent ↔ Work ↔ Docs. The
-                boundaries below prevent the control plane from becoming a
-                premature platform.
-              </p>
-            </SectionHeading>
-            <div className="mt-10 grid gap-10 lg:grid-cols-2">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[.16em] text-emerald-800">
-                  Included now
-                </p>
-                <div className="mt-3 divide-y border-y">
-                  {[
-                    "Local single-user Next.js control plane",
-                    "Remote Slab Work and Slab Docs adapters",
-                    "Codex agents through local Slab Runner",
-                    "Persistent threads, messages, runs, events, and approvals",
-                    "Manual and cron automations",
-                    "Work assignment, review, blocked, resume, and mention triggers",
-                    "Server-side secrets and loopback execution",
-                  ].map((item) => (
-                    <div key={item} className="flex gap-3 py-3 text-sm">
-                      <Check className="mt-0.5 size-4 shrink-0 text-emerald-700" />
-                      {item}
-                    </div>
-                  ))}
+          <GuideSection
+            id="proton"
+            number="07"
+            title="Connect Proton with managed Bridge"
+            description="On supported self-hosted images, Proton Bridge is already built into slab-email. You do not install a second service: connect your Proton account and let slab-email manage the private Bridge lifecycle."
+            icon={KeyRound}
+          >
+            <div className="grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
+              <ol className="rounded-lg border bg-card px-4">
+                <Step number="01" title="Check the requirement">
+                  Proton Bridge requires a paid Proton plan. Managed Bridge is
+                  available on the supported amd64 and arm64 self-hosted images.
+                </Step>
+                <Step number="02" title="Open Proton setup">
+                  Go to{" "}
+                  <strong className="text-foreground">
+                    Settings → Email → Configure email → Proton Bridge
+                  </strong>
+                  . If the panel reports Managed Proton Bridge available, keep
+                  the default managed mode.
+                </Step>
+                <Step number="03" title="Enter account identity">
+                  Enter your full Proton email address, a display name that
+                  agents will recognize, and your normal Proton account
+                  password. This is not the generated Bridge mailbox password.
+                </Step>
+                <Step number="04" title="Complete the challenge">
+                  Select Connect account. If Proton requires TOTP, mailbox
+                  password, or human verification, the panel displays the next
+                  required step. Complete it and select Continue.
+                </Step>
+                <Step number="05" title="Understand credential handling">
+                  The Proton login password and challenge values are sent
+                  directly to Bridge through private process pipes and are not
+                  stored. Only the generated IMAP/SMTP mailbox credential is
+                  encrypted at rest.
+                </Step>
+                <Step
+                  number="06"
+                  title="Test the mailbox"
+                  result="Mailbox status reports Connected"
+                >
+                  The account appears in Mailboxes. Select Test before granting
+                  it to an agent.
+                </Step>
+                <Step number="07" title="Assign agent access">
+                  Choose allowed accounts, read/draft/send permissions, and send
+                  policy in Agent access profiles. Start a new run after saving.
+                </Step>
+              </ol>
+
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <p className="text-sm font-semibold">
+                    What to type in managed mode
+                  </p>
+                  <dl className="mt-3 divide-y border-y">
+                    <FieldRow
+                      field="Proton email"
+                      enter="Your complete Proton mailbox address"
+                    />
+                    <FieldRow
+                      field="Display name"
+                      enter="The human-readable mailbox label agents will see"
+                    />
+                    <FieldRow
+                      field="Proton password"
+                      enter="Your normal Proton account password; used once for login"
+                    />
+                    <FieldRow
+                      field="Two-factor code"
+                      enter="Current TOTP code, only when Proton asks for it"
+                    />
+                    <FieldRow
+                      field="Mailbox password"
+                      enter="Additional mailbox password, only when the account uses one"
+                    />
+                  </dl>
                 </div>
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[.16em] text-muted-foreground">
-                  Intentionally deferred
-                </p>
-                <div className="mt-3 divide-y border-y">
-                  {[
-                    "SaaS, accounts, organizations, multi-tenancy, or RBAC",
-                    "Direct agent-to-agent chats and autonomous delegation loops",
-                    "Honcho, vector memory, or semantic search",
-                    "Gmail, Calendar, CRM, analytics, and arbitrary MCP marketplace",
-                    "Durable distributed jobs, webhooks, and remote triggers",
-                    "Billing, token budgets, and visual workflow builders",
-                  ].map((item) => (
-                    <div
-                      key={item}
-                      className="flex gap-3 py-3 text-sm text-muted-foreground"
-                    >
-                      <CircleDot className="mt-0.5 size-4 shrink-0" />
-                      {item}
-                    </div>
-                  ))}
-                </div>
+                <Callout title="CLI alternative" icon={TerminalSquare}>
+                  The same managed flow is available on the VPS:
+                  <code className="mt-2 block font-mono text-foreground">
+                    sudo slabctl proton setup
+                  </code>
+                  Input is hidden. Type the password once and press Enter; do
+                  not repeatedly submit empty lines while Bridge is processing.
+                </Callout>
+                <Callout
+                  title="Manual Bridge is a different mode"
+                  tone="warning"
+                >
+                  Use “Connect an existing Bridge” only when Bridge already runs
+                  on a host reachable from slab-email. Enter the generated
+                  Bridge username/password plus its IMAP/SMTP host, ports, and
+                  TLS modes. A Bridge on your laptop is not reachable from a
+                  remote VPS.
+                </Callout>
               </div>
             </div>
 
-            <div className="mt-12 border-y bg-foreground p-6 text-background sm:p-10">
-              <Sparkles className="size-5 text-primary" />
-              <p className="mt-8 max-w-4xl font-heading text-[clamp(2.2rem,5vw,5rem)] font-semibold leading-[.95] tracking-[-.04em]">
-                Slab is what needs doing. Docs is what we know. Next decides who
-                acts and when. Runner makes the agent real.
+            <div className="mt-5 rounded-lg border p-4 sm:p-5">
+              <p className="text-sm font-semibold">
+                Manual Bridge field reference
               </p>
-              <Separator className="my-8 bg-background/20" />
-              <div className="flex flex-wrap gap-2">
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                These values come from Proton Bridge connection settings, not
+                from your Proton account login screen.
+              </p>
+              <dl className="mt-4 grid gap-x-6 border-y lg:grid-cols-2">
+                <FieldRow
+                  field="Email address"
+                  enter="Mailbox address exposed by Bridge"
+                />
+                <FieldRow field="Display name" enter="Label shown in Slab" />
+                <FieldRow
+                  field="Bridge username"
+                  enter="Generated Bridge username"
+                />
+                <FieldRow
+                  field="Bridge password"
+                  enter="Generated Bridge password"
+                />
+                <FieldRow
+                  field="IMAP host/port"
+                  enter="Reachable Bridge IMAP endpoint"
+                />
+                <FieldRow
+                  field="IMAP TLS"
+                  enter="Match Bridge: SSL, STARTTLS, or none"
+                />
+                <FieldRow
+                  field="SMTP host/port"
+                  enter="Reachable Bridge SMTP endpoint"
+                />
+                <FieldRow
+                  field="SMTP TLS"
+                  enter="Match Bridge: SSL, STARTTLS, or none"
+                />
+              </dl>
+            </div>
+          </GuideSection>
+
+          <GuideSection
+            id="runs"
+            number="08"
+            title="From intent to auditable run"
+            description="Every execution is durable and typed. Agent identity, trigger, execution mode, optional Work scope, run policy, capabilities, and runtime continuity are separate concepts."
+            icon={Activity}
+          >
+            <div className="flex flex-col items-stretch lg:flex-row lg:items-center">
+              <DiagramNode
+                label="Intent"
+                title="Human or event"
+                detail="Chat message, manual task, automation, assignment, blocker, review request, resume, or mention."
+                icon={Play}
+                className="lg:flex-1"
+              />
+              <FlowArrow label="creates" />
+              <DiagramNode
+                label="Control plane"
+                title="Queued Run"
+                detail="Persists trigger, mode, issue scope, policy, agent, and capability snapshot; FIFO per agent."
+                icon={ListChecks}
+                tone="accent"
+                className="lg:flex-1"
+              />
+              <FlowArrow label="executes" />
+              <DiagramNode
+                label="Runtime"
+                title="Codex + tools"
+                detail="Streams model calls, tool lifecycle, approvals, usage, and final assistant output."
+                icon={TerminalSquare}
+                tone="dark"
+                className="lg:flex-1"
+              />
+              <FlowArrow label="records" />
+              <DiagramNode
+                label="Audit"
+                title="Run detail"
+                detail="Status, duration, context profile, tool breakdown, timeline, errors, and runtime thread."
+                icon={Gauge}
+                tone="success"
+                className="lg:flex-1"
+              />
+            </div>
+
+            <div className="mt-5 grid gap-5 lg:grid-cols-2">
+              <div className="min-w-0 rounded-lg border bg-card p-4">
+                <p className="text-sm font-semibold">Chat continuity</p>
+                <CodeBlock>{`chat message A
+→ product thread
+→ runtime thread X created
+
+chat message B
+→ same product thread
+→ runtime thread X resumed`}</CodeBlock>
+              </div>
+              <div className="min-w-0 rounded-lg border bg-card p-4">
+                <p className="text-sm font-semibold">
+                  Fresh non-chat execution
+                </p>
+                <CodeBlock>{`assignment / review / work_item / task
+→ product grouping preserved
+→ fresh runtime thread per Run
+→ Work + Docs remain the source of continuity`}</CodeBlock>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                ["Chat", "Conversation is primary; runtime thread may resume."],
+                ["Assignment", "One issue is the deliberate operating scope."],
+                [
+                  "Review",
+                  "No arbitrary issue; inspect company state and decide.",
+                ],
+                [
+                  "Automation",
+                  "Schedule is the trigger; mode defines behavior.",
+                ],
+              ].map(([title, detail]) => (
+                <div key={title} className="bg-card p-4">
+                  <p className="text-sm font-semibold">{title}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {detail}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <Callout
+              title="Concurrency stays safe without a global lock"
+              icon={RefreshCw}
+            >
+              Runs are FIFO with at most one active execution per agent, while
+              different agents can work in parallel. Work-triggered runs are
+              revalidated immediately before Runner starts; stale triggers are
+              persisted as skipped with zero model usage. Issue writes use
+              optimistic version checks, so stale state cannot overwrite newer
+              work.
+            </Callout>
+          </GuideSection>
+
+          <GuideSection
+            id="troubleshooting"
+            number="09"
+            title="Troubleshooting"
+            description="Start with the visible status and test action closest to the failing boundary. Do not compensate for a missing capability by expanding an agent prompt."
+            icon={TestTube2}
+          >
+            <div className="rounded-lg border bg-card px-4">
+              <TroubleshootingItem
+                title="Gmail says Missing OAuth credentials"
+                symptom="INVALID_CONFIGURATION · Missing Google OAuth credentials"
+              >
+                Open Settings → Email → Configure email. Enter the Web
+                application client ID and client secret from Google Cloud,
+                select Save OAuth credentials, then use Connect Gmail. Creating
+                a Google project alone does not configure slab-email.
+              </TroubleshootingItem>
+              <TroubleshootingItem
+                title="Google rejects the redirect URI"
+                symptom="Error 400: invalid_request or redirect_uri_mismatch"
+              >
+                Copy the Authorized redirect URI shown by Slab Agents and
+                register the exact value in the OAuth client. Scheme, host,
+                port, path, and trailing slash must match. Never use 0.0.0.0.
+                For a domain install, use the HTTPS domain callback.
+              </TroubleshootingItem>
+              <TroubleshootingItem
+                title="Google blocks the selected account"
+                symptom="Access denied while the OAuth app is in Testing"
+              >
+                Open Google Auth Platform → Audience → Test users and add the
+                exact Google account selected during OAuth. Wait briefly for the
+                change, then restart Connect Gmail.
+              </TroubleshootingItem>
+              <TroubleshootingItem
+                title="Gmail connects but the agent sees no Email tools"
+                symptom="Mailbox test passes; agent says Email is unavailable"
+              >
+                Create or update the agent access profile in Settings → Email.
+                Select the mailbox and permissions. Confirm send policy. Then
+                start a new run because capabilities are snapshotted at run
+                start.
+              </TroubleshootingItem>
+              <TroubleshootingItem
+                title="Managed Proton rejects the login"
+                symptom="Proton rejected the account login"
+              >
+                In managed mode, enter the normal Proton account password, not
+                the generated Bridge password copied from another machine.
+                Confirm the account has a paid plan and complete any TOTP,
+                mailbox-password, or human-verification challenge shown by the
+                panel.
+              </TroubleshootingItem>
+              <TroubleshootingItem
+                title="Manual Proton Bridge times out or refuses connection"
+                symptom="ECONNREFUSED, timeout, or 127.0.0.1:1143 unavailable"
+              >
+                Loopback is local to the slab-email container. A Bridge running
+                on Windows or a laptop is not reachable from a remote VPS
+                through its own 127.0.0.1. Prefer managed Bridge on the VPS. If
+                you intentionally use an external Bridge, provide a host
+                reachable from the container and match Bridge&apos;s IMAP/SMTP
+                TLS settings exactly.
+              </TroubleshootingItem>
+              <TroubleshootingItem
+                title="A custom tool does not appear"
+                symptom="Integration is connected but the agent cannot call it"
+              >
+                Confirm the integration is enabled and healthy, grant the agent
+                access to the integration/tools, then start a new run. Refresh
+                MCP discovery if the provider changed its tools. Active runs
+                never receive hot-plugged capabilities.
+              </TroubleshootingItem>
+              <TroubleshootingItem
+                title="A run waits for approval"
+                symptom="Run status is waiting_approval"
+              >
+                Open the waiting item or Run detail and approve or deny the
+                exact action. Work/Docs full access does not automatically
+                approve shell commands. Email send policy is enforced separately
+                from Work/Docs access.
+              </TroubleshootingItem>
+              <TroubleshootingItem
+                title="A Work-triggered run was skipped"
+                symptom="Status: skipped · stale_trigger"
+              >
+                This is expected when the issue changed while the run waited in
+                the per-agent queue. The preflight found that assignment,
+                blocked, review, or resume state was no longer current and
+                avoided spending runtime tokens.
+              </TroubleshootingItem>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                [Settings2, "Connection problem", "Settings → Test connection"],
+                [Activity, "Runtime problem", "Runs → Timeline / Debug"],
+                [PlugZap, "Missing tool", "Integrations → Test / Agent access"],
+                [Mail, "Mailbox problem", "Settings → Email → Test"],
+              ].map(([IconComponent, title, action]) => (
+                <div
+                  key={title as string}
+                  className="rounded-lg border bg-card p-4"
+                >
+                  <IconComponent className="size-4 text-primary" />
+                  <p className="mt-4 text-sm font-semibold">
+                    {title as string}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {action as string}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8 rounded-lg border bg-foreground p-5 text-background sm:p-7">
+              <ShieldCheck className="size-5 text-primary" />
+              <h3 className="mt-5 max-w-3xl font-heading text-3xl font-semibold tracking-[-.03em] sm:text-4xl">
+                Work is the operating ledger. Docs is durable knowledge. Tools
+                add reach. Runs make every action inspectable.
+              </h3>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-background/65">
+                Start small: connect the core, create one agent, give it the
+                minimum capabilities required, run one real task, and inspect
+                the result.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-2">
                 <Button variant="secondary" asChild>
-                  <Link href="/">
-                    <Play /> Create operating loop
+                  <Link href="/agents">
+                    <Bot /> Create agent
                   </Link>
                 </Button>
                 <Button
@@ -1334,8 +1381,8 @@ export function HowItWorksGuide() {
                   className="border-background/30 bg-transparent text-background hover:bg-background hover:text-foreground"
                   asChild
                 >
-                  <Link href="/agents">
-                    <Bot /> Meet the agents
+                  <Link href="/integrations">
+                    <PlugZap /> Add integration
                   </Link>
                 </Button>
                 <Button
@@ -1349,7 +1396,7 @@ export function HowItWorksGuide() {
                 </Button>
               </div>
             </div>
-          </section>
+          </GuideSection>
         </article>
       </div>
     </>

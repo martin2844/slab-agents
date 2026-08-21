@@ -4,7 +4,7 @@ import { HowItWorksGuide } from "@/components/how-it-works-guide";
 export const metadata: Metadata = {
   title: "How it works",
   description:
-    "A field guide to the Slab Agent Workspace architecture, operating loops, security boundaries, and local setup.",
+    "The operational guide to Slab architecture, agents, custom tools, Gmail OAuth, Proton Bridge, runs, and troubleshooting.",
 };
 
 export default function HowItWorksPage() {
