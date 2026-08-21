@@ -38,20 +38,22 @@ Last updated: 2026-08-21
 | Candidate bootstrap VPS dry-run                 | Complete          | Ubuntu 26.04 VPS verified signature/checksum and dry-ran `candidate.7`; production remained ready |
 | Candidate.7 production reconciliation           | Complete          | Seven-volume verified backup, additive Email migration to schema 2, exact image digests, systemd active, HTTPS ready, and direct port closed |
 | Web-managed Gmail OAuth                         | Deployed          | Settings owns the server-side admin flow; OAuth secret is encrypted only by `slab-email`, absent from API/UI reads, and production reports an actionable `missing` state |
-| Managed Proton Bridge                           | In progress       | One `slab-email` lifecycle packages Proton Bridge 3.26.0 by pinned SHA; private PTY controller, encrypted generated credentials, Settings flow, and `slabctl proton setup` are implemented pending candidate publication and real-account QA |
+| Managed Proton Bridge                           | Deployed          | Candidate.10 builds Proton Bridge 3.26.0 from checksum-pinned source with Go 1.26.6 in the existing `slab-email` lifecycle; Settings and `slabctl proton setup` share the private challenge flow, generated mailbox credentials remain encrypted, and real-account login remains user QA |
 | Stable public installer                         | Blocked by design | Candidate channel only; backup/restore, update/rollback, and remaining VPS matrix still gate `stable` |
 
 Current next gate: complete backup/restore and the remaining clean-VPS matrix, then
 promote the signed, version-pinned bootstrap from `candidate` to `stable`.
-Candidate.7 is published as a signed GitHub Release, its bundle reproduces byte-for-byte with the
+Candidate.10 is published as a signed GitHub Release, its bundle reproduces byte-for-byte with the
 pinned packaging toolchain, and the clean
 Ubuntu 26.04 VPS now proves Docker bootstrap, private installation, headless
 ChatGPT device auth, authenticated readiness, a direct Codex invocation, and a
 UI-created agent run that persisted data through Work and Docs. The managed
 systemd lifecycle also survives a real full-stack restart without losing Work,
 Docs, administrator access, or runtime authentication. Domain mode is now
-proven at `https://agents.c5h.dev` with a trusted Let's Encrypt certificate,
-Caddy as the only public service, and the direct application port closed. The
+proven at `https://agents.c5h.dev` with a trusted Let's Encrypt certificate;
+Candidate.10 is deployed there with managed Proton setup available through the
+panel and CLI. Caddy remains the only public service, and the direct application
+port is closed. The
 remaining clean-VPS matrix and stable-channel promotion remain intentionally
 pending. The `stable` channel is not published yet.
 
@@ -478,8 +480,8 @@ Retain the existing image and add:
 - graceful shutdown that closes the SQLite connection and active IMAP/SMTP clients;
 - clear readiness when the service is healthy but no mailbox exists;
 - deployment documentation for Gmail OAuth redirect URLs;
-- a managed Proton Bridge lifecycle in the same `slab-email` container on amd64;
-- a pinned, checksum-verified official Proton binary and preserved GPL license;
+- a managed Proton Bridge lifecycle in the same `slab-email` container on amd64 and arm64;
+- checksum-pinned official Proton source built with a patched Go toolchain, with the GPL license and exact source archive preserved;
 - a private controller that never exposes Proton login credentials through API,
   MCP, logs, environment, argv, or persistence;
 - the same challenge-based setup flow through Settings and `slabctl`;
