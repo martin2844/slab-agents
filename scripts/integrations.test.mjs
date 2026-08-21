@@ -26,6 +26,10 @@ test("Integrations stays focused on external tools while Email is an optional Se
   assert.match(emailEditor, /Proton\s+password is used for this login only/);
   assert.match(emailEditor, /Connect an existing Bridge instead/);
   assert.match(emailEditor, /Two-factor code/);
+  assert.match(
+    emailEditor,
+    /onClick=\{\(\) => handleEditorOpenChange\(false\)\}/,
+  );
   assert.match(emailEditor, /Connect Gmail/);
   assert.match(emailEditor, /Google OAuth/);
   assert.match(emailEditor, /Google client ID/);
