@@ -867,7 +867,10 @@ export function EmailIntegrationEditor({
         </div>
 
         <DialogFooter className="m-0 rounded-none border-t px-5">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            onClick={() => handleEditorOpenChange(false)}
+          >
             Close
           </Button>
         </DialogFooter>
