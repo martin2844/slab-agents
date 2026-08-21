@@ -31,6 +31,12 @@ test("Integrations stays focused on external tools while Email is an optional Se
     /onClick=\{\(\) => handleEditorOpenChange\(false\)\}/,
   );
   assert.match(emailEditor, /Connect Gmail/);
+  assert.match(emailEditor, /Connect Microsoft/);
+  assert.match(emailEditor, /Microsoft OAuth/);
+  assert.match(emailEditor, /IMAP \/ SMTP/);
+  assert.match(emailEditor, /AgentMail/);
+  assert.match(emailEditor, /Resend/);
+  assert.match(emailEditor, /Inbound email enabled/);
   assert.match(emailEditor, /Google OAuth/);
   assert.match(emailEditor, /Google client ID/);
   assert.match(emailEditor, /Google client secret/);
@@ -108,6 +114,8 @@ test("Email credentials and one-time connector tokens stay outside browser paylo
   assert.match(vault, /email-connector-tokens/);
   assert.match(client, /SLAB_EMAIL_ADMIN_KEY/);
   assert.match(client, /saveGoogleOAuthSettings/);
+  assert.match(client, /saveMicrosoftOAuthSettings/);
+  assert.match(client, /connectMicrosoft/);
   assert.doesNotMatch(client, /return.*clientSecret/);
   assert.match(service, /storeEmailConnectorToken/);
   assert.match(service, /readEmailConnectorToken/);

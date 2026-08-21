@@ -4,6 +4,7 @@ import { readSecret } from "@/lib/server-config";
 import type {
   EmailAccount,
   GmailOAuthSettings,
+  MicrosoftOAuthSettings,
   ManagedProtonBridgeState,
   ManagedProtonChallenge,
 } from "@/lib/types";
@@ -24,6 +25,9 @@ type RemoteEmailAccount = Omit<EmailAccount, "connection"> & {
     smtpPort?: number;
     smtpTlsMode?: "ssl" | "starttls" | "none";
     managedBridge?: boolean;
+    inboxId?: string;
+    baseUrl?: string;
+    inboundEnabled?: boolean;
   };
 };
 
@@ -87,6 +91,11 @@ function safeAccount(account: RemoteEmailAccount): EmailAccount {
       smtpHost: account.config?.smtpHost ?? "",
       smtpPort: account.config?.smtpPort ?? 0,
       smtpTlsMode: account.config?.smtpTlsMode ?? "starttls",
+    },
+    providerConfig: {
+      inboxId: account.config?.inboxId ?? "",
+      baseUrl: account.config?.baseUrl ?? "",
+      inboundEnabled: account.config?.inboundEnabled ?? false,
     },
   };
 }
@@ -195,7 +204,7 @@ export class EmailAdminClient {
   }
 
   async createAccount(
-    provider: "proton-bridge" | "imap-smtp",
+    provider: "proton-bridge" | "imap-smtp" | "agentmail" | "resend",
     input: Record<string, unknown>,
   ) {
     return safeAccount(
@@ -254,10 +263,29 @@ export class EmailAdminClient {
     });
   }
 
+  connectMicrosoft(returnUrl: string) {
+    return this.request<{
+      authorizationUrl: string;
+      state: string;
+      expiresAt: string;
+    }>("/api/accounts/microsoft/connect", {
+      method: "POST",
+      body: { returnUrl },
+    });
+  }
+
   completeGmail(code: string, state: string) {
     const query = new URLSearchParams({ code, state });
     return this.request<{ accountId: string; emailAddress: string }>(
       `/api/oauth/google/callback?${query.toString()}`,
+      { admin: false },
+    );
+  }
+
+  completeMicrosoft(code: string, state: string) {
+    const query = new URLSearchParams({ code, state });
+    return this.request<{ accountId: string; emailAddress: string }>(
+      `/api/oauth/microsoft/callback?${query.toString()}`,
       { admin: false },
     );
   }
@@ -271,6 +299,21 @@ export class EmailAdminClient {
     clientSecret?: string;
   }) {
     return this.request<GmailOAuthSettings>("/api/settings/google-oauth", {
+      method: "PATCH",
+      body: input,
+    });
+  }
+
+  getMicrosoftOAuthSettings() {
+    return this.request<MicrosoftOAuthSettings>("/api/settings/microsoft-oauth");
+  }
+
+  saveMicrosoftOAuthSettings(input: {
+    clientId: string;
+    clientSecret?: string;
+    tenant: string;
+  }) {
+    return this.request<MicrosoftOAuthSettings>("/api/settings/microsoft-oauth", {
       method: "PATCH",
       body: input,
     });

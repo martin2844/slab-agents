@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const tlsMode = z.enum(["ssl", "starttls", "none"]);
-const schema = z.object({
+const imapSchema = z.object({
   provider: z.enum(["proton-bridge", "imap-smtp"]),
   emailAddress: z.string().trim().email(),
   displayName: z.string().trim().min(1).max(200),
@@ -22,6 +22,26 @@ const schema = z.object({
   username: z.string().trim().min(1).max(500),
   password: z.string().min(1).max(16_384),
 });
+
+const apiProviderSchema = z.discriminatedUnion("provider", [
+  z.object({
+    provider: z.literal("agentmail"),
+    emailAddress: z.string().trim().email(),
+    displayName: z.string().trim().min(1).max(200),
+    inboxId: z.string().trim().min(1).max(320),
+    apiKey: z.string().trim().min(1).max(4096),
+    baseUrl: z.string().trim().url().optional(),
+  }),
+  z.object({
+    provider: z.literal("resend"),
+    emailAddress: z.string().trim().email(),
+    displayName: z.string().trim().min(1).max(200),
+    apiKey: z.string().trim().min(1).max(4096),
+    inboundEnabled: z.boolean().optional(),
+    baseUrl: z.string().trim().url().optional(),
+  }),
+]);
+const schema = z.union([imapSchema, apiProviderSchema]);
 
 export async function GET() {
   return Response.json({ data: (await getEmailIntegrationState()).accounts });

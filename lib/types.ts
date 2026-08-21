@@ -404,7 +404,13 @@ export type IntegrationsPageData = {
 export type EmailSendPolicy = "disabled" | "approval_required" | "autonomous";
 export type EmailAccount = {
   id: string;
-  provider: "proton_bridge" | "imap_smtp" | "gmail";
+  provider:
+    | "proton_bridge"
+    | "imap_smtp"
+    | "gmail"
+    | "microsoft_graph"
+    | "agentmail"
+    | "resend";
   emailAddress: string;
   displayName: string;
   enabled: boolean;
@@ -428,6 +434,11 @@ export type EmailAccount = {
     smtpHost: string;
     smtpPort: number;
     smtpTlsMode: "ssl" | "starttls" | "none";
+  };
+  providerConfig: {
+    inboxId: string;
+    baseUrl: string;
+    inboundEnabled: boolean;
   };
 };
 export type ManagedProtonBridgeState = {
@@ -466,6 +477,9 @@ export type GmailOAuthSettings = {
   source: "stored" | "environment" | "missing";
   updatedAt: string | null;
 };
+export type MicrosoftOAuthSettings = GmailOAuthSettings & {
+  tenant: string;
+};
 export type EmailIntegrationState = {
   configured: boolean;
   adminConfigured: boolean;
@@ -474,6 +488,7 @@ export type EmailIntegrationState = {
   lastTestedAt: string | null;
   lastError: string | null;
   gmailOAuth: GmailOAuthSettings;
+  microsoftOAuth: MicrosoftOAuthSettings;
   protonBridge: ManagedProtonBridgeState;
   accounts: EmailAccount[];
   assignments: AgentEmailAccess[];

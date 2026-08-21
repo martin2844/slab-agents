@@ -78,6 +78,34 @@ type ManagedProtonForm = {
   challengeValue: string;
 };
 
+type ApiMailboxForm = {
+  emailAddress: string;
+  displayName: string;
+  inboxId: string;
+  apiKey: string;
+  baseUrl: string;
+  inboundEnabled: boolean;
+};
+
+const emptyApiMailbox: ApiMailboxForm = {
+  emailAddress: "",
+  displayName: "",
+  inboxId: "",
+  apiKey: "",
+  baseUrl: "",
+  inboundEnabled: false,
+};
+
+const emptyImap: ProtonForm = {
+  ...emptyProton,
+  imapHost: "",
+  imapPort: "993",
+  imapTlsMode: "ssl",
+  smtpHost: "",
+  smtpPort: "465",
+  smtpTlsMode: "ssl",
+};
+
 const emptyManagedProton: ManagedProtonForm = {
   emailAddress: "",
   displayName: "",
@@ -99,6 +127,7 @@ export function EmailIntegrationEditor({
   initialState,
   agents,
   gmailCallbackUrl,
+  microsoftCallbackUrl,
   onOpenChange,
   onUpdated,
 }: {
@@ -106,6 +135,7 @@ export function EmailIntegrationEditor({
   initialState: EmailIntegrationState;
   agents: Agent[];
   gmailCallbackUrl: string;
+  microsoftCallbackUrl: string;
   onOpenChange: (open: boolean) => void;
   onUpdated: (state: EmailIntegrationState) => void;
 }) {
@@ -115,17 +145,34 @@ export function EmailIntegrationEditor({
     initialState.gmailOAuth.clientId,
   );
   const [gmailClientSecret, setGmailClientSecret] = useState("");
+  const [microsoftClientId, setMicrosoftClientId] = useState(
+    initialState.microsoftOAuth.clientId,
+  );
+  const [microsoftClientSecret, setMicrosoftClientSecret] = useState("");
+  const [microsoftTenant, setMicrosoftTenant] = useState(
+    initialState.microsoftOAuth.tenant,
+  );
   const [proton, setProton] = useState(emptyProton);
   const [managedProton, setManagedProton] = useState(emptyManagedProton);
   const [showProton, setShowProton] = useState(false);
   const [protonMode, setProtonMode] = useState<"managed" | "manual">("managed");
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [providerSetup, setProviderSetup] = useState<
+    "imap-smtp" | "agentmail" | "resend" | null
+  >(null);
+  const [apiMailbox, setApiMailbox] = useState(emptyApiMailbox);
+  const [imap, setImap] = useState(emptyImap);
+  const [editingProviderAccountId, setEditingProviderAccountId] = useState<
+    string | null
+  >(null);
 
   function update(next: EmailIntegrationState) {
     setState(next);
     setServiceUrl(next.serviceUrl);
     setGmailClientId(next.gmailOAuth.clientId);
+    setMicrosoftClientId(next.microsoftOAuth.clientId);
+    setMicrosoftTenant(next.microsoftOAuth.tenant);
     onUpdated(next);
   }
 
@@ -152,6 +199,36 @@ export function EmailIntegrationEditor({
       );
     } finally {
       setGmailClientSecret("");
+      setBusy(null);
+    }
+  }
+
+  async function saveMicrosoftOAuth() {
+    setBusy("microsoft-oauth");
+    try {
+      const next = await api<EmailIntegrationState>(
+        "/api/integrations/email/microsoft/settings",
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            clientId: microsoftClientId,
+            tenant: microsoftTenant || "common",
+            ...(microsoftClientSecret
+              ? { clientSecret: microsoftClientSecret }
+              : {}),
+          }),
+        },
+      );
+      update(next);
+      toast.success("Microsoft OAuth credentials saved");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Microsoft OAuth credentials could not be saved",
+      );
+    } finally {
+      setMicrosoftClientSecret("");
       setBusy(null);
     }
   }
@@ -380,6 +457,124 @@ export function EmailIntegrationEditor({
     }
   }
 
+  async function connectMicrosoft() {
+    setBusy("microsoft");
+    try {
+      const result = await api<{ authorizationUrl: string }>(
+        "/api/integrations/email/microsoft/connect",
+        { method: "POST" },
+      );
+      window.location.assign(result.authorizationUrl);
+    } catch (error) {
+      setBusy(null);
+      toast.error(
+        error instanceof Error ? error.message : "Microsoft connection failed",
+      );
+    }
+  }
+
+  async function createAdditionalProvider() {
+    if (!providerSetup) return;
+    setBusy(`create:${providerSetup}`);
+    try {
+      const payload =
+        providerSetup === "imap-smtp"
+          ? { provider: providerSetup, ...imap }
+          : {
+              provider: providerSetup,
+              emailAddress: apiMailbox.emailAddress,
+              displayName: apiMailbox.displayName,
+              apiKey: apiMailbox.apiKey,
+              ...(apiMailbox.baseUrl ? { baseUrl: apiMailbox.baseUrl } : {}),
+              ...(providerSetup === "agentmail"
+                ? { inboxId: apiMailbox.inboxId }
+                : { inboundEnabled: apiMailbox.inboundEnabled }),
+            };
+      const result = await api<{ state: EmailIntegrationState }>(
+        editingProviderAccountId
+          ? `/api/integrations/email/accounts/${editingProviderAccountId}`
+          : "/api/integrations/email/accounts",
+        {
+          method: editingProviderAccountId ? "PATCH" : "POST",
+          body: JSON.stringify(
+            editingProviderAccountId
+              ? providerSetup === "imap-smtp"
+                ? {
+                    displayName: imap.displayName,
+                    imapHost: imap.imapHost,
+                    imapPort: imap.imapPort,
+                    imapTlsMode: imap.imapTlsMode,
+                    smtpHost: imap.smtpHost,
+                    smtpPort: imap.smtpPort,
+                    smtpTlsMode: imap.smtpTlsMode,
+                    ...(imap.username && imap.password
+                      ? { username: imap.username, password: imap.password }
+                      : {}),
+                  }
+                : {
+                    displayName: apiMailbox.displayName,
+                    ...(apiMailbox.apiKey ? { apiKey: apiMailbox.apiKey } : {}),
+                    ...(apiMailbox.baseUrl ? { baseUrl: apiMailbox.baseUrl } : {}),
+                    ...(providerSetup === "agentmail"
+                      ? { inboxId: apiMailbox.inboxId }
+                      : { inboundEnabled: apiMailbox.inboundEnabled }),
+                  }
+              : payload,
+          ),
+        },
+      );
+      update(result.state);
+      setApiMailbox(emptyApiMailbox);
+      setImap(emptyImap);
+      setProviderSetup(null);
+      setEditingProviderAccountId(null);
+      toast.success(
+        editingProviderAccountId
+          ? "Email provider updated"
+          : "Email provider connected",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Provider could not be connected",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function startEditAdditionalProvider(
+    account: EmailIntegrationState["accounts"][number],
+  ) {
+    setShowProton(false);
+    setEditingProviderAccountId(account.id);
+    if (account.provider === "imap_smtp") {
+      setProviderSetup("imap-smtp");
+      setImap({
+        emailAddress: account.emailAddress,
+        displayName: account.displayName,
+        imapHost: account.connection.imapHost,
+        imapPort: String(account.connection.imapPort),
+        imapTlsMode: account.connection.imapTlsMode,
+        smtpHost: account.connection.smtpHost,
+        smtpPort: String(account.connection.smtpPort),
+        smtpTlsMode: account.connection.smtpTlsMode,
+        username: "",
+        password: "",
+      });
+      return;
+    }
+    if (account.provider !== "agentmail" && account.provider !== "resend") return;
+    setProviderSetup(account.provider);
+    setApiMailbox({
+      emailAddress: account.emailAddress,
+      displayName: account.displayName,
+      inboxId: account.providerConfig.inboxId,
+      apiKey: "",
+      baseUrl: account.providerConfig.baseUrl,
+      inboundEnabled: account.providerConfig.inboundEnabled,
+    });
+  }
+
   async function accountAction(
     accountId: string,
     action: "test" | "toggle" | "delete",
@@ -486,6 +681,75 @@ export function EmailIntegrationEditor({
           <section className="border-b py-5">
             <div className="flex flex-wrap items-center gap-2">
               <MailCheck className="size-4" />
+              <h3 className="font-semibold">Microsoft OAuth</h3>
+              <Badge
+                variant={state.microsoftOAuth.configured ? "default" : "outline"}
+              >
+                {state.microsoftOAuth.configured ? "Configured" : "Optional"}
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Connect Microsoft 365 or Outlook accounts through Microsoft Graph.
+              Register a Web app and add the exact redirect URI below.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Field
+                label="Microsoft client ID"
+                value={microsoftClientId}
+                onChange={setMicrosoftClientId}
+                autoComplete="off"
+              />
+              <Field
+                label="Tenant"
+                value={microsoftTenant}
+                onChange={setMicrosoftTenant}
+                autoComplete="off"
+              />
+              <Field
+                label={
+                  state.microsoftOAuth.source === "stored"
+                    ? "Replace client secret (optional)"
+                    : "Microsoft client secret"
+                }
+                type="password"
+                value={microsoftClientSecret}
+                onChange={setMicrosoftClientSecret}
+                autoComplete="new-password"
+              />
+            </div>
+            <label className="mt-3 grid gap-1.5 text-xs font-semibold">
+              Authorized redirect URI
+              <Input
+                value={microsoftCallbackUrl}
+                readOnly
+                aria-label="Microsoft OAuth redirect URI"
+              />
+            </label>
+            <div className="mt-3 flex justify-end">
+              <Button
+                variant="outline"
+                onClick={saveMicrosoftOAuth}
+                disabled={
+                  busy === "microsoft-oauth" ||
+                  !microsoftClientId.trim() ||
+                  !microsoftTenant.trim() ||
+                  (state.microsoftOAuth.source !== "stored" &&
+                    !microsoftClientSecret.trim())
+                }
+              >
+                {busy === "microsoft-oauth" ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <ShieldCheck />
+                )}
+                Save Microsoft credentials
+              </Button>
+            </div>
+          </section>
+
+          <section className="border-b py-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <MailCheck className="size-4" />
               <h3 className="font-semibold">Google OAuth</h3>
               <Badge
                 variant={state.gmailOAuth.configured ? "default" : "outline"}
@@ -567,7 +831,7 @@ export function EmailIntegrationEditor({
                     : "unavailable on this installation"}
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button variant="outline" onClick={startCreateProton}>
                   <KeyRound /> Proton Bridge
                 </Button>
@@ -582,8 +846,127 @@ export function EmailIntegrationEditor({
                 >
                   <MailCheck /> Connect Gmail
                 </Button>
+                <Button
+                  variant="outline"
+                  onClick={connectMicrosoft}
+                  disabled={
+                    !state.configured ||
+                    !state.microsoftOAuth.configured ||
+                    busy === "microsoft"
+                  }
+                >
+                  <MailCheck /> Connect Microsoft
+                </Button>
+                <Select
+                  value={providerSetup ?? ""}
+                  onValueChange={(value) => {
+                    setProviderSetup(value as typeof providerSetup);
+                    setEditingProviderAccountId(null);
+                    setApiMailbox(emptyApiMailbox);
+                    setImap(emptyImap);
+                    setShowProton(false);
+                  }}
+                >
+                  <SelectTrigger className="w-[11rem]">
+                    <SelectValue placeholder="More providers" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="imap-smtp">IMAP / SMTP</SelectItem>
+                    <SelectItem value="agentmail">AgentMail</SelectItem>
+                    <SelectItem value="resend">Resend</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
+
+            {providerSetup && (
+              <div className="mt-4 rounded-lg border bg-muted/25 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="font-semibold">
+                      {providerSetup === "imap-smtp"
+                        ? `${editingProviderAccountId ? "Edit" : "Connect"} IMAP / SMTP`
+                        : providerSetup === "agentmail"
+                          ? `${editingProviderAccountId ? "Edit" : "Connect"} AgentMail`
+                          : `${editingProviderAccountId ? "Edit" : "Connect"} Resend`}
+                    </h4>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {providerSetup === "imap-smtp"
+                        ? "Universal mailbox access for providers that expose standard IMAP and SMTP."
+                        : providerSetup === "agentmail"
+                          ? "A dedicated agent inbox with search, threads, drafts, send, and reply."
+                          : "Transactional send plus optional inbound email reading. Resend does not expose drafts or threads."}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setProviderSetup(null);
+                      setEditingProviderAccountId(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+                {providerSetup === "imap-smtp" ? (
+                  <>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <Field label="Email address" value={imap.emailAddress} onChange={(emailAddress) => setImap((value) => ({ ...value, emailAddress }))} />
+                      <Field label="Display name" value={imap.displayName} onChange={(displayName) => setImap((value) => ({ ...value, displayName }))} />
+                      <Field label="Username" value={imap.username} onChange={(username) => setImap((value) => ({ ...value, username }))} autoComplete="off" />
+                      <Field label="App password" type="password" value={imap.password} onChange={(password) => setImap((value) => ({ ...value, password }))} autoComplete="new-password" />
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_7rem_9rem]">
+                      <Field label="IMAP host" value={imap.imapHost} onChange={(imapHost) => setImap((value) => ({ ...value, imapHost }))} />
+                      <Field label="Port" value={imap.imapPort} onChange={(imapPort) => setImap((value) => ({ ...value, imapPort }))} />
+                      <TlsSelect label="IMAP TLS" value={imap.imapTlsMode} onChange={(imapTlsMode) => setImap((value) => ({ ...value, imapTlsMode }))} />
+                      <Field label="SMTP host" value={imap.smtpHost} onChange={(smtpHost) => setImap((value) => ({ ...value, smtpHost }))} />
+                      <Field label="Port" value={imap.smtpPort} onChange={(smtpPort) => setImap((value) => ({ ...value, smtpPort }))} />
+                      <TlsSelect label="SMTP TLS" value={imap.smtpTlsMode} onChange={(smtpTlsMode) => setImap((value) => ({ ...value, smtpTlsMode }))} />
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <Field label="Email address" value={apiMailbox.emailAddress} onChange={(emailAddress) => setApiMailbox((value) => ({ ...value, emailAddress }))} />
+                    <Field label="Display name" value={apiMailbox.displayName} onChange={(displayName) => setApiMailbox((value) => ({ ...value, displayName }))} />
+                    {providerSetup === "agentmail" && (
+                      <Field label="Inbox ID" value={apiMailbox.inboxId} onChange={(inboxId) => setApiMailbox((value) => ({ ...value, inboxId }))} />
+                    )}
+                    <Field label="API key" type="password" value={apiMailbox.apiKey} onChange={(apiKey) => setApiMailbox((value) => ({ ...value, apiKey }))} autoComplete="new-password" />
+                    <Field
+                      label="API base URL (optional)"
+                      value={apiMailbox.baseUrl}
+                      onChange={(baseUrl) => setApiMailbox((value) => ({ ...value, baseUrl }))}
+                    />
+                    {providerSetup === "resend" && (
+                      <label className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold">
+                        Inbound email enabled
+                        <Switch
+                          checked={apiMailbox.inboundEnabled}
+                          onCheckedChange={(inboundEnabled) => setApiMailbox((value) => ({ ...value, inboundEnabled }))}
+                        />
+                      </label>
+                    )}
+                  </div>
+                )}
+                <div className="mt-4 flex justify-end">
+                  <Button
+                    onClick={createAdditionalProvider}
+                    disabled={
+                      busy === `create:${providerSetup}` ||
+                      (providerSetup === "imap-smtp"
+                        ? !imap.emailAddress || !imap.imapHost || !imap.smtpHost || (!editingProviderAccountId && !imap.password)
+                        : !apiMailbox.emailAddress || (!editingProviderAccountId && !apiMailbox.apiKey) ||
+                          (providerSetup === "agentmail" && !apiMailbox.inboxId))
+                    }
+                  >
+                    {busy === `create:${providerSetup}` ? <LoaderCircle className="animate-spin" /> : <Check />}
+                    {editingProviderAccountId ? "Save changes" : "Connect provider"}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {showProton && (
               <div className="mt-4 rounded-xl border bg-muted/25 p-4">
@@ -758,17 +1141,24 @@ export function EmailIntegrationEditor({
                       status={account.lastConnectionStatus}
                     />
                     <div className="flex gap-1">
-                      {!account.managed && (
+                      {!account.managed &&
+                        !["gmail", "microsoft_graph"].includes(
+                          account.provider,
+                        ) && (
                         <Button
                           size="icon-sm"
                           variant="ghost"
                           aria-label="Edit account"
-                          onClick={() => startEditAccount(account)}
+                          onClick={() =>
+                            account.provider === "proton_bridge"
+                              ? startEditAccount(account)
+                              : startEditAdditionalProvider(account)
+                          }
                           disabled={busy !== null}
                         >
                           <Pencil />
                         </Button>
-                      )}
+                        )}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -979,6 +1369,13 @@ function AgentAccessRow({
         : "Not configured",
     [accountIds],
   );
+  const selectedAccounts = useMemo(
+    () => accounts.filter(({ id }) => accountIds.includes(id)),
+    [accountIds, accounts],
+  );
+  const supportsRead = selectedAccounts.some(({ capabilities }) => capabilities.read);
+  const supportsDraft = selectedAccounts.some(({ capabilities }) => capabilities.draft);
+  const supportsSend = selectedAccounts.some(({ capabilities }) => capabilities.send);
 
   async function save() {
     setSaving(true);
@@ -989,10 +1386,11 @@ function AgentAccessRow({
           method: "PUT",
           body: JSON.stringify({
             accountIds,
-            readEnabled,
-            draftEnabled,
-            sendEnabled,
-            sendPolicy,
+            readEnabled: supportsRead && readEnabled,
+            draftEnabled: supportsDraft && draftEnabled,
+            sendEnabled: supportsSend && sendEnabled,
+            sendPolicy:
+              supportsSend && sendEnabled ? sendPolicy : "disabled",
           }),
         },
       );
@@ -1075,29 +1473,32 @@ function AgentAccessRow({
           Read{" "}
           <Switch
             size="sm"
-            checked={readEnabled}
+            checked={supportsRead && readEnabled}
             onCheckedChange={setReadEnabled}
+            disabled={!supportsRead}
           />
         </label>
         <label className="flex items-center justify-between rounded-lg bg-muted/50 p-3 text-sm font-semibold">
           Draft{" "}
           <Switch
             size="sm"
-            checked={draftEnabled}
+            checked={supportsDraft && draftEnabled}
             onCheckedChange={setDraftEnabled}
+            disabled={!supportsDraft}
           />
         </label>
         <label className="flex items-center justify-between rounded-lg bg-muted/50 p-3 text-sm font-semibold">
           Send{" "}
           <Switch
             size="sm"
-            checked={sendEnabled}
+            checked={supportsSend && sendEnabled}
             onCheckedChange={(checked) => {
               setSendEnabled(checked);
               if (!checked) setSendPolicy("disabled");
               else if (sendPolicy === "disabled")
                 setSendPolicy("approval_required");
             }}
+            disabled={!supportsSend}
           />
         </label>
         <label className="grid gap-1.5 rounded-lg bg-muted/50 p-3 text-xs font-semibold">
@@ -1105,12 +1506,13 @@ function AgentAccessRow({
             <Send className="size-3.5" /> Send policy
           </span>
           <Select
-            value={sendPolicy}
+            value={supportsSend ? sendPolicy : "disabled"}
             onValueChange={(value) => {
               const policy = value as EmailSendPolicy;
               setSendPolicy(policy);
               setSendEnabled(policy !== "disabled");
             }}
+            disabled={!supportsSend}
           >
             <SelectTrigger className="w-full bg-background">
               <SelectValue />

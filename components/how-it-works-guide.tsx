@@ -821,7 +821,7 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
                 <DiagramNode
                   label="Credential owner"
                   title="slab-email"
-                  detail="Encrypts OAuth client secrets, Gmail refresh tokens, Bridge mailbox credentials, and scoped connector tokens."
+                  detail="Encrypts OAuth client secrets, refresh tokens, mailbox passwords, provider API keys, and scoped connector tokens."
                   icon={LockKeyhole}
                   tone="accent"
                   className="lg:flex-1"
@@ -836,6 +836,21 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
                   className="lg:flex-1"
                 />
               </div>
+            </div>
+            <div className="mt-5 grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2 xl:grid-cols-3">
+              {[
+                ["Gmail", "Full mailbox through the Gmail API and Google OAuth."],
+                ["Microsoft 365", "Full mailbox through Microsoft Graph and OAuth."],
+                ["Proton Mail", "Full mailbox through managed or external Proton Bridge."],
+                ["IMAP / SMTP", "Universal mailbox access using provider app credentials."],
+                ["AgentMail", "Agent-native inboxes with search, threads, drafts, send, and reply."],
+                ["Resend", "Transactional send with optional inbound reading; no fake drafts or threads."],
+              ].map(([title, detail]) => (
+                <div key={title} className="bg-card p-4">
+                  <p className="text-sm font-semibold">{title}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
+                </div>
+              ))}
             </div>
 
             <div className="mt-5 grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-3">
@@ -862,6 +877,13 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
               After the provider test succeeds, assign one or more accounts to
               an agent and choose read, draft, and send permissions. A connected
               mailbox with no agent access profile produces no Email tools.
+            </Callout>
+            <Callout title="Choose the provider that matches the job">
+              Use Gmail, Microsoft, Proton, or IMAP/SMTP for a human mailbox.
+              Use AgentMail when an agent should own a dedicated inbox. Use
+              Resend for application delivery and inbound events. Nylas can be
+              connected later through Custom MCP/API when a unified third-party
+              mailbox aggregator is preferable to a native provider.
             </Callout>
           </GuideSection>
 

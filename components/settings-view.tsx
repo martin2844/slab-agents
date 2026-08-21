@@ -431,6 +431,10 @@ export function SettingsView({
         initialState={email}
         agents={agents}
         gmailCallbackUrl={gmailCallbackUrl}
+        microsoftCallbackUrl={gmailCallbackUrl.replace(
+          "/google/callback",
+          "/microsoft/callback",
+        )}
         onOpenChange={setEmailOpen}
         onUpdated={setEmail}
       />

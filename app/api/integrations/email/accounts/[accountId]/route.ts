@@ -22,6 +22,10 @@ const schema = z
     smtpMessageIdDomain: z.string().trim().min(1).max(500).optional(),
     username: z.string().trim().min(1).max(500).optional(),
     password: z.string().min(1).max(16_384).optional(),
+    apiKey: z.string().trim().min(1).max(4096).optional(),
+    inboxId: z.string().trim().min(1).max(320).optional(),
+    baseUrl: z.string().trim().url().optional(),
+    inboundEnabled: z.boolean().optional(),
   })
   .refine(
     (value) => Object.values(value).some((entry) => entry !== undefined),

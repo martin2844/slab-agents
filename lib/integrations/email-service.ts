@@ -17,6 +17,7 @@ import type {
   EmailIntegrationState,
   EmailSendPolicy,
   GmailOAuthSettings,
+  MicrosoftOAuthSettings,
   ManagedProtonBridgeState,
 } from "@/lib/types";
 
@@ -61,6 +62,14 @@ export async function getEmailIntegrationState(): Promise<EmailIntegrationState>
     message: "Managed Proton Bridge status is unavailable.",
     accounts: [],
   };
+  let microsoftOAuth: MicrosoftOAuthSettings = {
+    configured: false,
+    clientId: "",
+    hasClientSecret: false,
+    source: "missing",
+    updatedAt: null,
+    tenant: "common",
+  };
   let lastError = config?.lastError ?? null;
   if ((config || process.env.SLAB_EMAIL_URL?.trim()) && adminConfigured) {
     try {
@@ -69,6 +78,11 @@ export async function getEmailIntegrationState(): Promise<EmailIntegrationState>
         emailClient.listAccounts(),
         emailClient.getGoogleOAuthSettings(),
       ]);
+      try {
+        microsoftOAuth = await emailClient.getMicrosoftOAuthSettings();
+      } catch {
+        // Preserve compatibility while slab-email rolls forward.
+      }
       try {
         protonBridge = await emailClient.getManagedProtonBridgeStatus();
       } catch {
@@ -90,6 +104,7 @@ export async function getEmailIntegrationState(): Promise<EmailIntegrationState>
     lastTestedAt: config?.lastTestedAt ?? null,
     lastError,
     gmailOAuth,
+    microsoftOAuth,
     protonBridge,
     accounts,
     assignments: repository.listAgentEmailAccess(),
@@ -126,7 +141,7 @@ export async function testEmailIntegration() {
 }
 
 export async function createEmailAccount(
-  provider: "proton-bridge" | "imap-smtp",
+  provider: "proton-bridge" | "imap-smtp" | "agentmail" | "resend",
   input: Record<string, unknown>,
 ) {
   const account = await client().createAccount(provider, input);
@@ -196,8 +211,16 @@ export function connectGmail(returnUrl: string) {
   return client().connectGmail(returnUrl);
 }
 
+export function connectMicrosoft(returnUrl: string) {
+  return client().connectMicrosoft(returnUrl);
+}
+
 export function completeGmailConnection(code: string, state: string) {
   return client().completeGmail(code, state);
+}
+
+export function completeMicrosoftConnection(code: string, state: string) {
+  return client().completeMicrosoft(code, state);
 }
 
 export async function saveGoogleOAuthSettings(input: {
@@ -205,6 +228,15 @@ export async function saveGoogleOAuthSettings(input: {
   clientSecret?: string;
 }) {
   await client().saveGoogleOAuthSettings(input);
+  return getEmailIntegrationState();
+}
+
+export async function saveMicrosoftOAuthSettings(input: {
+  clientId: string;
+  clientSecret?: string;
+  tenant: string;
+}) {
+  await client().saveMicrosoftOAuthSettings(input);
   return getEmailIntegrationState();
 }
 
@@ -249,6 +281,21 @@ export async function saveAgentEmailAccess(input: {
   const remoteIds = new Set(remoteAccounts.map(({ id }) => id));
   if (input.accountIds.some((id) => !remoteIds.has(id))) {
     throw new Error("One or more selected Email accounts no longer exist.");
+  }
+  const selectedAccounts = remoteAccounts.filter(({ id }) =>
+    input.accountIds.includes(id),
+  );
+  if (
+    (input.readEnabled &&
+      !selectedAccounts.some(({ capabilities }) => capabilities.read)) ||
+    (input.draftEnabled &&
+      !selectedAccounts.some(({ capabilities }) => capabilities.draft)) ||
+    (input.sendEnabled &&
+      !selectedAccounts.some(({ capabilities }) => capabilities.send))
+  ) {
+    throw new Error(
+      "One or more enabled Email permissions are unsupported by the selected accounts.",
+    );
   }
 
   const agent = repository.getAgent(input.agentId)!;

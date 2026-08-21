@@ -42,14 +42,18 @@ test("public URL rejects non-HTTP schemes and non-origin paths", () => {
   );
 });
 
-test("both Gmail OAuth handlers use the public origin resolver", async () => {
-  const [connectRoute, callbackRoute] = await Promise.all([
+test("Gmail and Microsoft OAuth handlers use the public origin resolver", async () => {
+  const [connectRoute, callbackRoute, microsoftConnect, microsoftCallback] = await Promise.all([
     read("app/api/integrations/email/gmail/connect/route.ts"),
     read("app/api/integrations/email/google/callback/route.ts"),
+    read("app/api/integrations/email/microsoft/connect/route.ts"),
+    read("app/api/integrations/email/microsoft/callback/route.ts"),
   ]);
 
   assert.match(connectRoute, /publicRequestOrigin\(request\)/);
   assert.match(callbackRoute, /emailSettingsRedirect\(request/);
+  assert.match(microsoftConnect, /publicRequestOrigin\(request\)/);
+  assert.match(microsoftCallback, /emailSettingsRedirect\(request/);
 });
 
 test("Gmail OAuth returns to Email settings and preserves the result", () => {
