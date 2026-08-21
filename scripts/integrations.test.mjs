@@ -52,16 +52,29 @@ test("Integrations stays focused on external tools while Email is an optional Se
   assert.match(catalog, /Custom integration/);
   assert.match(source, /custom HTTP integration/);
   assert.match(source, /custom MCP integration/);
+  assert.match(source, /Draft tools from documentation/);
+  assert.match(source, /h-full gap-0/);
+  assert.match(source, /mt-auto border-t/);
+  const importRoute = await read("app/api/integrations/import/route.ts");
+  const integrationService = await read("lib/integrations/service.ts");
+  assert.match(importRoute, /status: 400/);
+  assert.match(importRoute, /buildCustomHttpIntegrationDraft/);
+  assert.match(integrationService, /canReuseHttpCredential/);
+  assert.match(
+    integrationService,
+    /Replace the authentication secret after changing/,
+  );
 });
 
 test("managed Proton Bridge stays behind the Next.js server boundary", async () => {
-  const [client, service, connectRoute, challengeRoute, abortRoute] = await Promise.all([
-    read("lib/integrations/email-client.ts"),
-    read("lib/integrations/email-service.ts"),
-    read("app/api/integrations/email/proton/route.ts"),
-    read("app/api/integrations/email/proton/challenge/route.ts"),
-    read("app/api/integrations/email/proton/abort/route.ts"),
-  ]);
+  const [client, service, connectRoute, challengeRoute, abortRoute] =
+    await Promise.all([
+      read("lib/integrations/email-client.ts"),
+      read("lib/integrations/email-service.ts"),
+      read("app/api/integrations/email/proton/route.ts"),
+      read("app/api/integrations/email/proton/challenge/route.ts"),
+      read("app/api/integrations/email/proton/abort/route.ts"),
+    ]);
   assert.match(client, /import "server-only"/);
   assert.match(client, /\/api\/proton-bridge\/connect/);
   assert.match(client, /\/api\/proton-bridge\/challenge/);

@@ -17,6 +17,59 @@ Each operation defines:
 - an optional JSON `responsePath` such as `data.customer`;
 - response byte, array item, and timeout limits.
 
+### Importing documentation or a manifest
+
+The HTTP editor can create an unsaved draft from Markdown API documentation or
+a versioned Slab manifest. Draft generation does not call the upstream API or
+persist the pasted source. Do not paste credentials into the importer; enter the
+connector secret separately after reviewing the inferred base URL,
+authentication mode, parameters, response shaping, and agent access.
+
+Markdown discovery recognizes read-only endpoint headings in this form:
+
+```md
+### GET /api/admin/metrics/users
+
+Returns registration and activity statistics.
+```
+
+A section named `Common query parameters` may use a Markdown table; those
+parameters are added to each discovered operation. Absolute URLs in examples
+are used only to suggest the connector origin. A documented success envelope
+containing `success` and `data` suggests `responsePath: data`.
+
+For repeatable automation, prefer the strict JSON manifest:
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "custom_http",
+  "name": "Clasificar Metrics",
+  "baseUrl": "https://clasific.ar",
+  "authentication": { "type": "bearer" },
+  "defaults": {
+    "timeoutMs": 15000,
+    "responsePath": "data",
+    "maxResponseBytes": 32768,
+    "maxItems": 50
+  },
+  "operations": [
+    {
+      "key": "get_metrics",
+      "name": "Get metrics",
+      "description": "Return the curated metrics snapshot",
+      "method": "GET",
+      "path": "/api/admin/metrics",
+      "parameters": []
+    }
+  ]
+}
+```
+
+The manifest deliberately has no credential field. Authentication secrets are
+entered separately in the editor and remain in encrypted server-side storage.
+Only `GET` and `HEAD` operations are accepted.
+
 For example, the following UI configuration creates the tool
 `clasificar_internal__get_customer_usage`:
 
@@ -85,7 +138,8 @@ definition. The next run receives the new version.
 ## Current limitations
 
 - Custom HTTP write operations are not supported.
-- OpenAPI and curl import are not supported.
+- OpenAPI and curl import are not supported. Markdown and the Slab JSON
+  manifest described above are supported.
 - HTTP response shaping supports a dotted property path and top-level array
   limits, not arbitrary transformation code.
 - Remote MCP tool annotations are informative metadata; provider-side security

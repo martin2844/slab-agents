@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import {
   Check,
   CircleAlert,
+  FileJson2,
   KeyRound,
   LoaderCircle,
   LockKeyhole,
@@ -17,6 +18,7 @@ import {
   X,
   Plus,
   Trash2,
+  WandSparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -56,9 +58,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/client-api";
 import type {
   Agent,
+  CustomHttpIntegrationDraft,
   Integration,
   IntegrationCatalogItem,
   IntegrationsPageData,
@@ -348,7 +352,7 @@ function AvailableCard({
   return (
     <Card
       className={cn(
-        "self-start gap-0 py-0",
+        "h-full gap-0 py-0",
         !item.available && "border-dashed bg-muted/20",
       )}
     >
@@ -370,8 +374,8 @@ function AvailableCard({
           </p>
         </div>
       </CardHeader>
-      {item.tools.length > 0 && (
-        <CardContent className="px-4 pb-3">
+      <CardContent className="flex min-h-9 flex-1 items-start px-4 pb-3">
+        {item.tools.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {item.tools.map((tool) => (
               <Badge key={tool.key} variant="outline">
@@ -379,9 +383,15 @@ function AvailableCard({
               </Badge>
             ))}
           </div>
-        </CardContent>
-      )}
-      <CardFooter className="border-t p-2.5">
+        ) : (
+          <p className="text-xs leading-5 text-muted-foreground">
+            {item.provider === "custom_mcp"
+              ? "Tools are discovered from the server."
+              : "Define tools manually or import API documentation."}
+          </p>
+        )}
+      </CardContent>
+      <CardFooter className="mt-auto border-t p-2.5">
         <Button
           className="w-full"
           variant={active || !item.available ? "outline" : "default"}
@@ -705,6 +715,9 @@ function CustomHttpEditor({
     String(integration?.timeoutMs ?? 15000),
   );
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importSource, setImportSource] = useState("");
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [enabled, setEnabled] = useState(integration?.enabled ?? true);
   const [permissions, setPermissions] = useState<Record<string, string[]>>(
     integration?.permissions ?? {},
@@ -880,6 +893,52 @@ function CustomHttpEditor({
     ]);
   }
 
+  async function importDraft() {
+    setImporting(true);
+    try {
+      const draft = await api<CustomHttpIntegrationDraft>(
+        "/api/integrations/import",
+        {
+          method: "POST",
+          body: JSON.stringify({ source: importSource }),
+        },
+      );
+      setName(draft.name);
+      setBaseUrl(draft.baseUrl);
+      setAuthType(draft.authType);
+      setAuthHeaderName(draft.authHeaderName ?? "X-API-Key");
+      setTimeoutMs(String(draft.timeoutMs));
+      setOperations(
+        draft.operations.map((operation) => ({
+          key: operation.key,
+          name: operation.name,
+          description: operation.description,
+          method: operation.method,
+          path: operation.path,
+          responsePath: operation.responsePath ?? "",
+          maxResponseBytes: String(operation.maxResponseBytes),
+          maxItems:
+            operation.maxItems == null ? "" : String(operation.maxItems),
+          parameters: operation.parameters.map((parameter) => ({
+            ...parameter,
+            description: parameter.description ?? "",
+          })),
+        })),
+      );
+      setPermissions({});
+      setImportWarnings(draft.warnings);
+      toast.success(
+        `${draft.operations.length} read-only tools drafted from ${draft.sourceFormat === "markdown" ? "documentation" : "manifest"}`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not analyze the input",
+      );
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function save() {
     setSaving(true);
     try {
@@ -1041,6 +1100,68 @@ function CustomHttpEditor({
           </section>
 
           <section className="border-b py-5">
+            <details className="mb-5 overflow-hidden rounded-lg border bg-muted/20">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 [&::-webkit-details-marker]:hidden">
+                <span className="flex min-w-0 items-center gap-3">
+                  <span className="grid size-8 shrink-0 place-items-center rounded-md border bg-background text-primary">
+                    <WandSparkles className="size-4" />
+                  </span>
+                  <span>
+                    <span className="block text-sm font-semibold">
+                      Draft tools from documentation
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      Paste endpoint documentation or a Slab manifest JSON.
+                    </span>
+                  </span>
+                </span>
+                <Badge variant="outline">Read-only</Badge>
+              </summary>
+              <div className="border-t bg-background p-4">
+                <div className="mb-3 flex items-start gap-2 rounded-md bg-muted/45 p-3 text-xs text-muted-foreground">
+                  <FileJson2 className="mt-0.5 size-4 shrink-0" />
+                  <p>
+                    The helper creates a reviewable draft only and never calls
+                    the upstream API or persists the pasted source. Do not paste
+                    credentials. Markdown endpoints must use headings such as{" "}
+                    <code>### GET /api/metrics</code>.
+                  </p>
+                </div>
+                <Textarea
+                  value={importSource}
+                  onChange={(event) => setImportSource(event.target.value)}
+                  placeholder="# Agent metrics API\n\n### GET /api/admin/metrics\nReturns the curated snapshot…"
+                  className="min-h-44 resize-y font-mono text-xs leading-5"
+                  aria-label="API documentation or integration manifest"
+                />
+                {importWarnings.length ? (
+                  <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
+                    {importWarnings.map((warning) => (
+                      <li key={warning}>• {warning}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">
+                    Existing operations and tool permissions are replaced only
+                    in this unsaved draft.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={importDraft}
+                    disabled={importing || !importSource.trim()}
+                  >
+                    {importing ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : (
+                      <WandSparkles />
+                    )}
+                    {importing ? "Analyzing…" : "Create draft"}
+                  </Button>
+                </div>
+              </div>
+            </details>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="font-semibold">Operations</h3>
               <Button onClick={addOperation} variant="outline" size="sm">

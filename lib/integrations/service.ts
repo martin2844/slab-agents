@@ -9,6 +9,13 @@ import {
 import { discoverMcpTools } from "@/lib/mcp/client";
 import { POSTHOG_TOOLS } from "@/lib/integrations/catalog";
 import {
+  canReuseHttpCredential,
+  extractHttpPathParameters,
+  normalizeHttpIntegrationBaseUrl,
+  normalizeHttpOperationKey,
+  normalizeHttpOperationPath,
+} from "@/lib/integrations/http-contract";
+import {
   testPostHogConnection,
   type PostHogDatacenter,
 } from "@/lib/integrations/posthog";
@@ -111,31 +118,6 @@ function readCustomCredentials(record: IntegrationRecord): CustomCredentials {
   return { mcpToken: parsed.mcpToken, authSecret: parsed.authSecret };
 }
 
-function ensureHttpUrl(value: string) {
-  const parsed = new URL(value.trim());
-  if (!parsed.protocol || !["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("Only HTTP and HTTPS URLs are supported.");
-  }
-  if (parsed.search || parsed.hash || parsed.username || parsed.password) {
-    throw new Error("Base URL must not include query, hash, or credentials.");
-  }
-  return parsed.toString().replace(/\/$/, "");
-}
-
-function ensureOperationPath(path: string) {
-  const value = path.trim();
-  if (!value.startsWith("/")) {
-    throw new Error("Operation path must start with '/'.");
-  }
-  if (value.includes("..")) {
-    throw new Error("Operation path cannot contain '..'.");
-  }
-  if (/[^a-zA-Z0-9_\-/.{}]/.test(value)) {
-    throw new Error("Operation path contains invalid characters.");
-  }
-  return value;
-}
-
 function normalizeHttpMethod(method: string) {
   const normalized = method.toUpperCase().trim();
   return normalized === "HEAD" ? "HEAD" : "GET";
@@ -194,20 +176,11 @@ function sanitizeParameters(
   return result;
 }
 
-function extractPathParameters(pathTemplate: string) {
-  const items = new Set<string>();
-  const matcher = /\{([a-zA-Z0-9_-]+)\}/g;
-  for (const match of pathTemplate.matchAll(matcher)) {
-    items.add(match[1]);
-  }
-  return [...items];
-}
-
 function assertPathParameters(
   pathTemplate: string,
   parameters: IntegrationOperationParameter[],
 ) {
-  const placeholders = extractPathParameters(pathTemplate);
+  const placeholders = extractHttpPathParameters(pathTemplate);
   const lookup = new Map(parameters.map((item) => [item.name, item]));
 
   for (const placeholder of placeholders) {
@@ -387,7 +360,7 @@ function normalizeCustomHttpOperations(
   for (const raw of operations) {
     const operationName = String(raw?.name || "").trim() || integrationName;
     const rawKey = String(raw?.key || operationName).trim();
-    const key = normalizeToolKey(rawKey);
+    const key = normalizeHttpOperationKey(rawKey);
     if (!key) {
       throw new Error("Each operation needs a key.");
     }
@@ -396,7 +369,7 @@ function normalizeCustomHttpOperations(
     }
     seen.add(key);
 
-    const path = ensureOperationPath(raw.path || `/${key}`);
+    const path = normalizeHttpOperationPath(raw.path || `/${key}`);
     const parameters = sanitizeParameters(raw.parameters || []);
     assertPathParameters(path, parameters);
 
@@ -510,7 +483,7 @@ export async function saveCustomHttpIntegration(input: {
     throw new Error("Integration name is required.");
   }
 
-  const baseUrl = ensureHttpUrl(input.baseUrl);
+  const baseUrl = normalizeHttpIntegrationBaseUrl(input.baseUrl);
   const authType = normalizeAuthType(input.authType);
   const current = input.id ? repository.getIntegrationRecord(input.id) : null;
 
@@ -540,12 +513,32 @@ export async function saveCustomHttpIntegration(input: {
     }
   }
 
+  const canReuseSecret = Boolean(
+    current?.config.baseUrl &&
+      previousSecret?.authSecret &&
+      canReuseHttpCredential(
+        {
+          baseUrl: current.config.baseUrl,
+          authType: normalizeAuthType(
+            current.config.authType ?? current.authType,
+          ),
+          authHeaderName:
+            current.config.authHeaderName ?? current.authHeaderName,
+        },
+        { baseUrl, authType, authHeaderName: input.authHeaderName },
+      ),
+  );
   const authSecret =
     authType === "none"
       ? undefined
-      : (input.secret ?? previousSecret?.authSecret)?.trim();
+      : (input.secret ??
+          (canReuseSecret ? previousSecret?.authSecret : undefined))?.trim();
   if (authType !== "none" && !authSecret) {
-    throw new Error("Authentication secret is required for this integration.");
+    throw new Error(
+      current && previousSecret?.authSecret
+        ? "Replace the authentication secret after changing the connector origin or authentication settings."
+        : "Authentication secret is required for this integration.",
+    );
   }
 
   const credentials: CustomCredentials = {
@@ -632,7 +625,7 @@ export async function saveCustomMcpIntegration(input: {
     throw new Error("Integration name is required.");
   }
 
-  const baseUrl = ensureHttpUrl(input.baseUrl);
+  const baseUrl = normalizeHttpIntegrationBaseUrl(input.baseUrl);
   const authType = normalizeAuthType(input.authType);
   const timeout = clampNumber(
     input.timeoutMs,
@@ -656,12 +649,32 @@ export async function saveCustomMcpIntegration(input: {
     }
   }
 
+  const canReuseSecret = Boolean(
+    current?.config.baseUrl &&
+      previousSecret?.authSecret &&
+      canReuseHttpCredential(
+        {
+          baseUrl: current.config.baseUrl,
+          authType: normalizeAuthType(
+            current.config.authType ?? current.authType,
+          ),
+          authHeaderName:
+            current.config.authHeaderName ?? current.authHeaderName,
+        },
+        { baseUrl, authType, authHeaderName: input.authHeaderName },
+      ),
+  );
   const authSecret =
     authType === "none"
       ? undefined
-      : (input.secret ?? previousSecret?.authSecret)?.trim();
+      : (input.secret ??
+          (canReuseSecret ? previousSecret?.authSecret : undefined))?.trim();
   if (authType !== "none" && !authSecret) {
-    throw new Error("Authentication secret is required for this integration.");
+    throw new Error(
+      current && previousSecret?.authSecret
+        ? "Replace the authentication secret after changing the connector origin or authentication settings."
+        : "Authentication secret is required for this integration.",
+    );
   }
 
   const credentials: CustomCredentials = {

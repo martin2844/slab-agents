@@ -323,6 +323,27 @@ export type IntegrationOperationParameter = {
   required: boolean;
   description?: string;
 };
+export type CustomHttpIntegrationDraft = {
+  schemaVersion: 1;
+  name: string;
+  baseUrl: string;
+  authType: IntegrationAuthType;
+  authHeaderName?: string;
+  timeoutMs: number;
+  operations: Array<{
+    key: string;
+    name: string;
+    description: string;
+    method: "GET" | "HEAD";
+    path: string;
+    parameters: IntegrationOperationParameter[];
+    responsePath?: string;
+    maxResponseBytes: number;
+    maxItems: number | null;
+  }>;
+  sourceFormat: "manifest_json" | "markdown";
+  warnings: string[];
+};
 export type IntegrationHttpOperation = {
   id: string;
   integrationId: string;
