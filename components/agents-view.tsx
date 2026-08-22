@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Play } from "lucide-react";
+import { AgentChatDialog } from "@/components/agent-chat-dialog";
 import { AgentCreateDialog } from "@/components/agent-create-dialog";
 import { AgentRunDialog } from "@/components/agent-run-dialog";
 import {
@@ -190,6 +191,11 @@ export function AgentsView({
                       </td>
                       <td className={`${denseTableCell} text-right`}>
                         <div className="flex justify-end gap-1">
+                          <AgentChatDialog
+                            agent={agent}
+                            label="Chat now"
+                            size="sm"
+                          />
                           <AgentRunDialog
                             agent={agent}
                             label="Run now"
@@ -259,6 +265,11 @@ export function AgentsView({
                     ))}
                   </div>
                   <div className="mt-4 flex gap-2">
+                    <AgentChatDialog
+                      agent={agent}
+                      label="Chat now"
+                      size="sm"
+                    />
                     <AgentRunDialog
                       agent={agent}
                       label="Run now"

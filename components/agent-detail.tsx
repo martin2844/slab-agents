@@ -13,29 +13,18 @@ import {
   Puzzle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AgentChatDialog } from "@/components/agent-chat-dialog";
 import { AgentRunDialog } from "@/components/agent-run-dialog";
 import { AgentQuickActionsEditor } from "@/components/agent-quick-actions-editor";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { api } from "@/lib/client-api";
-import type { AgentDetailData, Integration, Thread } from "@/lib/types";
+import type { AgentDetailData, Integration } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
 export function AgentDetail({ data }: { data: AgentDetailData }) {
-  const [open, setOpen] = useState(false),
-    [creating, setCreating] = useState(false),
-    [fullAccess, setFullAccess] = useState(data.agent.fullAccess),
+  const [fullAccess, setFullAccess] = useState(data.agent.fullAccess),
     [savingAccess, setSavingAccess] = useState(false),
     [quickActions, setQuickActions] = useState(data.quickActions),
     [integrations, setIntegrations] = useState(data.integrations),
@@ -97,30 +86,6 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
       setSavingAccess(false);
     }
   }
-  async function createThread(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!data) return;
-    setCreating(true);
-    const form = new FormData(event.currentTarget);
-    try {
-      const thread = await api<Thread>("/api/threads", {
-        method: "POST",
-        body: JSON.stringify({
-          agentId: data.agent.id,
-          title: form.get("title"),
-        }),
-      });
-      window.location.assign(
-        new URL(
-          `/agents/${data.agent.id}/threads/${thread.id}`,
-          window.location.origin,
-        ).href,
-      );
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not create thread");
-      setCreating(false);
-    }
-  }
   const { agent } = data;
   const activeRun = data.runs.find((run) =>
     ["running", "waiting_approval", "queued"].includes(run.status),
@@ -134,38 +99,7 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
         description={`${agent.role} · ${agent.runtime} · ${agent.model}`}
         actions={
           <div className="flex flex-wrap gap-2">
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline">
-                  <MessageSquare />
-                  Chat
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <form onSubmit={createThread}>
-                  <DialogHeader>
-                    <DialogTitle className="font-heading text-3xl">
-                      Chat with {agent.name}
-                    </DialogTitle>
-                  </DialogHeader>
-                  <label className="mt-6 grid gap-2 text-sm font-semibold">
-                    Conversation title
-                    <Input
-                      name="title"
-                      defaultValue="General"
-                      autoFocus
-                      required
-                    />
-                  </label>
-                  <DialogFooter className="mt-6">
-                    <Button type="submit" disabled={creating}>
-                      <MessageSquare />
-                      {creating ? "Opening…" : "Start chat"}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
+            <AgentChatDialog agent={agent} />
             <AgentRunDialog
               agent={agent}
               label="Give task"

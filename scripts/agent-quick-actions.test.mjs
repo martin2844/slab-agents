@@ -19,8 +19,13 @@ test("Run now is available to every agent and quick tasks are data-driven", asyn
   assert.doesNotMatch(detailSource, /agent\.slug === ["']coo["']/);
   assert.match(listSource, /agents\.map\(\(agent\) =>/);
   assert.match(listSource, /<AgentRunDialog[\s\S]*label="Run now"/);
+  assert.match(
+    listSource,
+    /<AgentChatDialog[\s\S]*label="Chat now"[\s\S]*<AgentRunDialog/,
+  );
   assert.match(listSource, /defaultMode="review"/);
   assert.match(detailSource, /label="Run now"[\s\S]*defaultMode="review"/);
+  assert.match(detailSource, /<AgentChatDialog agent=\{agent\}/);
   assert.match(detailSource, /<AgentQuickActionsEditor/);
   assert.match(migration, /createTable\("agent_quick_actions"/);
 });
