@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Check,
+  CalendarDays,
   EyeOff,
   LoaderCircle,
   KeyRound,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmailIntegrationEditor } from "@/components/email-integration-editor";
+import { CalendarIntegrationEditor } from "@/components/calendar-integration-editor";
 import { PageHeader } from "@/components/page-header";
 import { ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +29,7 @@ import { api } from "@/lib/client-api";
 import type {
   Agent,
   EmailIntegrationState,
+  Integration,
   SetupStatus,
   WorkspaceSettings,
 } from "@/lib/types";
@@ -38,18 +41,26 @@ export function SettingsView({
   initialSettings,
   initialSetup,
   initialEmail,
+  initialCalendars,
   auth,
   agents,
   initialTab,
   initialEmailOpen,
+  initialCalendarOpen,
+  initialCalendarResult,
+  calendarCallbackOrigin: configuredCalendarCallbackOrigin,
 }: {
   initialSettings: WorkspaceSettings;
   initialSetup: SetupStatus;
   initialEmail: EmailIntegrationState;
+  initialCalendars: Integration[];
   auth: { required: boolean; configured: boolean };
   agents: Agent[];
-  initialTab: "sources" | "email";
+  initialTab: "sources" | "email" | "calendar";
   initialEmailOpen: boolean;
+  initialCalendarOpen: boolean;
+  initialCalendarResult: "connected" | "failed" | null;
+  calendarCallbackOrigin: string;
 }) {
   const router = useRouter();
   const initialServiceState = (service: Service): State => {
@@ -68,6 +79,12 @@ export function SettingsView({
   const [docsKey, setDocsKey] = useState("");
   const [email, setEmail] = useState(initialEmail);
   const [emailOpen, setEmailOpen] = useState(initialEmailOpen);
+  const [calendars, setCalendars] = useState(initialCalendars);
+  const [calendarOpen, setCalendarOpen] = useState(initialCalendarOpen);
+  const [calendarResult, setCalendarResult] = useState(initialCalendarResult);
+  const [calendarCallbackOrigin, setCalendarCallbackOrigin] = useState(
+    configuredCalendarCallbackOrigin,
+  );
   const [gmailCallbackUrl, setGmailCallbackUrl] = useState(
     "/api/integrations/email/google/callback",
   );
@@ -186,6 +203,7 @@ export function SettingsView({
           <TabsTrigger value="sources">Sources</TabsTrigger>
           <TabsTrigger value="runtime">Runtime</TabsTrigger>
           <TabsTrigger value="email">Email</TabsTrigger>
+          <TabsTrigger value="calendar">Calendar</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
         </TabsList>
 
@@ -338,6 +356,117 @@ export function SettingsView({
           </section>
         </TabsContent>
 
+        <TabsContent value="calendar">
+          <section className="rounded-lg border bg-card p-4 sm:p-5">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+              <div className="flex gap-3">
+                <CalendarDays className="mt-0.5 size-4" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-semibold">Calendar</h2>
+                    <Badge variant="secondary">Optional</Badge>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Google, Microsoft, CalDAV, Cal.com, and read-only shared
+                    calendars
+                  </p>
+                </div>
+              </div>
+              <Badge
+                variant={
+                  calendars.some(
+                    (integration) =>
+                      integration.enabled && integration.status === "failed",
+                  )
+                    ? "destructive"
+                    : "secondary"
+                }
+              >
+                {
+                  calendars.filter(
+                    (integration) =>
+                      integration.enabled && integration.status === "connected",
+                  ).length
+                }{" "}
+                healthy
+              </Badge>
+            </div>
+            <div className="mt-4 grid gap-4 border-y py-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center">
+              <div className="min-w-0">
+                <span className="block text-xs text-muted-foreground">
+                  Providers
+                </span>
+                <strong className="block truncate capitalize">
+                  {calendars.length
+                    ? [
+                        ...new Set(
+                          calendars.map(({ provider }) =>
+                            provider.replace("calendar_", ""),
+                          ),
+                        ),
+                      ].join(", ")
+                    : "Not configured"}
+                </strong>
+              </div>
+              <div>
+                <span className="block text-xs text-muted-foreground">
+                  Accounts
+                </span>
+                <strong>{calendars.length}</strong>
+              </div>
+              <div>
+                <span className="block text-xs text-muted-foreground">
+                  Agent access
+                </span>
+                <strong>
+                  {
+                    new Set(
+                      calendars.flatMap((integration) =>
+                        Object.keys(integration.permissions),
+                      ),
+                    ).size
+                  }
+                </strong>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (!configuredCalendarCallbackOrigin)
+                    setCalendarCallbackOrigin(window.location.origin);
+                  setCalendarOpen(true);
+                }}
+              >
+                <CalendarDays /> Configure calendar
+              </Button>
+            </div>
+            {calendars.length > 0 &&
+            calendars.every(
+              (integration) =>
+                Object.keys(integration.permissions).length === 0,
+            ) ? (
+              <div className="mt-4 flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm sm:flex-row sm:items-center sm:justify-between dark:border-amber-900 dark:bg-amber-950/30">
+                <div>
+                  <p className="font-semibold">No agent can use Calendar yet</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Assign at least one connected account. New permissions apply
+                    on the next run.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!configuredCalendarCallbackOrigin)
+                      setCalendarCallbackOrigin(window.location.origin);
+                    setCalendarOpen(true);
+                  }}
+                >
+                  Assign agent access
+                </Button>
+              </div>
+            ) : null}
+          </section>
+        </TabsContent>
+
         <TabsContent value="security">
           <section className="max-w-3xl rounded-lg border bg-card p-4 sm:p-5">
             <div className="flex gap-3">
@@ -437,6 +566,21 @@ export function SettingsView({
         )}
         onOpenChange={setEmailOpen}
         onUpdated={setEmail}
+      />
+      <CalendarIntegrationEditor
+        open={calendarOpen}
+        integrations={calendars}
+        agents={agents}
+        callbackOrigin={calendarCallbackOrigin}
+        oauthResult={calendarResult}
+        onOpenChange={(next) => {
+          setCalendarOpen(next);
+          if (!next && calendarResult) {
+            setCalendarResult(null);
+            router.replace("/settings?tab=calendar", { scroll: false });
+          }
+        }}
+        onUpdated={setCalendars}
       />
     </>
   );

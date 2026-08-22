@@ -59,6 +59,27 @@ Email send policy is enforced independently of the connector:
   `email_send` and `email_reply`;
 - `autonomous` uses the scoped profile without an additional send approval.
 
+## Calendar integrations
+
+Calendar is another optional workspace capability managed directly by
+`slab-agents`. Supported providers are Google Calendar, Microsoft 365,
+CalDAV, Cal.com, and private shared ICS feeds. Proton Calendar is supported as
+a read-only shared ICS source because Proton does not currently expose CalDAV.
+
+Provider credentials are encrypted in the control plane and never returned to
+React or sent to Runner. Each run receives an opaque token for a run-scoped
+Slab Agents MCP endpoint. Agent assignment, the integration version, allowed
+tools, and write policy are snapshotted at run start.
+
+Calendar writes use the existing approval lifecycle:
+
+- `disabled` exposes read tools only;
+- `approval required` is the default and prompts for create/update/cancel;
+- `autonomous` permits the assigned agent to write without that prompt.
+
+See [Calendar integrations](docs/calendar-integrations.md) for provider setup,
+OAuth callback paths, security boundaries, tool contracts, and limitations.
+
 ## Run locally
 
 With `slab`, `slab-docs`, `slab-runner`, and `slab-agents` checked out as

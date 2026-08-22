@@ -27,6 +27,15 @@ test("How it works documents the shipped ecosystem and provider setup", async ()
     "sudo slabctl proton setup",
     "Managed Bridge",
     "Manual Bridge field reference",
+    "Connect calendars",
+    "Google Calendar API",
+    "Microsoft Entra",
+    "CalDAV",
+    "Cal.com",
+    "calendar_find_availability",
+    "calendar/google/callback",
+    "calendar/microsoft/callback",
+    "Proton does not currently support CalDAV",
     "Capability snapshots are immutable during a run",
   ]) {
     assert.match(
@@ -56,6 +65,7 @@ test("How it works links every operational guide chapter", async () => {
     "#email",
     "#gmail",
     "#proton",
+    "#calendar",
     "#runs",
     "#troubleshooting",
   ]) {

@@ -15,6 +15,7 @@ import type {
   IntegrationStatus,
   IntegrationAuthType,
   IntegrationTool,
+  CalendarWritePolicy,
   EmailSendPolicy,
   Message,
   Run,
@@ -140,6 +141,15 @@ export type IntegrationRecord = {
     authType?: IntegrationAuthType;
     authHeaderName?: string | null;
     timeoutMs?: number;
+    accountEmail?: string | null;
+    accountName?: string | null;
+    writePolicy?: CalendarWritePolicy;
+    oauthConfigured?: boolean;
+    calendarId?: string | null;
+    username?: string | null;
+    apiVersion?: string | null;
+    eventTypeId?: number | null;
+    providerMetadata?: Record<string, unknown>;
   };
   authType: IntegrationAuthType;
   authHeaderName?: string | null;
@@ -209,6 +219,52 @@ function mapIntegration(
   mcpTools: IntegrationMcpTool[] = [],
 ): Integration {
   const normalizedSlug = normalizeSlug(record.slug);
+  const calendarTools: IntegrationTool[] = [
+    {
+      key: "calendar_list_calendars",
+      name: "List calendars",
+      description: "List calendars available through this connected account.",
+      readOnly: true,
+    },
+    {
+      key: "calendar_list_events",
+      name: "List events",
+      description:
+        "List bounded calendar events within an explicit time range.",
+      readOnly: true,
+    },
+    {
+      key: "calendar_get_event",
+      name: "Get event",
+      description: "Read one calendar event by its provider identifier.",
+      readOnly: true,
+    },
+    {
+      key: "calendar_find_availability",
+      name: "Find availability",
+      description: "Inspect busy periods within an explicit time range.",
+      readOnly: true,
+    },
+    {
+      key: "calendar_create_event",
+      name: "Create event",
+      description: "Create a calendar event or booking.",
+      readOnly: false,
+    },
+    {
+      key: "calendar_update_event",
+      name: "Update event",
+      description: "Update or reschedule an existing calendar event.",
+      readOnly: false,
+    },
+    {
+      key: "calendar_cancel_event",
+      name: "Cancel event",
+      description: "Cancel or delete an existing calendar event.",
+      readOnly: false,
+    },
+  ];
+  const isCalendar = record.provider.startsWith("calendar_");
   const tools: IntegrationTool[] =
     record.provider === "posthog"
       ? POSTHOG_TOOLS
@@ -221,12 +277,18 @@ function mapIntegration(
               description: operation.description,
               readOnly: true,
             }))
-        : mcpTools.map((tool) => ({
-            key: `${normalizedSlug}__${normalizeToolKey(tool.name)}`,
-            name: tool.name,
-            description: tool.description ?? "Custom MCP tool",
-            readOnly: tool.readOnlyHint,
-          }));
+        : record.provider === "custom_mcp"
+          ? mcpTools.map((tool) => ({
+              key: `${normalizedSlug}__${normalizeToolKey(tool.name)}`,
+              name: tool.name,
+              description: tool.description ?? "Custom MCP tool",
+              readOnly: tool.readOnlyHint,
+            }))
+          : isCalendar
+            ? calendarTools.filter(
+                (tool) => record.provider !== "calendar_ics" || tool.readOnly,
+              )
+            : [];
 
   return {
     id: record.id,
@@ -235,13 +297,26 @@ function mapIntegration(
     slug: record.slug,
     datacenter: record.config.datacenter,
     baseUrl: record.config.baseUrl,
+    accountEmail: record.config.accountEmail ?? null,
+    accountName: record.config.accountName ?? null,
+    writePolicy: record.config.writePolicy ?? "approval_required",
+    oauthConfigured: record.config.oauthConfigured ?? false,
+    calendarId: record.config.calendarId ?? null,
+    calendarUsername: record.config.username ?? null,
+    calendarTenant:
+      typeof record.config.providerMetadata?.tenant === "string"
+        ? record.config.providerMetadata.tenant
+        : null,
+    calendarEventTypeId: record.config.eventTypeId ?? null,
     timeoutMs: record.config.timeoutMs ?? null,
     kind: record.config.authType === "none" ? "read" : "readwrite",
     authType: record.authType,
     authHeaderName: record.authHeaderName,
     enabled: record.enabled,
     version: record.version,
-    hasSecret: record.provider !== "posthog" && record.authType !== "none",
+    hasSecret:
+      isCalendar ||
+      (record.provider !== "posthog" && record.authType !== "none"),
     hasApiKey:
       record.provider === "posthog" && Boolean(record.credentialsCiphertext),
     status: record.status,
@@ -339,6 +414,51 @@ export const repository = {
           { value: string } | undefined
       )?.value ?? null
     );
+  },
+
+  createIntegrationOAuthState(input: {
+    id: string;
+    integrationId: string;
+    provider: "calendar_google" | "calendar_microsoft";
+    verifierCiphertext: string;
+    redirectUri: string;
+    expiresAt: string;
+    integrationVersion: number;
+  }) {
+    db.prepare(
+      `INSERT INTO integration_oauth_states
+        (id,integration_id,provider,verifier_ciphertext,redirect_uri,expires_at,integration_version,created_at)
+       VALUES (?,?,?,?,?,?,?,?)`,
+    ).run(
+      input.id,
+      input.integrationId,
+      input.provider,
+      input.verifierCiphertext,
+      input.redirectUri,
+      input.expiresAt,
+      input.integrationVersion,
+      now(),
+    );
+  },
+  consumeIntegrationOAuthState(id: string) {
+    const transaction = db.transaction(() => {
+      const row = db
+        .prepare("SELECT * FROM integration_oauth_states WHERE id=?")
+        .get(id) as Row | undefined;
+      db.prepare("DELETE FROM integration_oauth_states WHERE id=?").run(id);
+      return row;
+    });
+    const row = transaction();
+    if (!row || Date.parse(String(row.expires_at)) <= Date.now()) return null;
+    return {
+      id: String(row.id),
+      integrationId: String(row.integration_id),
+      provider: row.provider as "calendar_google" | "calendar_microsoft",
+      verifierCiphertext: String(row.verifier_ciphertext),
+      redirectUri: String(row.redirect_uri),
+      expiresAt: String(row.expires_at),
+      integrationVersion: Number(row.integration_version ?? 1),
+    };
   },
   setSetting(key: string, value: string) {
     db.prepare(
@@ -600,6 +720,7 @@ export const repository = {
     version?: number;
     operations?: IntegrationHttpOperation[];
     mcpTools?: IntegrationMcpTool[];
+    expectedVersion?: number;
   }) {
     const current = input.id
       ? this.getIntegrationRecord(input.id)
@@ -618,6 +739,14 @@ export const repository = {
       input.mcpTools ??
       (input.provider === "custom_mcp" ? this.listCustomMcpTools(id) : []);
     const transaction = db.transaction(() => {
+      if (input.expectedVersion !== undefined) {
+        const live = this.getIntegrationRecord(id);
+        if (!live || live.version !== input.expectedVersion) {
+          throw new Error(
+            "Integration changed while it was being saved. Reload the current configuration and try again.",
+          );
+        }
+      }
       db.prepare(
         `INSERT INTO integrations
           (id,provider,name,slug,config_json,credentials_ciphertext,enabled,version,status,last_tested_at,last_error,created_at,updated_at)
@@ -728,6 +857,140 @@ export const repository = {
     ).run(input.status, input.lastTestedAt, input.lastError, now(), id);
     return this.getIntegration(id);
   },
+  updateIntegrationCheckIfVersion(
+    id: string,
+    expectedVersion: number,
+    input: {
+      status: IntegrationStatus;
+      lastTestedAt: string;
+      lastError: string | null;
+    },
+  ) {
+    const result = db
+      .prepare(
+        "UPDATE integrations SET status=?,last_tested_at=?,last_error=?,updated_at=? WHERE id=? AND version=?",
+      )
+      .run(
+        input.status,
+        input.lastTestedAt,
+        input.lastError,
+        now(),
+        id,
+        expectedVersion,
+      );
+    return result.changes === 1 ? this.getIntegration(id) : null;
+  },
+  completeIntegrationTest(input: {
+    id: string;
+    expectedVersion: number;
+    status: IntegrationStatus;
+    testedAt: string;
+    lastError: string | null;
+    accountEmail?: string;
+    accountName?: string;
+  }) {
+    const transaction = db.transaction(() => {
+      const current = db
+        .prepare("SELECT * FROM integrations WHERE id=? AND version=?")
+        .get(input.id, input.expectedVersion) as Row | undefined;
+      if (!current) return false;
+      const config = json(
+        current.config_json,
+        {},
+      ) as IntegrationRecord["config"];
+      const result = db
+        .prepare(
+          `UPDATE integrations SET config_json=?,status=?,last_tested_at=?,last_error=?,updated_at=?
+           WHERE id=? AND version=?`,
+        )
+        .run(
+          JSON.stringify({
+            ...config,
+            accountEmail: input.accountEmail ?? config.accountEmail ?? null,
+            accountName: input.accountName ?? config.accountName ?? null,
+          }),
+          input.status,
+          input.testedAt,
+          input.lastError,
+          input.testedAt,
+          input.id,
+          input.expectedVersion,
+        );
+      return result.changes === 1;
+    });
+    return transaction();
+  },
+  updateIntegrationCredentials(id: string, credentialsCiphertext: string) {
+    db.prepare(
+      "UPDATE integrations SET credentials_ciphertext=?,updated_at=? WHERE id=?",
+    ).run(credentialsCiphertext, now(), id);
+    return this.getIntegrationRecord(id);
+  },
+  updateIntegrationCredentialsIfCurrent(input: {
+    id: string;
+    expectedVersion: number;
+    expectedCredentialsCiphertext: string;
+    credentialsCiphertext: string;
+  }) {
+    const result = db
+      .prepare(
+        `UPDATE integrations SET credentials_ciphertext=?,updated_at=?
+         WHERE id=? AND version=? AND credentials_ciphertext=?`,
+      )
+      .run(
+        input.credentialsCiphertext,
+        now(),
+        input.id,
+        input.expectedVersion,
+        input.expectedCredentialsCiphertext,
+      );
+    return result.changes === 1;
+  },
+  completeCalendarOAuth(input: {
+    id: string;
+    provider: "calendar_google" | "calendar_microsoft";
+    expectedVersion: number;
+    credentialsCiphertext: string;
+    accountEmail?: string;
+    accountName?: string;
+    testedAt: string;
+  }) {
+    const transaction = db.transaction(() => {
+      const current = db
+        .prepare(
+          "SELECT * FROM integrations WHERE id=? AND provider=? AND version=?",
+        )
+        .get(input.id, input.provider, input.expectedVersion) as
+        Row | undefined;
+      if (!current) return false;
+      const config = json(
+        current.config_json,
+        {},
+      ) as IntegrationRecord["config"];
+      const result = db
+        .prepare(
+          `UPDATE integrations SET config_json=?,credentials_ciphertext=?,status=?,last_tested_at=?,last_error=NULL,version=version+1,updated_at=?
+           WHERE id=? AND provider=? AND version=?`,
+        )
+        .run(
+          JSON.stringify({
+            ...config,
+            accountEmail: input.accountEmail ?? null,
+            accountName: input.accountName ?? null,
+            oauthConfigured: true,
+          }),
+          input.credentialsCiphertext,
+          bool(current.enabled) ? "connected" : "disabled",
+          input.testedAt,
+          input.testedAt,
+          input.id,
+          input.provider,
+          input.expectedVersion,
+        );
+      return result.changes === 1;
+    });
+    return transaction();
+  },
   deleteIntegration(id: string) {
     const existing = this.getIntegrationRecord(id);
     if (!existing) return false;
@@ -750,6 +1013,24 @@ export const repository = {
         )
         .all(runId) as Row[]
     ).map(mapRunIntegrationCapability);
+  },
+  hasRunIntegrationSnapshot(runId: string, scope: string) {
+    return Boolean(
+      db
+        .prepare(
+          "SELECT 1 FROM run_integration_snapshot_markers WHERE run_id=? AND scope=?",
+        )
+        .get(runId, scope),
+    );
+  },
+  markRunIntegrationSnapshot(runId: string, scope: string) {
+    const result = db
+      .prepare(
+        `INSERT INTO run_integration_snapshot_markers (run_id,scope,captured_at)
+       VALUES (?,?,?) ON CONFLICT(run_id,scope) DO NOTHING`,
+      )
+      .run(runId, scope, now());
+    return result.changes === 1;
   },
   saveRunIntegrationCapability(input: {
     runId: string;

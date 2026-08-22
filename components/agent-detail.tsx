@@ -297,6 +297,9 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
                           <p className="text-xs text-muted-foreground">
                             {integration.tools.length} tools ·{" "}
                             {integration.status.replace("_", " ")}
+                            {integration.provider.startsWith("calendar_")
+                              ? ` · ${integration.writePolicy?.replace("_", " ") ?? "approval required"}`
+                              : ""}
                           </p>
                         </div>
                       </div>
@@ -318,8 +321,7 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
               </div>
             ) : (
               <p className="mt-4 text-sm text-muted-foreground">
-                No integrations configured. Add one from Settings →
-                Integrations.
+                No integrations configured. Add one from Settings.
               </p>
             )}
           </section>

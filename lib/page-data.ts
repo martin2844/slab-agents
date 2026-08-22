@@ -163,7 +163,9 @@ export function getAutomationsPageData(): AutomationsData {
 
 export function getIntegrationsPageData(): IntegrationsPageData {
   return {
-    integrations: repository.listIntegrations(),
+    integrations: repository
+      .listIntegrations()
+      .filter((integration) => !integration.provider.startsWith("calendar_")),
     agents: repository.listAgents(),
     catalog: INTEGRATION_CATALOG,
   };

@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Bot,
   Boxes,
+  CalendarDays,
   Check,
   ChevronRight,
   CircleAlert,
@@ -46,8 +47,9 @@ const chapters = [
   ["05", "Email", "#email"],
   ["06", "Gmail", "#gmail"],
   ["07", "Proton Bridge", "#proton"],
-  ["08", "Run lifecycle", "#runs"],
-  ["09", "Troubleshooting", "#troubleshooting"],
+  ["08", "Calendar", "#calendar"],
+  ["09", "Run lifecycle", "#runs"],
+  ["10", "Troubleshooting", "#troubleshooting"],
 ] as const;
 
 type Icon = React.ComponentType<{ className?: string }>;
@@ -329,6 +331,11 @@ export function HowItWorksGuide() {
               </Link>
             </Button>
             <Button size="sm" variant="outline" asChild>
+              <Link href="#calendar">
+                <CalendarDays /> Connect Calendar
+              </Link>
+            </Button>
+            <Button size="sm" variant="outline" asChild>
               <Link href="#tools">
                 <Wrench /> Create a tool
               </Link>
@@ -429,7 +436,7 @@ export function HowItWorksGuide() {
               <div className="my-4 flex justify-center text-muted-foreground">
                 <ArrowDown className="size-4" />
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
                 <DiagramNode
                   label="Source of truth"
                   title="Work"
@@ -447,6 +454,12 @@ export function HowItWorksGuide() {
                   title="Email"
                   detail="Gmail, Proton Bridge, scoped mailbox profiles, encrypted provider credentials, and MCP tools."
                   icon={Mail}
+                />
+                <DiagramNode
+                  label="Capabilities"
+                  title="Calendar"
+                  detail="Google, Microsoft, CalDAV, Cal.com, and private read-only ICS feeds with per-account write policy."
+                  icon={CalendarDays}
                 />
                 <DiagramNode
                   label="Execution"
@@ -839,16 +852,36 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
             </div>
             <div className="mt-5 grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2 xl:grid-cols-3">
               {[
-                ["Gmail", "Full mailbox through the Gmail API and Google OAuth."],
-                ["Microsoft 365", "Full mailbox through Microsoft Graph and OAuth."],
-                ["Proton Mail", "Full mailbox through managed or external Proton Bridge."],
-                ["IMAP / SMTP", "Universal mailbox access using provider app credentials."],
-                ["AgentMail", "Agent-native inboxes with search, threads, drafts, send, and reply."],
-                ["Resend", "Transactional send with optional inbound reading; no fake drafts or threads."],
+                [
+                  "Gmail",
+                  "Full mailbox through the Gmail API and Google OAuth.",
+                ],
+                [
+                  "Microsoft 365",
+                  "Full mailbox through Microsoft Graph and OAuth.",
+                ],
+                [
+                  "Proton Mail",
+                  "Full mailbox through managed or external Proton Bridge.",
+                ],
+                [
+                  "IMAP / SMTP",
+                  "Universal mailbox access using provider app credentials.",
+                ],
+                [
+                  "AgentMail",
+                  "Agent-native inboxes with search, threads, drafts, send, and reply.",
+                ],
+                [
+                  "Resend",
+                  "Transactional send with optional inbound reading; no fake drafts or threads.",
+                ],
               ].map(([title, detail]) => (
                 <div key={title} className="bg-card p-4">
                   <p className="text-sm font-semibold">{title}</p>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {detail}
+                  </p>
                 </div>
               ))}
             </div>
@@ -1166,8 +1199,230 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
           </GuideSection>
 
           <GuideSection
-            id="runs"
+            id="calendar"
             number="08"
+            title="Connect calendars"
+            description="Calendar is an optional Slab Agents capability. Provider credentials stay encrypted in the control plane; agents receive only semantic, account-scoped tools through an opaque run token."
+            icon={CalendarDays}
+          >
+            <div className="grid gap-5 xl:grid-cols-[1.15fr_.85fr]">
+              <div className="rounded-lg border bg-card p-4 sm:p-5">
+                <p className="text-sm font-semibold">Provider map</p>
+                <div className="mt-3 divide-y border-y">
+                  {[
+                    [
+                      "Google Calendar",
+                      "OAuth · calendars, events, free/busy, create, update, cancel",
+                    ],
+                    [
+                      "Microsoft 365",
+                      "OAuth · Outlook calendars through Microsoft Graph",
+                    ],
+                    [
+                      "CalDAV",
+                      "App password · Nextcloud, Fastmail, iCloud, Radicale, and compatible servers",
+                    ],
+                    [
+                      "Cal.com",
+                      "API key · bookings, period lookup, reschedule, and cancel",
+                    ],
+                    [
+                      "Shared calendar URL",
+                      "Private ICS link · read-only, including Proton Calendar shared links",
+                    ],
+                  ].map(([provider, detail]) => (
+                    <div
+                      key={provider}
+                      className="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4"
+                    >
+                      <strong className="text-sm">{provider}</strong>
+                      <span className="text-xs leading-5 text-muted-foreground">
+                        {detail}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-4">
+                <Callout
+                  title="Write policy defaults to approval"
+                  icon={ShieldCheck}
+                >
+                  Every writable account starts as Approval required. Disabled
+                  exposes only read tools. Autonomous allows writes without a
+                  runtime prompt. Shared ICS is always read-only.
+                </Callout>
+                <Callout
+                  title="Capabilities are run snapshots"
+                  icon={LockKeyhole}
+                >
+                  Assigning an account, changing its policy, or reconnecting it
+                  affects the next run. Existing runs never hot-plug new
+                  calendar access and fail closed if the integration version
+                  changes.
+                </Callout>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-lg border bg-card px-4">
+              <ol>
+                <Step number="01" title="Open Calendar settings">
+                  Go to{" "}
+                  <strong className="text-foreground">
+                    Settings → Calendar
+                  </strong>
+                  , select Configure calendar, and choose one provider.
+                </Step>
+                <Step number="02" title="Connect the account">
+                  Enter only the provider configuration requested by the form.
+                  Secrets are sent to the server, encrypted locally, and never
+                  returned to React, prompts, schemas, run events, or profiling.
+                </Step>
+                <Step number="03" title="Choose write policy">
+                  Keep Approval required for the first test. Use Disabled for
+                  discovery-only agents. Enable Autonomous only for an account
+                  whose events the agent is explicitly allowed to modify.
+                </Step>
+                <Step number="04" title="Assign agents">
+                  Enable the account for the agents that need it. The next run
+                  receives only that account&apos;s allowed calendar tools.
+                </Step>
+                <Step
+                  number="05"
+                  title="Test a fresh run"
+                  result="Run capability snapshot lists the calendar integration and semantic tools"
+                >
+                  Ask the agent to list calendars, inspect a narrow date range,
+                  and find availability. Test a write only after confirming the
+                  selected calendar, time zone, attendees, and approval policy.
+                </Step>
+              </ol>
+            </div>
+
+            <div className="mt-5 grid gap-5 lg:grid-cols-2">
+              <div className="rounded-lg border bg-card p-4 sm:p-5">
+                <p className="text-sm font-semibold">Google Calendar OAuth</p>
+                <ol className="mt-3 border-y px-1">
+                  <Step number="01" title="Enable the API">
+                    In Google Cloud, enable{" "}
+                    <strong className="text-foreground">
+                      Google Calendar API
+                    </strong>
+                    .
+                  </Step>
+                  <Step number="02" title="Configure consent">
+                    Use Google Auth Platform to configure Branding and Audience.
+                    While the app is Testing, add every connecting account under
+                    Test users.
+                  </Step>
+                  <Step number="03" title="Create a Web client">
+                    Create an OAuth client of type Web application. Copy the
+                    client ID and secret into Slab Agents.
+                  </Step>
+                  <Step number="04" title="Register the callback">
+                    Add the exact HTTPS redirect URI shown by the Calendar form:
+                    <code className="mt-2 block break-all font-mono text-foreground">
+                      https://&lt;your-domain&gt;/api/integrations/calendar/google/callback
+                    </code>
+                  </Step>
+                  <Step number="05" title="Authorize">
+                    Save the configuration, select Authorize account, choose a
+                    configured test user, approve access, and return to
+                    Settings.
+                  </Step>
+                </ol>
+              </div>
+
+              <div className="rounded-lg border bg-card p-4 sm:p-5">
+                <p className="text-sm font-semibold">Microsoft 365 OAuth</p>
+                <ol className="mt-3 border-y px-1">
+                  <Step number="01" title="Register an Entra application">
+                    In Microsoft Entra admin center, create an App registration
+                    for the intended tenant. Use{" "}
+                    <code className="font-mono text-foreground">common</code>
+                    only when multi-tenant or personal-account login is
+                    deliberate.
+                  </Step>
+                  <Step number="02" title="Add delegated permissions">
+                    Add User.Read, offline_access, and Calendars.ReadWrite, then
+                    grant consent according to the organization&apos;s policy.
+                  </Step>
+                  <Step number="03" title="Create a client secret">
+                    Copy the application client ID and the new secret value into
+                    Slab Agents. The secret value is shown only once by Entra.
+                  </Step>
+                  <Step number="04" title="Register the callback">
+                    Add:
+                    <code className="mt-2 block break-all font-mono text-foreground">
+                      https://&lt;your-domain&gt;/api/integrations/calendar/microsoft/callback
+                    </code>
+                  </Step>
+                  <Step number="05" title="Authorize and test">
+                    Save, select Authorize account, complete Microsoft consent,
+                    then run Test from the account row.
+                  </Step>
+                </ol>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-5 lg:grid-cols-3">
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <p className="text-sm font-semibold">CalDAV</p>
+                <dl className="mt-3 divide-y border-y">
+                  <FieldRow
+                    field="URL"
+                    enter="Exact account/calendar collection URL from the provider"
+                  />
+                  <FieldRow
+                    field="Username"
+                    enter="CalDAV login or provider-specific username"
+                  />
+                  <FieldRow
+                    field="Password"
+                    enter="Prefer a dedicated app password"
+                  />
+                </dl>
+              </div>
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <p className="text-sm font-semibold">Cal.com</p>
+                <dl className="mt-3 divide-y border-y">
+                  <FieldRow
+                    field="API URL"
+                    enter="https://api.cal.com unless self-hosted"
+                  />
+                  <FieldRow field="API key" enter="A dedicated cal_ API key" />
+                  <FieldRow
+                    field="Event type ID"
+                    enter="Required only for creating bookings"
+                  />
+                </dl>
+              </div>
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <p className="text-sm font-semibold">Proton / private ICS</p>
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  In Proton Calendar web, open Settings → All settings →
+                  Calendars, choose a calendar, and create a Share with anyone
+                  link. Paste that private link into Shared calendar URL. Proton
+                  does not currently provide CalDAV, so this path is read-only.
+                  A full-view link exposes event details to anyone holding the
+                  URL; store and rotate it like a password.
+                </p>
+              </div>
+            </div>
+
+            <Callout title="Semantic tool surface" tone="success" icon={Check}>
+              Agents see calendar_list_calendars, calendar_list_events,
+              calendar_get_event, calendar_find_availability, and—only when the
+              provider and policy allow it—calendar_create_event,
+              calendar_update_event, and calendar_cancel_event. They never see
+              OAuth tokens, CalDAV passwords, API keys, private feed URLs, raw
+              headers, or a generic HTTP client.
+            </Callout>
+          </GuideSection>
+
+          <GuideSection
+            id="runs"
+            number="09"
             title="From intent to auditable run"
             description="Every execution is durable and typed. Agent identity, trigger, execution mode, optional Work scope, run policy, capabilities, and runtime continuity are separate concepts."
             icon={Activity}
@@ -1268,7 +1523,7 @@ chat message B
 
           <GuideSection
             id="troubleshooting"
-            number="09"
+            number="10"
             title="Troubleshooting"
             description="Start with the visible status and test action closest to the failing boundary. Do not compensate for a missing capability by expanding an agent prompt."
             icon={TestTube2}
@@ -1318,6 +1573,31 @@ chat message B
                 Confirm the account has a paid plan and complete any TOTP,
                 mailbox-password, or human-verification challenge shown by the
                 panel.
+              </TroubleshootingItem>
+              <TroubleshootingItem
+                title="Calendar OAuth returns redirect_uri_mismatch"
+                symptom="Google or Microsoft rejects the calendar callback"
+              >
+                Register the exact HTTPS callback shown in Settings → Calendar.
+                Calendar and Email use different callback paths. Do not reuse
+                the Gmail callback, localhost, 0.0.0.0, or a private container
+                address for a public domain installation.
+              </TroubleshootingItem>
+              <TroubleshootingItem
+                title="Calendar connects but the agent sees no tools"
+                symptom="Test is healthy; calendar_list_events is unavailable"
+              >
+                Open Settings → Calendar, edit the account, and enable that
+                agent under Agent access. Then start a new run. Capabilities are
+                immutable snapshots and are never inserted into an active run.
+              </TroubleshootingItem>
+              <TroubleshootingItem
+                title="A Proton calendar cannot create events"
+                symptom="Only list, get, and availability tools are exposed"
+              >
+                This is expected. Proton does not currently support CalDAV; its
+                shared link is a private, read-only ICS feed. Use Google,
+                Microsoft, CalDAV, or Cal.com for supported write operations.
               </TroubleshootingItem>
               <TroubleshootingItem
                 title="Manual Proton Bridge times out or refuses connection"

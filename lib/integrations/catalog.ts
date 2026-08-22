@@ -60,3 +60,11 @@ export const POSTHOG_AGENT_PROMPT = `PostHog analytics is available through a re
 - Never invent event names, properties, project identifiers, or results. If the schema is unknown, inspect it with a small query first.
 - State the project, date range, filters, and important limitations when summarizing results.
 - These tools cannot mutate PostHog.`;
+
+export const CALENDAR_AGENT_PROMPT = `Calendar access is available through scoped provider tools.
+
+- Use calendar_list_calendars before assuming a calendar identifier, and use explicit bounded time ranges for event and availability queries.
+- Treat event details and attendee information as private operational data; retrieve only what the current task needs.
+- Before creating, updating, or cancelling an event, confirm the exact date, time, time zone, calendar, and attendees from available context.
+- Calendar writes may require control-plane approval. Never claim an event was created, changed, or cancelled unless the tool confirms it.
+- Never request, reveal, or infer OAuth tokens, passwords, API keys, or private calendar feed URLs.`;

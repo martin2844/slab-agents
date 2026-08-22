@@ -5,9 +5,11 @@ import { repository } from "@/lib/repository";
 import type { Agent, Message, Thread } from "@/lib/types";
 import {
   EMAIL_AGENT_PROMPT,
+  CALENDAR_AGENT_PROMPT,
   POSTHOG_AGENT_PROMPT,
 } from "@/lib/integrations/catalog";
 import { getAgentEmailMcp } from "@/lib/integrations/email-service";
+import { getAgentCalendarIntegrationsMcp } from "@/lib/integrations/calendar-service";
 import {
   getAgentCustomIntegrationsMcp,
   getAgentPostHogMcp,
@@ -178,10 +180,16 @@ export async function startRunnerRun(input: {
     input.controlPlaneRunId ?? input.runId,
   );
   const customMcpServers = customIntegrations.map(({ server }) => server);
+  const calendarIntegrations = getAgentCalendarIntegrationsMcp(
+    input.agent.id,
+    input.controlPlaneRunId ?? input.runId,
+  );
+  const calendarMcpServers = calendarIntegrations.map(({ server }) => server);
   const workInstructions = workCoordinationContext();
   const integrationInstructions = [
     ...(posthogMcp ? [POSTHOG_AGENT_PROMPT] : []),
     ...(emailMcp ? [EMAIL_AGENT_PROMPT] : []),
+    ...(calendarIntegrations.length ? [CALENDAR_AGENT_PROMPT] : []),
   ].join("\n\n");
   const instructionParts = [
     input.agent.instructions,
@@ -211,6 +219,7 @@ export async function startRunnerRun(input: {
     },
     ...(posthogMcp ? [posthogMcp] : []),
     ...(emailMcp ? [emailMcp] : []),
+    ...calendarMcpServers,
     ...customMcpServers,
   ];
   const components: ContextComponent[] = [
@@ -327,6 +336,9 @@ export async function startRunnerRun(input: {
       serverCount: mcpServers.length,
       servers: mcpServers.map((server) => server.name),
       customIntegrations: customIntegrations.map(({ snapshot }) => snapshot),
+      calendarIntegrations: calendarIntegrations.map(
+        ({ snapshot }) => snapshot,
+      ),
       changesApplyTo: "next_run",
     },
   };

@@ -3,6 +3,8 @@ import {
   routeCustomMcpRequest,
 } from "@/lib/integrations/mcp-server";
 import { repository } from "@/lib/repository";
+import { isCalendarProvider } from "@/lib/integrations/calendar-contract";
+import { handleCalendarMcpRequest } from "@/lib/integrations/calendar-mcp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +22,9 @@ export async function POST(
 
   if (integration.provider !== "posthog") {
     const runId = requestUrl.searchParams.get("run") ?? "";
+    if (isCalendarProvider(integration.provider)) {
+      return handleCalendarMcpRequest(request, id, runId);
+    }
     return routeCustomMcpRequest(request, id, runId);
   }
   const agentId = requestUrl.searchParams.get("agent") ?? "";

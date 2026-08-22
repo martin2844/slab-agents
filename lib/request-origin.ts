@@ -12,14 +12,20 @@ function parsePublicOrigin(value: string) {
   return url.origin;
 }
 
+export function configuredPublicOrigin(
+  configuredPublicUrl = process.env.SLAB_PUBLIC_URL ?? "",
+) {
+  const configured = configuredPublicUrl.trim();
+  return configured ? parsePublicOrigin(configured) : "";
+}
+
 export function publicRequestOrigin(
   request: Request,
   configuredPublicUrl = process.env.SLAB_PUBLIC_URL ?? "",
 ) {
-  const configured = configuredPublicUrl.trim();
-  return configured
-    ? parsePublicOrigin(configured)
-    : new URL(request.url).origin;
+  return (
+    configuredPublicOrigin(configuredPublicUrl) || new URL(request.url).origin
+  );
 }
 
 export function emailSettingsRedirect(

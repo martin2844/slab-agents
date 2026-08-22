@@ -297,7 +297,14 @@ export type WorkspaceSettings = {
   runnerUrl: string;
 };
 
-export type IntegrationProvider = "posthog" | "custom_http" | "custom_mcp";
+export type CalendarProvider =
+  | "calendar_google"
+  | "calendar_microsoft"
+  | "calendar_caldav"
+  | "calendar_calcom"
+  | "calendar_ics";
+export type IntegrationProvider =
+  "posthog" | "custom_http" | "custom_mcp" | CalendarProvider;
 // Keep the historic values plus explicit disabled state for configured-but-paused integrations.
 export type IntegrationStatus =
   "connected" | "failed" | "not_tested" | "disabled";
@@ -377,6 +384,14 @@ export type Integration = {
   slug: string;
   datacenter?: "us" | "eu";
   baseUrl?: string;
+  accountEmail?: string | null;
+  accountName?: string | null;
+  writePolicy?: CalendarWritePolicy;
+  oauthConfigured?: boolean;
+  calendarId?: string | null;
+  calendarUsername?: string | null;
+  calendarTenant?: string | null;
+  calendarEventTypeId?: number | null;
   timeoutMs?: number | null;
   kind?: "read" | "readwrite";
   enabled: boolean;
@@ -402,6 +417,16 @@ export type IntegrationsPageData = {
 };
 
 export type EmailSendPolicy = "disabled" | "approval_required" | "autonomous";
+export type CalendarWritePolicy =
+  "disabled" | "approval_required" | "autonomous";
+
+export type CalendarIntegrationState = {
+  integrations: Integration[];
+  agents: Agent[];
+  googleCallbackUrl: string;
+  microsoftCallbackUrl: string;
+  oauthResult: "connected" | "failed" | null;
+};
 export type EmailAccount = {
   id: string;
   provider:
