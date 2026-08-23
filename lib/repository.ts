@@ -102,6 +102,8 @@ function mapRun(row: Row): Run {
     createdAt: String(row.created_at ?? row.started_at ?? ""),
     queuedAt: String(row.queued_at ?? row.created_at ?? row.started_at ?? ""),
     attemptCount: Number(row.attempt_count ?? 0),
+    runnerRunId: row.runner_run_id ? String(row.runner_run_id) : null,
+    runnerEventId: Number(row.runner_event_id ?? 0),
   };
 }
 function mapAutomation(row: Row): Automation {
@@ -118,8 +120,7 @@ function mapAutomation(row: Row): Automation {
     lastScheduledFor: row.last_scheduled_for
       ? String(row.last_scheduled_for)
       : null,
-    missedRunPolicy:
-      row.missed_run_policy === "skip" ? "skip" : "latest_once",
+    missedRunPolicy: row.missed_run_policy === "skip" ? "skip" : "latest_once",
     lastRunId: row.last_run_id ? String(row.last_run_id) : null,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
@@ -1390,6 +1391,30 @@ export const repository = {
       db.prepare("SELECT * FROM messages WHERE id=?").get(id) as Row,
     );
   },
+  addRunMessageOnce(
+    threadId: string,
+    runId: string,
+    role: Message["role"],
+    body: string,
+  ) {
+    const insert = db.transaction(() => {
+      const existing = db
+        .prepare(
+          "SELECT * FROM messages WHERE run_id=? AND role=? ORDER BY rowid LIMIT 1",
+        )
+        .get(runId, role) as Row | undefined;
+      if (existing) return mapMessage(existing);
+      const id = randomUUID();
+      db.prepare(
+        "INSERT INTO messages (id,thread_id,run_id,role,body,created_at) VALUES (?,?,?,?,?,?)",
+      ).run(id, threadId, runId, role, body, now());
+      this.touchThread(threadId);
+      return mapMessage(
+        db.prepare("SELECT * FROM messages WHERE id=?").get(id) as Row,
+      );
+    });
+    return insert.immediate();
+  },
 
   createRun(input: {
     id?: string;
@@ -1467,6 +1492,55 @@ export const repository = {
       id,
     );
     return this.getRun(id);
+  },
+  updateRunRunnerCursor(
+    id: string,
+    leaseOwner: string,
+    runnerRunId: string,
+    runnerEventId: number,
+    reset = false,
+  ) {
+    const comparison = reset
+      ? ""
+      : "AND runner_run_id=? AND runner_event_id < ?";
+    const parameters = reset
+      ? [runnerRunId, runnerEventId, id, leaseOwner]
+      : [
+          runnerRunId,
+          runnerEventId,
+          id,
+          leaseOwner,
+          runnerRunId,
+          runnerEventId,
+        ];
+    return db
+      .prepare(
+        `UPDATE runs SET runner_run_id=?,runner_event_id=?
+         WHERE id=? AND lease_owner=? ${comparison}`,
+      )
+      .run(...parameters).changes;
+  },
+  ownsRunLease(id: string, leaseOwner: string) {
+    const row = db
+      .prepare(
+        `SELECT 1 AS owned FROM runs
+         WHERE id=? AND lease_owner=? AND lease_expires_at > ?`,
+      )
+      .get(id, leaseOwner, now()) as { owned: number } | undefined;
+    return row?.owned === 1;
+  },
+  requeueRunForRunnerReconnect(id: string, leaseOwner: string, error: string) {
+    const attemptCount = this.getRun(id)?.attemptCount ?? 1;
+    const retryAt = new Date(
+      Date.now() + Math.min(60_000, 1_000 * 2 ** Math.min(attemptCount - 1, 6)),
+    ).toISOString();
+    return db
+      .prepare(
+        `UPDATE runs
+         SET status='queued',started_at=NULL,completed_at=NULL,error=?,runner_retry_at=?
+         WHERE id=? AND lease_owner=? AND lease_expires_at > ?`,
+      )
+      .run(error, retryAt, id, leaseOwner, now()).changes;
   },
   addRunEvent(
     runId: string,
@@ -1644,19 +1718,18 @@ export const repository = {
     command: string,
     details: Record<string, unknown>,
   ) {
-    const id = randomUUID(),
-      createdAt = now();
+    const id = randomUUID();
     db.prepare(
-      "INSERT INTO approvals (id,run_id,runner_approval_id,command,details_json,status,created_at) VALUES (?,?,?,?,?,'pending',?)",
-    ).run(
-      id,
-      runId,
-      runnerApprovalId,
-      command,
-      JSON.stringify(details),
-      createdAt,
-    );
-    return this.getApproval(id)!;
+      `INSERT OR IGNORE INTO approvals
+       (id,run_id,runner_approval_id,command,details_json,status,created_at)
+       VALUES (?,?,?,?,?,'pending',?)`,
+    ).run(id, runId, runnerApprovalId, command, JSON.stringify(details), now());
+    const row = db
+      .prepare(
+        "SELECT * FROM approvals WHERE run_id=? AND runner_approval_id=?",
+      )
+      .get(runId, runnerApprovalId) as Row;
+    return mapApproval(row);
   },
   getApproval(id: string) {
     const row = db.prepare("SELECT * FROM approvals WHERE id=?").get(id) as

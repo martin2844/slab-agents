@@ -101,7 +101,11 @@ function safeAccount(account: RemoteEmailAccount): EmailAccount {
 }
 
 export class EmailAdminClient {
-  constructor(private readonly serviceUrl: string) {}
+  private readonly serviceUrl: string;
+
+  constructor(serviceUrl: string) {
+    this.serviceUrl = serviceUrl;
+  }
 
   private async request<T>(path: string, options: RequestOptions = {}) {
     const response = await fetch(`${this.serviceUrl}${path}`, {
@@ -149,7 +153,8 @@ export class EmailAdminClient {
     password: string;
   }) {
     const result = await this.request<
-      ManagedProtonChallenge | { state: "connected"; account: RemoteEmailAccount }
+      | ManagedProtonChallenge
+      | { state: "connected"; account: RemoteEmailAccount }
     >("/api/proton-bridge/connect", {
       method: "POST",
       body: input,
@@ -165,7 +170,8 @@ export class EmailAdminClient {
     value?: string;
   }) {
     const result = await this.request<
-      ManagedProtonChallenge | { state: "connected"; account: RemoteEmailAccount }
+      | ManagedProtonChallenge
+      | { state: "connected"; account: RemoteEmailAccount }
     >("/api/proton-bridge/challenge", {
       method: "POST",
       body: input,
@@ -294,10 +300,7 @@ export class EmailAdminClient {
     return this.request<GmailOAuthSettings>("/api/settings/google-oauth");
   }
 
-  saveGoogleOAuthSettings(input: {
-    clientId: string;
-    clientSecret?: string;
-  }) {
+  saveGoogleOAuthSettings(input: { clientId: string; clientSecret?: string }) {
     return this.request<GmailOAuthSettings>("/api/settings/google-oauth", {
       method: "PATCH",
       body: input,
@@ -305,7 +308,9 @@ export class EmailAdminClient {
   }
 
   getMicrosoftOAuthSettings() {
-    return this.request<MicrosoftOAuthSettings>("/api/settings/microsoft-oauth");
+    return this.request<MicrosoftOAuthSettings>(
+      "/api/settings/microsoft-oauth",
+    );
   }
 
   saveMicrosoftOAuthSettings(input: {
@@ -313,10 +318,13 @@ export class EmailAdminClient {
     clientSecret?: string;
     tenant: string;
   }) {
-    return this.request<MicrosoftOAuthSettings>("/api/settings/microsoft-oauth", {
-      method: "PATCH",
-      body: input,
-    });
+    return this.request<MicrosoftOAuthSettings>(
+      "/api/settings/microsoft-oauth",
+      {
+        method: "PATCH",
+        body: input,
+      },
+    );
   }
 
   createProfile(

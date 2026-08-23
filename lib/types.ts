@@ -70,6 +70,8 @@ export type Run = {
   createdAt: string;
   queuedAt: string;
   attemptCount: number;
+  runnerRunId: string | null;
+  runnerEventId: number;
 };
 
 export type RunEvent = {

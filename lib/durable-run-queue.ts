@@ -11,6 +11,8 @@ const TERMINAL = new Set(["completed", "failed", "skipped", "cancelled"]);
 export type RunLease = {
   runId: string;
   ownerId: string;
+  isCurrent: () => boolean;
+  begin: () => "started" | "maintenance" | "lost";
   release: () => void;
 };
 
@@ -112,7 +114,7 @@ export class DurableRunQueue {
 
       const abandoned = this.database
         .prepare(
-          `SELECT id,status,attempt_count FROM runs
+          `SELECT id,status,attempt_count,runner_run_id FROM runs
            WHERE status IN ('running','waiting_approval')
              AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
            ORDER BY rowid`,
@@ -124,12 +126,16 @@ export class DurableRunQueue {
         const id = String(row.id);
         const status = String(row.status);
         const attempts = Number(row.attempt_count ?? 0);
-        if (status === "running" && attempts < this.maxAttempts) {
+        const hasRunnerIdentity = Boolean(row.runner_run_id);
+        if (
+          hasRunnerIdentity ||
+          (status === "running" && attempts < this.maxAttempts)
+        ) {
           this.database
             .prepare(
               `UPDATE runs
                SET status='queued',started_at=NULL,completed_at=NULL,error=NULL,
-                   lease_owner=NULL,lease_expires_at=NULL
+                   lease_owner=NULL,lease_expires_at=NULL,runner_retry_at=NULL
                WHERE id=?`,
             )
             .run(id);
@@ -163,10 +169,11 @@ export class DurableRunQueue {
         .prepare(
           `SELECT id FROM runs
            WHERE status='queued' AND COALESCE(created_at,queued_at) <= ?
+             AND (runner_retry_at IS NULL OR runner_retry_at <= ?)
            ORDER BY COALESCE(queued_at,created_at),rowid
            LIMIT ?`,
         )
-        .all(readyBefore, limit) as Row[]
+        .all(readyBefore, this.clock().toISOString(), limit) as Row[]
     ).map((row) => String(row.id));
   }
 
@@ -198,7 +205,9 @@ export class DurableRunQueue {
   private tryClaim(runId: string): ClaimResult {
     const timestamp = this.clock();
     const now = timestamp.toISOString();
-    const expiresAt = new Date(timestamp.getTime() + this.leaseMs).toISOString();
+    const expiresAt = new Date(
+      timestamp.getTime() + this.leaseMs,
+    ).toISOString();
     const claim = this.database.transaction((): ClaimResult => {
       const run = this.database
         .prepare("SELECT rowid AS queue_order,* FROM runs WHERE id=?")
@@ -220,6 +229,14 @@ export class DurableRunQueue {
         };
       }
       if (String(run.status) !== "queued") {
+        return {
+          claimed: false,
+          terminal: false,
+          blockedByRunId: String(run.id),
+          reason: "active_run",
+        };
+      }
+      if (run.runner_retry_at && String(run.runner_retry_at) > now) {
         return {
           claimed: false,
           terminal: false,
@@ -273,7 +290,7 @@ export class DurableRunQueue {
           `UPDATE runs
            SET lease_owner=?,lease_expires_at=?,attempt_count=attempt_count+1
            WHERE id=? AND status='queued'
-             AND (lease_owner IS NULL OR lease_expires_at <= ?)`
+             AND (lease_owner IS NULL OR lease_expires_at <= ?)`,
         )
         .run(this.ownerId, expiresAt, runId, now);
       return {
@@ -306,8 +323,43 @@ export class DurableRunQueue {
     return {
       runId,
       ownerId: this.ownerId,
+      isCurrent: () => this.ownsCurrentLease(runId),
+      begin: () => this.beginRun(runId),
       release: () => this.release(runId),
     };
+  }
+
+  private beginRun(runId: string): "started" | "maintenance" | "lost" {
+    const timestamp = this.clock().toISOString();
+    const begin = this.database.transaction(() => {
+      const changed = this.database
+        .prepare(
+          `UPDATE runs SET status='running',error=NULL,runner_retry_at=NULL
+           WHERE id=? AND status='queued' AND lease_owner=?
+             AND lease_expires_at > ?
+             AND NOT EXISTS (
+               SELECT 1 FROM settings
+               WHERE key='system_maintenance_mode' AND value='on'
+             )`,
+        )
+        .run(runId, this.ownerId, timestamp);
+      if (changed.changes === 1) return "started" as const;
+      if (this.maintenanceEnabled()) return "maintenance" as const;
+      return "lost" as const;
+    });
+    return begin.immediate();
+  }
+
+  private ownsCurrentLease(runId: string) {
+    const row = this.database
+      .prepare(
+        `SELECT 1 AS owned FROM runs
+         WHERE id=? AND lease_owner=? AND lease_expires_at > ?
+           AND status IN ('queued','running','waiting_approval')`,
+      )
+      .get(runId, this.ownerId, this.clock().toISOString()) as
+      { owned: number } | undefined;
+    return row?.owned === 1;
   }
 
   private release(runId: string) {

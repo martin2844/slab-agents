@@ -19,40 +19,22 @@ import { RunnerRequestError } from "@/lib/runner-errors";
 import { readSecret } from "@/lib/server-config";
 import type { RunExecution } from "@/lib/run-execution";
 import {
+  attachRunnerTransport,
+  createRunnerTransport,
+} from "@/lib/runner-transport";
+import {
   measureJson,
   measureText,
   type ContextComponent,
   type ControlPlaneContextProfile,
 } from "@/lib/run-context-profile";
 
-export type RunnerEvent = {
-  id: number;
-  type:
-    | "run.started"
-    | "context.bootstrap"
-    | "thread.created"
-    | "assistant.delta"
-    | "assistant.completed"
-    | "tool.started"
-    | "tool.completed"
-    | "tool.failed"
-    | "runtime.warning"
-    | "approval.required"
-    | "approval.resolved"
-    | "usage.updated"
-    | "run.completed"
-    | "run.failed"
-    | "run.cancelled";
-  runId: string;
-  timestamp: string;
-  data: Record<string, unknown>;
-};
+export type { RunnerEvent } from "@/lib/runner-transport";
 
-const terminalEvents = new Set<RunnerEvent["type"]>([
-  "run.completed",
-  "run.failed",
-  "run.cancelled",
-]);
+type RunnerRuntimeDependencies = {
+  fetcher?: typeof fetch;
+  retryDelay?: (attempt: number) => Promise<void>;
+};
 
 const runnerUrl = () => getSetting("runner_url").replace(/\/$/, "");
 
@@ -94,78 +76,43 @@ async function runnerError(response: Response) {
   return new RunnerRequestError(message, response.status);
 }
 
-function parseEventBlock(block: string): RunnerEvent | null {
-  const data = block
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith("data:"))
-    .map((line) => line.slice(5).trimStart())
-    .join("\n");
-  if (!data || data === "[DONE]") return null;
-  try {
-    return JSON.parse(data) as RunnerEvent;
-  } catch {
-    return null;
+export async function startRunnerRun(
+  input: {
+    runId: string;
+    controlPlaneRunId?: string;
+    agent: Agent;
+    thread: Thread;
+    messages: Message[];
+    prompt: string;
+    execution: RunExecution;
+    runnerEventCursor?: number;
+  },
+  dependencies: RunnerRuntimeDependencies = {},
+) {
+  const baseUrl = runnerUrl();
+  const transportHeaders = runnerHeaders({
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  });
+  const attached = await attachRunnerTransport({
+    baseUrl,
+    runId: input.runId,
+    headers: transportHeaders,
+    afterEventId: input.runnerEventCursor,
+    fetcher: dependencies.fetcher,
+    errorFromResponse: runnerError,
+    retryDelay: dependencies.retryDelay,
+  });
+  if (attached) {
+    return {
+      events: attached.events,
+      resumed: true,
+      runnerStatus: attached.runnerStatus,
+      contextProfile: null,
+      capabilitySnapshot: null,
+    };
   }
-}
 
-async function* parseEventStream(
-  response: Response,
-): AsyncGenerator<RunnerEvent> {
-  if (!response.body) throw new Error("Runner returned an empty event stream.");
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const blocks = buffer.split(/\r?\n\r?\n/);
-    buffer = blocks.pop() ?? "";
-    for (const block of blocks) {
-      const event = parseEventBlock(block);
-      if (event) yield event;
-    }
-    if (done) break;
-  }
-  const event = parseEventBlock(buffer);
-  if (event) yield event;
-}
-
-async function* streamRunnerEvents(runId: string) {
-  let lastEventId = 0;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const response = await fetch(
-      `${runnerUrl()}/runs/${encodeURIComponent(runId)}/events`,
-      {
-        headers: runnerHeaders({
-          Accept: "text/event-stream",
-          ...(lastEventId ? { "Last-Event-ID": String(lastEventId) } : {}),
-        }),
-        cache: "no-store",
-      },
-    );
-    if (!response.ok) throw await runnerError(response);
-    for await (const event of parseEventStream(response)) {
-      if (event.id <= lastEventId) continue;
-      lastEventId = event.id;
-      yield event;
-      if (terminalEvents.has(event.type)) return;
-    }
-    if (attempt < 3) {
-      await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
-    }
-  }
-  throw new Error("Runner event stream ended before the run completed.");
-}
-
-export async function startRunnerRun(input: {
-  runId: string;
-  controlPlaneRunId?: string;
-  agent: Agent;
-  thread: Thread;
-  messages: Message[];
-  prompt: string;
-  execution: RunExecution;
-}) {
   const contextMessages =
     input.messages.at(-1)?.role === "user" &&
     input.messages.at(-1)?.body === input.prompt
@@ -292,12 +239,10 @@ export async function startRunnerRun(input: {
     components,
     mcpServers: mcpDefinitions,
   }));
-  const response = await fetch(`${runnerUrl()}/runs`, {
-    method: "POST",
-    headers: runnerHeaders({
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    }),
+  const transport = await createRunnerTransport({
+    baseUrl,
+    runId: input.runId,
+    headers: transportHeaders,
     body: JSON.stringify({
       runId: input.runId,
       agent: {
@@ -317,18 +262,15 @@ export async function startRunnerRun(input: {
       mcpServers,
       cwd: null,
     }),
-    cache: "no-store",
+    afterEventId: input.runnerEventCursor,
+    fetcher: dependencies.fetcher,
+    errorFromResponse: runnerError,
+    retryDelay: dependencies.retryDelay,
   });
-  if (!response.ok) throw await runnerError(response);
-  const acknowledgement = (await response.json()) as {
-    runId?: string;
-    status?: string;
-  };
-  if (acknowledgement.runId !== input.runId) {
-    throw new Error("Runner acknowledged a different run identifier.");
-  }
   return {
-    events: streamRunnerEvents(input.runId),
+    events: transport.events,
+    resumed: transport.resumed,
+    runnerStatus: transport.runnerStatus,
     contextProfile,
     capabilitySnapshot: {
       capturedAt: new Date().toISOString(),

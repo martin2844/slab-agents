@@ -15,7 +15,7 @@ export function recoverRunDispatch() {
     const run = repository.getRun(runId);
     repository.addRunEvent(runId, "run_recovered", {
       action: "requeued",
-      previousStatus: "running",
+      previousStatus: "running_or_waiting_approval",
       attemptCount: run?.attemptCount ?? null,
       runtimeThreadPolicy:
         run?.mode === "chat" ? "chat_may_resume" : "non_chat_fresh",
