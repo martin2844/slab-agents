@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Play } from "lucide-react";
+import { ArrowUpRight, PackageOpen, Play, Plus } from "lucide-react";
 import { AgentChatDialog } from "@/components/agent-chat-dialog";
 import { AgentCreateDialog } from "@/components/agent-create-dialog";
 import { AgentRunDialog } from "@/components/agent-run-dialog";
@@ -98,8 +98,23 @@ export function AgentsView({
       {agents && !agents.length && (
         <EmptyState
           title="No agents yet"
-          description="Create your first agent and give it access to Work and Docs."
-          action={<AgentCreateDialog />}
+          description="Start with an inspectable Operator Pack for a repeatable outcome, or create an Agent manually."
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button asChild>
+                <Link href="/packs">
+                  <PackageOpen /> Browse Operator Packs
+                </Link>
+              </Button>
+              <AgentCreateDialog
+                trigger={
+                  <Button variant="outline">
+                    <Plus /> New agent
+                  </Button>
+                }
+              />
+            </div>
+          }
         />
       )}
       {agents && agents.length > 0 && (
@@ -265,11 +280,7 @@ export function AgentsView({
                     ))}
                   </div>
                   <div className="mt-4 flex gap-2">
-                    <AgentChatDialog
-                      agent={agent}
-                      label="Chat now"
-                      size="sm"
-                    />
+                    <AgentChatDialog agent={agent} label="Chat now" size="sm" />
                     <AgentRunDialog
                       agent={agent}
                       label="Run now"

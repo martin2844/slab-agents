@@ -80,6 +80,19 @@ Calendar writes use the existing approval lifecycle:
 See [Calendar integrations](docs/calendar-integrations.md) for provider setup,
 OAuth callback paths, security boundaries, tool contracts, and limitations.
 
+## Operator Packs
+
+Operator Packs provide inspectable, versioned operating configurations for
+Founder Ops, Sales Ops, and Engineering Ops. The UI previews every Agent,
+instruction, quick action, Automation, starter Doc, capability requirement, and
+permission implication before applying it. Reconciliation preserves user edits
+by default, remote Docs are resumable, and disabling a pack never deletes Work
+or historical data.
+
+See [Operator Packs](docs/operator-packs.md) for the strict manifest contract,
+installation lifecycle, import/export, synthetic acceptance, and security
+boundary.
+
 ## Run locally
 
 With `slab`, `slab-docs`, `slab-runner`, and `slab-agents` checked out as
@@ -154,9 +167,9 @@ Runs persist execution semantics separately from agent identity:
 - `run_instructions` stores the policy for that individual execution.
 
 Manual and scheduled automations share the same execution path and automation
-mode. Runs for one agent are serialized in a local in-memory FIFO; different
-agents may execute concurrently. Work event idempotency remains persisted in
-SQLite.
+mode. Runs for one agent are serialized through the durable SQLite-backed FIFO;
+different agents may execute concurrently. Work event idempotency remains
+persisted in SQLite.
 
 ```bash
 npm run migrate:latest

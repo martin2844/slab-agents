@@ -28,8 +28,10 @@ import type { Agent } from "@/lib/types";
 
 export function AgentCreateDialog({
   onCreated,
+  trigger,
 }: {
   onCreated?: (agent: Agent) => void;
+  trigger?: React.ReactElement;
 }) {
   const router = useRouter(),
     [open, setOpen] = useState(false),
@@ -68,10 +70,14 @@ export function AgentCreateDialog({
   }
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button />}>
-        <Plus />
-        New agent
-      </DialogTrigger>
+      {trigger ? (
+        <DialogTrigger render={trigger} />
+      ) : (
+        <DialogTrigger render={<Button />}>
+          <Plus />
+          New agent
+        </DialogTrigger>
+      )}
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
         <form onSubmit={submit}>
           <DialogHeader>

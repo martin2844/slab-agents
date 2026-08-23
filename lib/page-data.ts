@@ -12,12 +12,17 @@ import type {
   AutomationsData,
   DocsPageData,
   IntegrationsPageData,
+  OperatorPacksPageData,
   OverviewData,
   RunDetailData,
   RunsData,
   ThreadData,
   WorkPageData,
 } from "@/lib/types";
+import {
+  getOperatorPackSummaries,
+  operatorPackMetrics,
+} from "@/lib/packs/service";
 
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Request failed";
@@ -168,6 +173,13 @@ export function getIntegrationsPageData(): IntegrationsPageData {
       .filter((integration) => !integration.provider.startsWith("calendar_")),
     agents: repository.listAgents(),
     catalog: INTEGRATION_CATALOG,
+  };
+}
+
+export async function getOperatorPacksPageData(): Promise<OperatorPacksPageData> {
+  return {
+    packs: await getOperatorPackSummaries(),
+    metrics: operatorPackMetrics(),
   };
 }
 

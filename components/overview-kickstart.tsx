@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -8,6 +9,7 @@ import {
   CircleDashed,
   LoaderCircle,
   Play,
+  PackageOpen,
   PlugZap,
   Settings2,
   X,
@@ -146,6 +148,22 @@ export function OverviewKickstart({
       Run COO review
     </Button>
   );
+  const primaryActions = agents.length ? (
+    <DialogTrigger asChild>{trigger}</DialogTrigger>
+  ) : (
+    <>
+      <Button asChild>
+        <Link href="/packs">
+          <PackageOpen /> Choose an Operator Pack
+        </Link>
+      </Button>
+      <DialogTrigger asChild>
+        <Button variant="outline">
+          <Play /> Manual review
+        </Button>
+      </DialogTrigger>
+    </>
+  );
 
   if (setup.ready) {
     return (
@@ -153,7 +171,7 @@ export function OverviewKickstart({
         <PageHeader
           title="Overview"
           description={`${setup.connected}/${setup.total} systems healthy · local control plane`}
-          actions={<DialogTrigger asChild>{trigger}</DialogTrigger>}
+          actions={primaryActions}
         />
         <OperatingLoopDialog
           agents={agents}
@@ -173,7 +191,7 @@ export function OverviewKickstart({
       <PageHeader
         title="Set up your control plane"
         description="Connect Work, Docs, and the local runtime before the first operating loop."
-        actions={<DialogTrigger asChild>{trigger}</DialogTrigger>}
+        actions={primaryActions}
       />
 
       <section className="mb-6 grid overflow-hidden rounded-lg border bg-card lg:grid-cols-[1.2fr_0.8fr]">

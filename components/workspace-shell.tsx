@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Menu,
   PanelsTopLeft,
+  PackageOpen,
   Plug,
   Settings,
   Workflow,
@@ -40,6 +41,7 @@ const nav = [
   {
     label: "Configure",
     items: [
+      { href: "/packs", label: "Operator Packs", icon: PackageOpen },
       { href: "/automations", label: "Automations", icon: CalendarClock },
       { href: "/integrations", label: "Integrations", icon: Plug },
       { href: "/docs", label: "Docs", icon: FileText },

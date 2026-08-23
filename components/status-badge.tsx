@@ -7,13 +7,26 @@ export function StatusBadge({ status }: { status: string }) {
       variant="outline"
       className={cn(
         "h-5 rounded-full px-2 text-[0.68rem] capitalize",
-        ["completed", "done", "connected", "approved"].includes(status) &&
+        [
+          "completed",
+          "done",
+          "connected",
+          "approved",
+          "installed",
+          "passed",
+        ].includes(status) &&
           "border-emerald-600/25 bg-emerald-500/10 text-emerald-800",
-        ["running", "in_progress"].includes(status) &&
-          "border-primary/25 bg-primary/10 text-primary",
-        ["failed", "denied"].includes(status) &&
+        ["running", "in_progress", "installing", "evaluating"].includes(
+          status,
+        ) && "border-primary/25 bg-primary/10 text-primary",
+        ["failed", "denied", "partial_failure"].includes(status) &&
           "border-destructive/25 bg-destructive/10 text-destructive",
-        ["waiting_approval", "pending"].includes(status) &&
+        [
+          "waiting_approval",
+          "pending",
+          "needs setup",
+          "update available",
+        ].includes(status) &&
           "border-amber-600/25 bg-amber-500/10 text-amber-800",
         ["queued", "idle"].includes(status) &&
           "border-stone-500/25 bg-stone-500/10 text-stone-700",
