@@ -11,7 +11,7 @@ type TriggerType =
 
 const state = globalThis as unknown as {
   slabWorkCoordinator?: NodeJS.Timeout;
-  slabWorkCoordinatorBusy?: boolean;
+  slabWorkCoordinatorInFlight?: Promise<void>;
   slabWorkCoordinatorTick?: () => Promise<void>;
 };
 
@@ -308,24 +308,32 @@ async function inspectIssue(projectKey: string, issue: Issue, agents: Agent[]) {
   });
 }
 
-export async function tickWorkCoordination() {
-  if (state.slabWorkCoordinatorBusy) return;
-  state.slabWorkCoordinatorBusy = true;
-  try {
-    const agents = repository.listAgents();
-    if (!agents.some((agent) => agent.enabled)) return;
-    const projects = await WorkClient.listProjects();
-    for (const project of projects) {
-      const issues = await WorkClient.listIssues(project.key);
-      await Promise.all(
-        issues.map((issue) => inspectIssue(project.key, issue, agents)),
-      );
-    }
-  } catch (error) {
-    console.error("[work-coordination] poll failed:", error);
-  } finally {
-    state.slabWorkCoordinatorBusy = false;
+export function tickWorkCoordination() {
+  if (state.slabWorkCoordinatorInFlight) {
+    return state.slabWorkCoordinatorInFlight;
   }
+  const tick = (async () => {
+    try {
+      const agents = repository.listAgents();
+      if (!agents.some((agent) => agent.enabled)) return;
+      const projects = await WorkClient.listProjects();
+      for (const project of projects) {
+        const issues = await WorkClient.listIssues(project.key);
+        await Promise.all(
+          issues.map((issue) => inspectIssue(project.key, issue, agents)),
+        );
+      }
+    } catch (error) {
+      console.error("[work-coordination] poll failed:", error);
+    }
+  })();
+  state.slabWorkCoordinatorInFlight = tick;
+  void tick.finally(() => {
+    if (state.slabWorkCoordinatorInFlight === tick) {
+      state.slabWorkCoordinatorInFlight = undefined;
+    }
+  });
+  return tick;
 }
 
 state.slabWorkCoordinatorTick = tickWorkCoordination;

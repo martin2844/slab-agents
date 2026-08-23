@@ -1,5 +1,9 @@
 import type { RunContextProfile } from "@/lib/run-context-profile";
 import type { AutomationMode, RunMode, RunTrigger } from "@/lib/run-execution";
+import type {
+  OperatorPackManifest,
+  PackCapabilityCategory,
+} from "@/lib/packs/manifest";
 
 export type Agent = {
   id: string;
@@ -524,4 +528,113 @@ export type EmailIntegrationState = {
   protonBridge: ManagedProtonBridgeState;
   accounts: EmailAccount[];
   assignments: AgentEmailAccess[];
+};
+
+export type OperatorPackInstallationStatus =
+  "installing" | "installed" | "partial_failure" | "disabled";
+
+export type OperatorPackInstallation = {
+  packId: string;
+  packVersion: string;
+  source: "official" | "local";
+  status: OperatorPackInstallationStatus;
+  manifest: OperatorPackManifest;
+  lastError: string | null;
+  installedAt: string;
+  disabledAt: string | null;
+  updatedAt: string;
+};
+
+export type OperatorPackResourceType =
+  "agent" | "quick_action" | "automation" | "doc";
+
+export type OperatorPackResource = {
+  id: string;
+  packId: string;
+  resourceType: OperatorPackResourceType;
+  resourceKey: string;
+  resourceId: string | null;
+  managed: boolean;
+  createdByPack: boolean;
+  reattachable: boolean;
+  state: "applied" | "failed" | "detached";
+  baseline: Record<string, unknown>;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type OperatorPackAcceptanceStatus =
+  "preparing" | "queued" | "running" | "evaluating" | "passed" | "failed";
+
+export type OperatorPackAcceptance = {
+  id: string;
+  packId: string;
+  scenarioId: string;
+  packVersion: string;
+  runId: string | null;
+  projectKey: string | null;
+  issueKey: string | null;
+  docId: string | null;
+  status: OperatorPackAcceptanceStatus;
+  rubric: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  updatedAt: string;
+};
+
+export type OperatorPackCapabilityState = {
+  category: PackCapabilityCategory;
+  required: boolean;
+  available: boolean;
+  description: string;
+};
+
+export type OperatorPackPreviewChange = {
+  resourceType: OperatorPackResourceType;
+  resourceKey: string;
+  label: string;
+  action:
+    "create" | "update" | "preserve" | "conflict" | "unchanged" | "detach";
+  baseline?: Record<string, unknown>;
+  current?: Record<string, unknown>;
+  proposed: Record<string, unknown>;
+  userModified: boolean;
+};
+
+export type OperatorPackPreview = {
+  pack: OperatorPackManifest;
+  source: "official" | "local";
+  installation: OperatorPackInstallation | null;
+  changes: OperatorPackPreviewChange[];
+  capabilities: OperatorPackCapabilityState[];
+  permissions: OperatorPackManifest["permissions"];
+  conflicts: number;
+  remoteChanges: number;
+};
+
+export type OperatorPackSummary = {
+  manifest: OperatorPackManifest;
+  source: "official" | "local";
+  installation: OperatorPackInstallation | null;
+  capabilities: OperatorPackCapabilityState[];
+  configured: boolean;
+  updateAvailable: boolean;
+  acceptance: OperatorPackAcceptance | null;
+};
+
+export type OperatorPackMetrics = {
+  total: number;
+  passed: number;
+  failed: number;
+  running: number;
+  passRate: number | null;
+  medianMinutesToAcceptedOutcome: number | null;
+};
+
+export type OperatorPacksPageData = {
+  packs: OperatorPackSummary[];
+  metrics: OperatorPackMetrics;
 };
