@@ -1,6 +1,6 @@
 # Calendar integrations implementation TODO
 
-Status: implementation and Big Review complete; production rollout pending
+Status: DONE — implementation, Big Review, production rollout, and live canary complete
 
 ## Product goal
 
@@ -85,7 +85,7 @@ Tools are exposed only when the provider and assigned permission support them. T
 - [x] Lint, typecheck, tests, production build, and `git diff --check`
 - [x] Functional QA on Settings, Integrations, Agent Capabilities, and documentation
 - [x] Big Review with verified findings fixed
-- [ ] Push, production deployment, and live canary verification
+- [x] Push, production deployment, and live canary verification
 
 ## Explicit non-goals
 
