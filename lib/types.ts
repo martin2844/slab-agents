@@ -67,6 +67,9 @@ export type Run = {
   completedAt: string | null;
   error: string | null;
   usage: Record<string, unknown> | null;
+  createdAt: string;
+  queuedAt: string;
+  attemptCount: number;
 };
 
 export type RunEvent = {
@@ -87,6 +90,8 @@ export type Automation = {
   mode: AutomationMode;
   enabled: boolean;
   lastRunAt: string | null;
+  lastScheduledFor: string | null;
+  missedRunPolicy: "skip" | "latest_once";
   lastRunId: string | null;
   createdAt: string;
   updatedAt: string;

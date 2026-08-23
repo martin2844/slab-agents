@@ -1,6 +1,7 @@
 import "server-only";
 
-import { AgentRunQueue } from "@/lib/agent-run-queue";
+import { durableRunQueue } from "@/lib/durable-run-state";
+import type { RunLease } from "@/lib/durable-run-queue";
 import { repository } from "@/lib/repository";
 import {
   defineRunExecution,
@@ -11,8 +12,8 @@ import {
 import { startRunnerRun, type RunnerEvent } from "@/lib/runner";
 import { preflightWorkRun } from "@/lib/work-run-preflight-service";
 
-const state = globalThis as unknown as { slabAgentRunQueue?: AgentRunQueue };
-const agentRunQueue = (state.slabAgentRunQueue ??= new AgentRunQueue());
+const state = globalThis as unknown as { slabExecutingRuns?: Set<string> };
+const executingRuns = (state.slabExecutingRuns ??= new Set<string>());
 
 function runtimeFailure(data: Record<string, unknown>) {
   const error = data.error;
@@ -38,6 +39,7 @@ function browserEvent(
 }
 
 export function createRunExecution(input: {
+  runId?: string;
   agentId: string;
   threadId: string;
   trigger: RunTrigger;
@@ -54,6 +56,7 @@ export function createRunExecution(input: {
   }
   const execution = defineRunExecution(input);
   const run = repository.createRun({
+    id: input.runId,
     agentId: agent.id,
     threadId: thread.id,
     automationId: input.automationId,
@@ -81,25 +84,32 @@ export async function* executeRun(input: { runId: string }) {
   const runInput = repository.getRunInput(run.id);
   if (!agent || !thread) throw new Error("Agent or thread not found.");
   if (!runInput) throw new Error("Run input not found.");
+  if (executingRuns.has(run.id)) return;
+  executingRuns.add(run.id);
 
-  const admission = agentRunQueue.acquire(agent.id, run.id);
-  if (admission.queued) {
-    repository.addRunEvent(run.id, "run_queued", {
-      agentId: agent.id,
-      blockedByRunId: agentRunQueue.activeRun(agent.id),
-      trigger: run.trigger,
-      mode: run.mode,
-      issueKey: run.issueKey,
-    });
-    yield {
-      type: "run_queued",
-      runId: run.id,
-      blockedByRunId: agentRunQueue.activeRun(agent.id),
-    };
-  }
-  await admission.ready;
-
+  let lease: RunLease | null = null;
   try {
+    const admission = durableRunQueue.acquire(run.id);
+    if (admission.queued) {
+      repository.addRunEvent(run.id, "run_queued", {
+        agentId: agent.id,
+        blockedByRunId: admission.blockedByRunId,
+        reason: admission.reason,
+        durable: true,
+        trigger: run.trigger,
+        mode: run.mode,
+        issueKey: run.issueKey,
+      });
+      yield {
+        type: "run_queued",
+        runId: run.id,
+        blockedByRunId: admission.blockedByRunId,
+        reason: admission.reason,
+      };
+    }
+    lease = await admission.ready;
+    if (!lease) return;
+
     let preflight;
     try {
       preflight = await preflightWorkRun(run, agent);
@@ -387,7 +397,8 @@ export async function* executeRun(input: { runId: string }) {
       yield { type: "run_failed", error: message, runId: run.id };
     }
   } finally {
-    agentRunQueue.release(agent.id, run.id);
+    lease?.release();
+    executingRuns.delete(run.id);
   }
 }
 
@@ -401,12 +412,61 @@ export function startAutomationRun(
   automationId: string,
   trigger: Extract<RunTrigger, "manual" | "automation">,
   startedAt = new Date(),
+  scheduledFor: Date | null = null,
 ) {
   const automation = repository.getAutomation(automationId);
   if (!automation) throw new Error("Automation not found");
   const agent = repository.getAgent(automation.agentId);
   if (!agent) throw new Error("Agent not found");
   if (!agent.enabled) throw new Error("This agent is disabled.");
+
+  if (scheduledFor) {
+    const scheduledForIso = scheduledFor.toISOString();
+    const occurrence = repository.claimAutomationOccurrence(
+      automation.id,
+      scheduledForIso,
+    );
+    let created = false;
+    const run = repository.transaction(() => {
+      const existing = repository.getRun(occurrence.runId);
+      if (existing) return existing;
+      const thread = repository.createThread(agent.id, automation.name);
+      const scheduledRun = createRunExecution({
+        runId: occurrence.runId,
+        agentId: agent.id,
+        threadId: thread.id,
+        automationId: automation.id,
+        trigger,
+        mode: automation.mode,
+        prompt: automation.prompt,
+      });
+      repository.addRunEvent(
+        scheduledRun.id,
+        "automation_occurrence_claimed",
+        {
+          automationId: automation.id,
+          scheduledFor: scheduledForIso,
+          missedRunPolicy: automation.missedRunPolicy,
+        },
+      );
+      const marked = repository.markAutomationOccurrenceDispatched(
+        automation.id,
+        scheduledForIso,
+        scheduledRun.id,
+      );
+      if (marked !== 1) {
+        throw new Error("Automation occurrence was already dispatched.");
+      }
+      repository.updateAutomation(automation.id, {
+        lastRunAt: startedAt.toISOString(),
+        lastScheduledFor: scheduledForIso,
+      });
+      created = true;
+      return scheduledRun;
+    });
+    if (created) void executeRunInBackground(run.id);
+    return run;
+  }
 
   const thread = repository.createThread(agent.id, automation.name);
   const run = createRunExecution({

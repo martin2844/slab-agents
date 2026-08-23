@@ -99,6 +99,9 @@ function mapRun(row: Row): Run {
     completedAt: row.completed_at ? String(row.completed_at) : null,
     error: row.error ? String(row.error) : null,
     usage: json(row.usage_json, null),
+    createdAt: String(row.created_at ?? row.started_at ?? ""),
+    queuedAt: String(row.queued_at ?? row.created_at ?? row.started_at ?? ""),
+    attemptCount: Number(row.attempt_count ?? 0),
   };
 }
 function mapAutomation(row: Row): Automation {
@@ -112,6 +115,11 @@ function mapAutomation(row: Row): Automation {
     mode: row.mode as Automation["mode"],
     enabled: bool(row.enabled),
     lastRunAt: row.last_run_at ? String(row.last_run_at) : null,
+    lastScheduledFor: row.last_scheduled_for
+      ? String(row.last_scheduled_for)
+      : null,
+    missedRunPolicy:
+      row.missed_run_policy === "skip" ? "skip" : "latest_once",
     lastRunId: row.last_run_id ? String(row.last_run_id) : null,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
@@ -407,6 +415,9 @@ function mapAgentEmailAccess(row: Row, accountIds: string[]): AgentEmailAccess {
 }
 
 export const repository = {
+  transaction<T>(callback: () => T) {
+    return db.transaction(callback).immediate();
+  },
   getSetting(key: string) {
     return (
       (
@@ -1381,6 +1392,7 @@ export const repository = {
   },
 
   createRun(input: {
+    id?: string;
     agentId: string;
     threadId?: string | null;
     automationId?: string | null;
@@ -1390,9 +1402,10 @@ export const repository = {
     issueKey?: string | null;
     runInstructions: string;
   }) {
-    const id = randomUUID();
+    const id = input.id ?? randomUUID();
+    const createdAt = now();
     db.prepare(
-      "INSERT INTO runs (id,agent_id,thread_id,automation_id,status,runtime,trigger,mode,issue_key,run_instructions) VALUES (?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO runs (id,agent_id,thread_id,automation_id,status,runtime,trigger,mode,issue_key,run_instructions,created_at,queued_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     ).run(
       id,
       input.agentId,
@@ -1404,6 +1417,8 @@ export const repository = {
       input.mode,
       input.issueKey ?? null,
       input.runInstructions,
+      createdAt,
+      createdAt,
     );
     return this.getRun(id)!;
   },
@@ -1538,12 +1553,14 @@ export const repository = {
       mode: Automation["mode"];
       enabled: boolean;
       lastRunAt: string | null;
+      lastScheduledFor: string | null;
+      missedRunPolicy: Automation["missedRunPolicy"];
     }>,
   ) {
     const current = this.getAutomation(id);
     if (!current) return null;
     db.prepare(
-      "UPDATE automations SET name=?,cron_expression=?,prompt=?,mode=?,enabled=?,last_run_at=?,updated_at=? WHERE id=?",
+      "UPDATE automations SET name=?,cron_expression=?,prompt=?,mode=?,enabled=?,last_run_at=?,last_scheduled_for=?,missed_run_policy=?,updated_at=? WHERE id=?",
     ).run(
       input.name ?? current.name,
       input.cronExpression === undefined
@@ -1553,10 +1570,72 @@ export const repository = {
       input.mode ?? current.mode,
       (input.enabled ?? current.enabled) ? 1 : 0,
       input.lastRunAt === undefined ? current.lastRunAt : input.lastRunAt,
+      input.lastScheduledFor === undefined
+        ? current.lastScheduledFor
+        : input.lastScheduledFor,
+      input.missedRunPolicy ?? current.missedRunPolicy,
       now(),
       id,
     );
     return this.getAutomation(id);
+  },
+  claimAutomationOccurrence(automationId: string, scheduledFor: string) {
+    const runId = randomUUID();
+    const createdAt = now();
+    db.prepare(
+      `INSERT OR IGNORE INTO automation_occurrences
+       (automation_id,scheduled_for,run_id,status,created_at)
+       VALUES (?,?,?,'pending',?)`,
+    ).run(automationId, scheduledFor, runId, createdAt);
+    return db
+      .prepare(
+        `SELECT automation_id AS automationId,scheduled_for AS scheduledFor,
+                run_id AS runId,status,created_at AS createdAt,
+                dispatched_at AS dispatchedAt
+         FROM automation_occurrences
+         WHERE automation_id=? AND scheduled_for=?`,
+      )
+      .get(automationId, scheduledFor) as {
+      automationId: string;
+      scheduledFor: string;
+      runId: string;
+      status: "pending" | "dispatched";
+      createdAt: string;
+      dispatchedAt: string | null;
+    };
+  },
+  listPendingAutomationOccurrences(limit = 100) {
+    return db
+      .prepare(
+        `SELECT automation_id AS automationId,scheduled_for AS scheduledFor,
+                run_id AS runId,status,created_at AS createdAt,
+                dispatched_at AS dispatchedAt
+         FROM automation_occurrences
+         WHERE status='pending'
+         ORDER BY created_at,automation_id
+         LIMIT ?`,
+      )
+      .all(limit) as Array<{
+      automationId: string;
+      scheduledFor: string;
+      runId: string;
+      status: "pending";
+      createdAt: string;
+      dispatchedAt: null;
+    }>;
+  },
+  markAutomationOccurrenceDispatched(
+    automationId: string,
+    scheduledFor: string,
+    runId: string,
+  ) {
+    return db
+      .prepare(
+        `UPDATE automation_occurrences
+         SET status='dispatched',dispatched_at=?
+         WHERE automation_id=? AND scheduled_for=? AND run_id=? AND status='pending'`,
+      )
+      .run(now(), automationId, scheduledFor, runId).changes;
   },
 
   createApproval(

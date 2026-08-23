@@ -39,7 +39,7 @@ test("every entry point uses the same persisted execution contract", async () =>
   assert.match(coordination, /eventInstructions: coordinationInstructions/);
   assert.match(
     scheduler,
-    /startAutomationRun\(automation\.id, "automation", current\)/,
+    /startAutomationRun\([\s\S]*automation\.id,[\s\S]*"automation",[\s\S]*current,[\s\S]*occurrence,[\s\S]*\)/,
   );
   assert.match(automationRun, /startAutomationRun\(id, "manual"\)/);
   for (const key of [

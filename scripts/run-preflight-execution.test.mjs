@@ -6,12 +6,13 @@ import { buildRunContextProfile } from "../lib/run-context-profile.ts";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("Work preflight runs after FIFO admission and before Runner", async () => {
-  const [source, preflightService] = await Promise.all([
+test("Work preflight runs after durable lease admission and before Runner", async () => {
+  const [source, preflightService, durableQueue] = await Promise.all([
     read("lib/run-service.ts"),
     read("lib/work-run-preflight-service.ts"),
+    read("lib/durable-run-queue.ts"),
   ]);
-  const dequeue = source.indexOf("await admission.ready");
+  const dequeue = source.indexOf("lease = await admission.ready");
   const preflight = source.indexOf("await preflightWorkRun(run, agent)");
   const running = source.indexOf('repository.updateRun(run.id, "running")');
   const runner = source.indexOf("await startRunnerRun({");
@@ -27,6 +28,8 @@ test("Work preflight runs after FIFO admission and before Runner", async () => {
   assert.match(preflightService, /"run_preflight_started"/);
   assert.match(preflightService, /"run_preflight_completed"/);
   assert.match(preflightService, /"run_preflight_failed"/);
+  assert.match(durableQueue, /lease_expires_at/);
+  assert.match(durableQueue, /recoverExpired/);
 });
 
 test("a skipped run has no runtime, model, or agent-tool usage", () => {

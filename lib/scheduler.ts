@@ -1,8 +1,8 @@
 import "server-only";
 
-import { CronExpressionParser } from "cron-parser";
 import { repository } from "@/lib/repository";
 import { startAutomationRun } from "@/lib/run-service";
+import { dueAutomation } from "@/lib/automation-schedule";
 
 const state = globalThis as unknown as {
   slabScheduler?: NodeJS.Timeout;
@@ -10,29 +10,37 @@ const state = globalThis as unknown as {
   slabSchedulerTick?: () => Promise<void>;
 };
 
-function due(cronExpression: string, lastRunAt: string | null, current: Date) {
-  const windowStart = new Date(current.getTime() - 65_000);
-  const previous = CronExpressionParser.parse(cronExpression, {
-    currentDate: current,
-  })
-    .prev()
-    .toDate();
-  return (
-    previous >= windowStart && (!lastRunAt || new Date(lastRunAt) < previous)
-  );
-}
-
 export async function tickScheduler() {
   if (state.slabSchedulerBusy) return;
   state.slabSchedulerBusy = true;
   try {
     const current = new Date();
+    for (const occurrence of repository.listPendingAutomationOccurrences()) {
+      try {
+        startAutomationRun(
+          occurrence.automationId,
+          "automation",
+          current,
+          new Date(occurrence.scheduledFor),
+        );
+      } catch (error) {
+        console.error(
+          `[scheduler] pending ${occurrence.automationId} at ${occurrence.scheduledFor}:`,
+          error,
+        );
+      }
+    }
     for (const automation of repository.listAutomations()) {
       if (!automation.enabled || !automation.cronExpression) continue;
       try {
-        if (!due(automation.cronExpression, automation.lastRunAt, current))
-          continue;
-        startAutomationRun(automation.id, "automation", current);
+        const occurrence = dueAutomation(automation, current);
+        if (!occurrence) continue;
+        startAutomationRun(
+          automation.id,
+          "automation",
+          current,
+          occurrence,
+        );
       } catch (error) {
         console.error(`[scheduler] ${automation.name}:`, error);
       }
