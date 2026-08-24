@@ -111,7 +111,9 @@ export async function getOverviewPageData(): Promise<OverviewData> {
   };
 }
 
-export function getAgentDetailPageData(id: string): AgentDetailData | null {
+export function getAgentDetailPageData(
+  id: string,
+): Omit<AgentDetailData, "runtimes"> | null {
   const agent = repository.getAgent(id);
   if (!agent) return null;
   return {

@@ -13,6 +13,10 @@ import { startRunnerRun, type RunnerEvent } from "@/lib/runner";
 import { RunnerStreamInterruptedError } from "@/lib/runner-transport";
 import { restoreRunProgress } from "@/lib/run-recovery-state";
 import { preflightWorkRun } from "@/lib/work-run-preflight-service";
+import {
+  assertRuntimeSelectable,
+  resolveRuntimeModel,
+} from "@/lib/runtime-config";
 
 const state = globalThis as unknown as { slabExecutingRuns?: Set<string> };
 const executingRuns = (state.slabExecutingRuns ??= new Set<string>());
@@ -56,6 +60,8 @@ export function createRunExecution(input: {
   if (!agent || !thread || thread.agentId !== agent.id) {
     throw new Error("Agent or thread not found.");
   }
+  assertRuntimeSelectable(agent.runtime, agent.model);
+  const model = resolveRuntimeModel(agent.runtime, agent.model);
   const execution = defineRunExecution(input);
   const run = repository.createRun({
     id: input.runId,
@@ -63,6 +69,7 @@ export function createRunExecution(input: {
     threadId: thread.id,
     automationId: input.automationId,
     runtime: agent.runtime,
+    model,
     trigger: execution.trigger,
     mode: execution.mode,
     issueKey: execution.issueKey,
@@ -208,7 +215,7 @@ export async function* executeRun(
     let runnerEventCursor = leasedRun.runnerRunId ? leasedRun.runnerEventId : 0;
     const runtimeThreadPlan = planRuntimeThread(
       run.mode,
-      thread.runtimeThreadId,
+      thread.runtime === run.runtime ? thread.runtimeThreadId : null,
     );
     let runtimeThreadId = runtimeThreadPlan.runtimeThreadId;
     let runtimeContinuity = runtimeThreadPlan.continuity;
@@ -250,7 +257,7 @@ export async function* executeRun(
         const runner = await startRunner({
           runId: attemptRunnerRunId,
           controlPlaneRunId: run.id,
-          agent,
+          agent: { ...agent, runtime: run.runtime, model: run.model },
           thread: { ...thread, runtimeThreadId },
           messages,
           prompt: runInput.body,
@@ -379,7 +386,11 @@ export async function* executeRun(
               const createdThreadId = String(data.runtimeThreadId ?? "");
               if (createdThreadId) {
                 if (runtimeThreadPlan.reusable) {
-                  repository.setRuntimeThread(thread.id, createdThreadId);
+                  repository.setRuntimeThread(
+                    thread.id,
+                    createdThreadId,
+                    run.runtime,
+                  );
                 }
               }
               repository.addRunEvent(run.id, "thread_created", {

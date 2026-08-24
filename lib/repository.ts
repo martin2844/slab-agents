@@ -49,7 +49,7 @@ function mapAgent(row: Row): Agent {
     slug: String(row.slug),
     role: String(row.role),
     instructions: String(row.instructions),
-    runtime: "codex",
+    runtime: String(row.runtime ?? "codex"),
     model: String(row.model),
     enabled: bool(row.enabled),
     fullAccess: bool(row.full_access),
@@ -76,6 +76,7 @@ function mapThread(row: Row): Thread {
     runtimeThreadId: row.runtime_thread_id
       ? String(row.runtime_thread_id)
       : null,
+    runtime: row.runtime ? String(row.runtime) : null,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
@@ -102,6 +103,7 @@ function mapRun(row: Row): Run {
     runInstructions: String(row.run_instructions ?? ""),
     status: row.status as RunStatus,
     runtime: String(row.runtime),
+    model: String(row.model ?? "default"),
     startedAt: row.started_at ? String(row.started_at) : null,
     completedAt: row.completed_at ? String(row.completed_at) : null,
     error: row.error ? String(row.error) : null,
@@ -111,6 +113,48 @@ function mapRun(row: Row): Run {
     attemptCount: Number(row.attempt_count ?? 0),
     runnerRunId: row.runner_run_id ? String(row.runner_run_id) : null,
     runnerEventId: Number(row.runner_event_id ?? 0),
+  };
+}
+
+export type RuntimeConfigRecord = {
+  runtimeId: string;
+  enabled: boolean;
+  authMode: "runtime_owned" | "api_key";
+  credentialCiphertext: string | null;
+  defaultModel: string;
+  models: string[];
+  configVersion: number;
+  lastVerificationStatus: "connected" | "failed" | null;
+  lastVerificationDetail: string | null;
+  lastVerifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function mapRuntimeConfig(row: Row): RuntimeConfigRecord {
+  return {
+    runtimeId: String(row.runtime_id),
+    enabled: bool(row.enabled),
+    authMode: row.auth_mode as RuntimeConfigRecord["authMode"],
+    credentialCiphertext: row.credential_ciphertext
+      ? String(row.credential_ciphertext)
+      : null,
+    defaultModel: String(row.default_model ?? "default"),
+    models: json(row.models_json, ["default"]),
+    configVersion: Number(row.config_version ?? 1),
+    lastVerificationStatus: row.last_verification_status
+      ? (String(
+          row.last_verification_status,
+        ) as RuntimeConfigRecord["lastVerificationStatus"])
+      : null,
+    lastVerificationDetail: row.last_verification_detail
+      ? String(row.last_verification_detail)
+      : null,
+    lastVerifiedAt: row.last_verified_at
+      ? String(row.last_verified_at)
+      : null,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
   };
 }
 function mapAutomation(row: Row): Automation {
@@ -1406,6 +1450,113 @@ export const repository = {
     return this.getRunIntegrationCapability(input.runId, input.integrationId)!;
   },
 
+  listRuntimeConfigs() {
+    return (
+      db
+        .prepare("SELECT * FROM runtime_configs ORDER BY runtime_id")
+        .all() as Row[]
+    ).map(mapRuntimeConfig);
+  },
+  getRuntimeConfig(runtimeId: string) {
+    const row = db
+      .prepare("SELECT * FROM runtime_configs WHERE runtime_id=?")
+      .get(runtimeId) as Row | undefined;
+    return row ? mapRuntimeConfig(row) : null;
+  },
+  saveRuntimeConfig(input: {
+    runtimeId: string;
+    enabled: boolean;
+    authMode: RuntimeConfigRecord["authMode"];
+    credentialCiphertext?: string | null;
+    defaultModel: string;
+    models: string[];
+    lastVerificationStatus?: RuntimeConfigRecord["lastVerificationStatus"];
+    lastVerificationDetail?: string | null;
+    lastVerifiedAt?: string | null;
+  }) {
+    const current = this.getRuntimeConfig(input.runtimeId);
+    const timestamp = now();
+    db.prepare(
+      `INSERT INTO runtime_configs
+        (runtime_id,enabled,auth_mode,credential_ciphertext,default_model,models_json,config_version,last_verification_status,last_verification_detail,last_verified_at,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(runtime_id) DO UPDATE SET
+        enabled=excluded.enabled,
+        auth_mode=excluded.auth_mode,
+        credential_ciphertext=excluded.credential_ciphertext,
+        default_model=excluded.default_model,
+        models_json=excluded.models_json,
+        config_version=excluded.config_version,
+        last_verification_status=excluded.last_verification_status,
+        last_verification_detail=excluded.last_verification_detail,
+        last_verified_at=excluded.last_verified_at,
+        updated_at=excluded.updated_at`,
+    ).run(
+      input.runtimeId,
+      input.enabled ? 1 : 0,
+      input.authMode,
+      input.credentialCiphertext ?? current?.credentialCiphertext ?? null,
+      input.defaultModel,
+      JSON.stringify([...new Set(input.models)]),
+      current ? current.configVersion + 1 : 1,
+      "lastVerificationStatus" in input
+        ? input.lastVerificationStatus
+        : (current?.lastVerificationStatus ?? null),
+      "lastVerificationDetail" in input
+        ? input.lastVerificationDetail
+        : (current?.lastVerificationDetail ?? null),
+      "lastVerifiedAt" in input
+        ? input.lastVerifiedAt
+        : (current?.lastVerifiedAt ?? null),
+      current?.createdAt ?? timestamp,
+      timestamp,
+    );
+    return this.getRuntimeConfig(input.runtimeId)!;
+  },
+
+  completeRuntimeVerification(input: {
+    runtimeId: string;
+    expectedConfigVersion: number;
+    status: NonNullable<RuntimeConfigRecord["lastVerificationStatus"]>;
+    detail: string;
+    checkedAt: string;
+    models?: string[];
+    defaultModel?: string;
+  }) {
+    const result = input.models
+      ? db.prepare(
+          `UPDATE runtime_configs
+           SET models_json=?, default_model=?, config_version=config_version+1,
+               last_verification_status=?, last_verification_detail=?,
+               last_verified_at=?, updated_at=?
+           WHERE runtime_id=? AND config_version=?`,
+        ).run(
+          JSON.stringify([...new Set(input.models)]),
+          input.defaultModel ?? "default",
+          input.status,
+          input.detail,
+          input.checkedAt,
+          now(),
+          input.runtimeId,
+          input.expectedConfigVersion,
+        )
+      : db.prepare(
+          `UPDATE runtime_configs
+           SET config_version=config_version+1,
+               last_verification_status=?, last_verification_detail=?,
+               last_verified_at=?, updated_at=?
+           WHERE runtime_id=? AND config_version=?`,
+        ).run(
+          input.status,
+          input.detail,
+          input.checkedAt,
+          now(),
+          input.runtimeId,
+          input.expectedConfigVersion,
+        );
+    return result.changes === 1;
+  },
+
   listAgents() {
     return (
       db
@@ -1429,18 +1580,19 @@ export const repository = {
       | "model"
       | "enabled"
       | "fullAccess"
-    >,
+    > & { runtime?: string },
   ) {
     const id = randomUUID(),
       timestamp = now();
     db.prepare(
-      "INSERT INTO agents (id,name,slug,role,instructions,runtime,model,enabled,full_access,created_at,updated_at) VALUES (?,?,?,?,?,'codex',?,?,?,?,?)",
+      "INSERT INTO agents (id,name,slug,role,instructions,runtime,model,enabled,full_access,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
     ).run(
       id,
       input.name,
       input.slug,
       input.role,
       input.instructions,
+      input.runtime ?? "codex",
       input.model,
       input.enabled ? 1 : 0,
       input.fullAccess ? 1 : 0,
@@ -1532,6 +1684,7 @@ export const repository = {
         | "slug"
         | "role"
         | "instructions"
+        | "runtime"
         | "model"
         | "enabled"
         | "fullAccess"
@@ -1541,12 +1694,13 @@ export const repository = {
     const current = this.getAgent(id);
     if (!current) return null;
     db.prepare(
-      "UPDATE agents SET name=?, slug=?, role=?, instructions=?, model=?, enabled=?, full_access=?, updated_at=? WHERE id=?",
+      "UPDATE agents SET name=?, slug=?, role=?, instructions=?, runtime=?, model=?, enabled=?, full_access=?, updated_at=? WHERE id=?",
     ).run(
       input.name ?? current.name,
       input.slug ?? current.slug,
       input.role ?? current.role,
       input.instructions ?? current.instructions,
+      input.runtime ?? current.runtime,
       input.model ?? current.model,
       (input.enabled ?? current.enabled) ? 1 : 0,
       (input.fullAccess ?? current.fullAccess) ? 1 : 0,
@@ -1695,10 +1849,14 @@ export const repository = {
     ).run(id, agentId, title, timestamp, timestamp);
     return this.getThread(id)!;
   },
-  setRuntimeThread(id: string, runtimeThreadId: string | null) {
+  setRuntimeThread(
+    id: string,
+    runtimeThreadId: string | null,
+    runtime: string | null = null,
+  ) {
     db.prepare(
-      "UPDATE threads SET runtime_thread_id=?, updated_at=? WHERE id=?",
-    ).run(runtimeThreadId, now(), id);
+      "UPDATE threads SET runtime_thread_id=?, runtime=?, updated_at=? WHERE id=?",
+    ).run(runtimeThreadId, runtimeThreadId ? runtime : null, now(), id);
   },
   touchThread(id: string) {
     db.prepare("UPDATE threads SET updated_at=? WHERE id=?").run(now(), id);
@@ -1764,6 +1922,7 @@ export const repository = {
     threadId?: string | null;
     automationId?: string | null;
     runtime?: string;
+    model?: string;
     trigger: Run["trigger"];
     mode: Run["mode"];
     issueKey?: string | null;
@@ -1772,7 +1931,7 @@ export const repository = {
     const id = input.id ?? randomUUID();
     const createdAt = now();
     db.prepare(
-      "INSERT INTO runs (id,agent_id,thread_id,automation_id,status,runtime,trigger,mode,issue_key,run_instructions,created_at,queued_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO runs (id,agent_id,thread_id,automation_id,status,runtime,model,trigger,mode,issue_key,run_instructions,created_at,queued_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
     ).run(
       id,
       input.agentId,
@@ -1780,6 +1939,7 @@ export const repository = {
       input.automationId ?? null,
       "queued",
       input.runtime ?? "codex",
+      input.model ?? "default",
       input.trigger,
       input.mode,
       input.issueKey ?? null,

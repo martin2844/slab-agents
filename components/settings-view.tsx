@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import { EmailIntegrationEditor } from "@/components/email-integration-editor";
 import { CalendarIntegrationEditor } from "@/components/calendar-integration-editor";
+import { RuntimeSettings } from "@/components/runtime-settings";
 import { PageHeader } from "@/components/page-header";
 import { ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +33,7 @@ import type {
   Integration,
   SetupStatus,
   WorkspaceSettings,
+  RuntimeCatalogItem,
 } from "@/lib/types";
 
 type Service = "work" | "docs" | "runner" | "codex";
@@ -48,6 +50,7 @@ export function SettingsView({
   initialEmailOpen,
   initialCalendarOpen,
   initialCalendarResult,
+  initialRuntimes,
   calendarCallbackOrigin: configuredCalendarCallbackOrigin,
 }: {
   initialSettings: WorkspaceSettings;
@@ -56,11 +59,12 @@ export function SettingsView({
   initialCalendars: Integration[];
   auth: { required: boolean; configured: boolean };
   agents: Agent[];
-  initialTab: "sources" | "email" | "calendar";
+  initialTab: "sources" | "runtime" | "email" | "calendar";
   initialEmailOpen: boolean;
   initialCalendarOpen: boolean;
   initialCalendarResult: "connected" | "failed" | null;
   calendarCallbackOrigin: string;
+  initialRuntimes: RuntimeCatalogItem[];
 }) {
   const router = useRouter();
   const initialServiceState = (service: Service): State => {
@@ -272,19 +276,7 @@ export function SettingsView({
                 Test connection
               </Button>
             </div>
-            <div className="mt-4 flex min-h-11 items-center justify-between border-y text-sm">
-              <span>Codex runtime</span>
-              <ConnectionBadge state={status.codex} />
-            </div>
-            {status.codex === "error" ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                On a self-hosted server, authenticate the bundled runtime with{" "}
-                <code className="font-mono text-foreground">
-                  sudo slabctl codex login
-                </code>
-                , then test Runner again.
-              </p>
-            ) : null}
+            <RuntimeSettings initialRuntimes={initialRuntimes} />
           </section>
         </TabsContent>
 
@@ -487,7 +479,7 @@ export function SettingsView({
                 ["Workspace", "Single user · local"],
                 ["Work source", "Slab"],
                 ["Docs source", "Slab Docs"],
-                ["Agent runtime", "Codex"],
+                ["Agent runtime", "Configured per agent"],
                 ["Runner boundary", "127.0.0.1"],
               ].map(([label, value]) => (
                 <div

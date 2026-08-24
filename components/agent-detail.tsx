@@ -17,6 +17,14 @@ import { AgentChatDialog } from "@/components/agent-chat-dialog";
 import { AgentRunDialog } from "@/components/agent-run-dialog";
 import { AgentQuickActionsEditor } from "@/components/agent-quick-actions-editor";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
@@ -29,6 +37,26 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
     [quickActions, setQuickActions] = useState(data.quickActions),
     [integrations, setIntegrations] = useState(data.integrations),
     [savingIntegration, setSavingIntegration] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState(data.agent.runtime);
+  const [model, setModel] = useState(data.agent.model);
+  const [savingRuntime, setSavingRuntime] = useState(false);
+
+  async function saveRuntime() {
+    setSavingRuntime(true);
+    try {
+      await api(`/api/agents/${data.agent.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ runtime, model }),
+      });
+      toast.success("Agent runtime updated");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not update runtime",
+      );
+    } finally {
+      setSavingRuntime(false);
+    }
+  }
 
   async function changeIntegrationAccess(
     integration: Integration,
@@ -96,7 +124,7 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
     <>
       <PageHeader
         title={agent.name}
-        description={`${agent.role} · ${agent.runtime} · ${agent.model}`}
+        description={`${agent.role} · ${runtime} · ${model}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <AgentChatDialog agent={agent} />
@@ -129,7 +157,7 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
                   (activeRun?.mode === "review" ? "Operational review" : "—"),
               },
               { label: "Queue", value: queued ? `${queued} queued` : "Clear" },
-              { label: "Runtime", value: "Codex" },
+              { label: "Runtime", value: runtime },
               { label: "Tool access", value: fullAccess ? "Full" : "Guarded" },
             ].map((item) => (
               <div
@@ -144,6 +172,73 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
                 </p>
               </div>
             ))}
+          </section>
+
+          <section className="rounded-lg border bg-card p-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+              <div className="grid flex-1 gap-1.5 text-xs font-semibold">
+                Runtime
+                <Select
+                  value={runtime}
+                  onValueChange={(value) => {
+                    setRuntime(value);
+                    setModel("default");
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {data.runtimes
+                      .filter(
+                        (item) =>
+                          (item.enabled &&
+                            item.registered &&
+                            item.health === "available") ||
+                          item.id === runtime,
+                      )
+                      .map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.displayName}
+                          {!item.enabled ? " · disabled" : ""}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid flex-1 gap-1.5 text-xs font-semibold">
+                Model
+                <Select value={model} onValueChange={setModel}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      ...new Set([
+                        model,
+                        ...(data.runtimes.find(({ id }) => id === runtime)
+                          ?.models ?? ["default"]),
+                      ]),
+                    ].map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {item === "default" ? "Workspace default" : item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                variant="outline"
+                onClick={saveRuntime}
+                disabled={savingRuntime}
+              >
+                {savingRuntime ? "Saving…" : "Save runtime"}
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              New runs snapshot this runtime and model. Existing queued and
+              historical runs keep their original selection.
+            </p>
           </section>
 
           <section className="rounded-lg border bg-card p-4">

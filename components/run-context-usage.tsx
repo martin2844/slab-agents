@@ -174,6 +174,7 @@ export function RunContextUsage({
   profile: RunContextProfile;
   runtimeSkipped?: boolean;
 }) {
+  const aggregateUsage = profile.modelCallCount === null;
   return (
     <section className="space-y-5" aria-labelledby="context-usage-title">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -185,8 +186,10 @@ export function RunContextUsage({
             Context / Usage
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-            Per-call Codex usage correlated with tool traffic. Byte sizes are
-            exact; approximate tokens use characters ÷ 4.
+            {aggregateUsage
+              ? "Aggregate runtime usage with tool traffic. Per-call context boundaries are unavailable."
+              : "Per-call runtime usage correlated with tool traffic."} Byte
+            sizes are exact; approximate tokens use characters ÷ 4.
           </p>
         </div>
         <Badge variant={profile.captured ? "secondary" : "outline"}>
@@ -217,8 +220,12 @@ export function RunContextUsage({
           note={`${tokens(profile.cumulativeCachedInputTokens)} cached · ${tokens(profile.cumulativeUncachedInputTokens)} uncached`}
         />
         <Metric
-          label="Model calls"
-          value={tokens(profile.modelCalls.length)}
+          label={aggregateUsage ? "Provider turns" : "Model calls"}
+          value={tokens(
+            aggregateUsage
+              ? profile.providerTurnCount
+              : profile.modelCallCount,
+          )}
           note={`${tokens(profile.cumulativeOutputTokens)} output · ${tokens(profile.cumulativeReasoningOutputTokens)} reasoning`}
         />
         <Metric
@@ -234,7 +241,7 @@ export function RunContextUsage({
         <Metric
           label="Context window"
           value={tokens(profile.modelContextWindow)}
-          note="Reported by Codex app-server"
+          note="Reported by the selected runtime"
         />
         <Metric
           label="Run duration"
@@ -359,18 +366,19 @@ export function RunContextUsage({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Activity className="size-4" /> Model calls
+            <Activity className="size-4" /> Usage reports
           </CardTitle>
           <CardDescription>
-            `last` values reported by Codex for each usage update. Totals below
-            are sums of individual calls, not the cumulative snapshot.
+            {aggregateUsage
+              ? "The provider reports one aggregate for the Run; it is not presented as an individual model call."
+              : "Each row is one model-call usage update; totals are sums of individual calls."}
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="border-b text-xs text-muted-foreground">
               <tr>
-                <th className="pb-2 font-medium">Call</th>
+                <th className="pb-2 font-medium">Report</th>
                 <th className="pb-2 font-medium">Input</th>
                 <th className="pb-2 font-medium">Δ input</th>
                 <th className="pb-2 font-medium">Cached</th>
@@ -383,7 +391,11 @@ export function RunContextUsage({
             <tbody className="divide-y font-mono text-xs tabular-nums">
               {profile.modelCalls.map((call) => (
                 <tr key={`${call.callIndex}-${call.createdAt}`}>
-                  <td className="py-2.5">{call.callIndex}</td>
+                  <td className="py-2.5">
+                    {call.usageScope === "run_aggregate"
+                      ? "Run aggregate"
+                      : call.callIndex}
+                  </td>
                   <td className="py-2.5">{tokens(call.inputTokens)}</td>
                   <td className="py-2.5">
                     {call.inputDeltaTokens === null
@@ -539,10 +551,9 @@ export function RunContextUsage({
         <CardHeader>
           <CardTitle>Correlated model / tool sequence</CardTitle>
           <CardDescription>
-            Tools are grouped after the model-call boundary that produced them;
-            shown times are the original event times. A later input delta may
-            also include Codex-internal context that this control plane cannot
-            attribute.
+            {aggregateUsage
+              ? "Tool events keep their original times; aggregate usage appears at the provider summary boundary."
+              : "Tools are grouped after the model-call boundary that produced them; shown times are the original event times. A later input delta may include runtime context that this control plane cannot attribute."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -568,7 +579,11 @@ export function RunContextUsage({
                     </time>
                     {isModel ? (
                       <>
-                        <strong>Model call {entry.callIndex}</strong>
+                        <strong>
+                          {entry.usageScope === "run_aggregate"
+                            ? "Run aggregate usage"
+                            : `Model call ${entry.callIndex}`}
+                        </strong>
                         <span className="font-mono text-xs">
                           input {tokens(entry.inputTokens)}
                           {entry.inputDeltaTokens !== null

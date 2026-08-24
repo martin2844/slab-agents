@@ -26,6 +26,7 @@ import {
   samePackSnapshot,
 } from "@/lib/packs/lifecycle";
 import { repository } from "@/lib/repository";
+import { getRuntimeConfig, runtimeIds } from "@/lib/runtime-config";
 import { createRunExecution, executeRunInBackground } from "@/lib/run-service";
 import { getSetupStatus } from "@/lib/setup";
 import type {
@@ -538,6 +539,15 @@ function applyLocalPackResources(
   conflictStrategy: ConflictStrategy,
 ) {
   const { pack, source } = preview;
+  const enabledRuntimeConfigs = runtimeIds
+    .map((runtimeId) => getRuntimeConfig(runtimeId))
+    .filter(({ enabled }) => enabled);
+  const defaultRuntime =
+    enabledRuntimeConfigs.find(
+      ({ lastVerificationStatus }) => lastVerificationStatus === "connected",
+    )?.runtimeId ??
+    enabledRuntimeConfigs[0]?.runtimeId ??
+    "codex";
   repository.saveOperatorPackInstallation({
     packId: pack.id,
     packVersion: pack.version,
@@ -597,6 +607,7 @@ function applyLocalPackResources(
         slug: template.slug,
         role: template.role,
         instructions: template.instructions,
+        runtime: defaultRuntime,
         model: template.model,
         enabled: template.enabled,
         fullAccess: template.fullAccess,

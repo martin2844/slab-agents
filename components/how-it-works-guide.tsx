@@ -507,7 +507,7 @@ export function HowItWorksGuide() {
             id="setup"
             number="02"
             title="Bring the workspace online"
-            description="A self-hosted installation runs the stack in Docker. Inside the product, the first operating check is Work, Docs, Runner, and Codex."
+            description="A self-hosted installation runs the stack in Docker. Inside the product, the first operating check is Work, Docs, Runner, and at least one configured runtime."
             icon={Server}
           >
             <div className="grid gap-5 lg:grid-cols-[1fr_.8fr]">
@@ -536,14 +536,14 @@ export function HowItWorksGuide() {
                   <strong className="text-foreground">
                     Settings → Runtime
                   </strong>
-                  . Test Runner and Codex separately. A healthy Runner with an
-                  unauthenticated Codex installation is not ready to execute
-                  agents.
+                  . Test Runner and each runtime separately. Codex uses the
+                  bundled CLI account; Claude uses a write-only Anthropic API
+                  key configured on this page.
                 </Step>
                 <Step
                   number="05"
                   title="Run setup check"
-                  result="Work, Docs, Runner, and Codex report connected"
+                  result="Work, Docs, Runner, and a runtime report connected"
                 >
                   Return to Overview and run the setup check. Once all four core
                   systems are healthy, onboarding collapses into the operational
@@ -586,6 +586,12 @@ export function HowItWorksGuide() {
                   </code>
                   Then test Runner again from Settings.
                 </Callout>
+                <Callout title="Claude API setup" icon={KeyRound}>
+                  In Settings → Runtime, paste an Anthropic API key, save it,
+                  and choose Test. Slab verifies the key and discovers models
+                  server-side. The stored key is never returned to the browser
+                  or added to an agent prompt.
+                </Callout>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" asChild>
                     <Link href="/settings">Open Settings</Link>
@@ -617,9 +623,10 @@ export function HowItWorksGuide() {
                   boundaries, and how the agent records results.
                 </Step>
                 <Step number="02" title="Choose runtime policy">
-                  Keep Codex as the runtime and choose the model. Enabled agents
-                  can receive new work. Disabled agents keep their history but
-                  do not start new runs.
+                  Choose a healthy enabled runtime and model. Codex is stable;
+                  Claude Agent is experimental and requires a verified
+                  Anthropic API key. Enabled agents can receive new work.
+                  Disabled agents keep their history but do not start new runs.
                 </Step>
                 <Step number="03" title="Set Work and Docs access">
                   Guarded access auto-runs reads and asks before protected

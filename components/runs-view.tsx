@@ -167,7 +167,7 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
                         </div>
                         <p className="mt-1 truncate text-xs capitalize text-muted-foreground">
                           {run.mode.replaceAll("_", " ")} ·{" "}
-                          {run.trigger.replaceAll("_", " ")}
+                          {run.trigger.replaceAll("_", " ")} · {run.runtime}
                         </p>
                       </div>
                       <div className="text-right text-xs text-muted-foreground">
@@ -185,6 +185,7 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
                       <th className={denseTableHead}>Status</th>
                       <th className={denseTableHead}>Mode / trigger</th>
                       <th className={denseTableHead}>Issue</th>
+                      <th className={denseTableHead}>Runtime</th>
                       <th className={denseTableHead}>Duration</th>
                       <th className={denseTableHead}>Started</th>
                       <th className={`${denseTableHead} w-10`}>
@@ -219,6 +220,12 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
                         </td>
                         <td className={`${denseTableCell} font-mono text-xs`}>
                           {run.issueKey ?? "—"}
+                        </td>
+                        <td className={`${denseTableCell} text-xs`}>
+                          <span className="font-medium">{run.runtime}</span>
+                          <span className="block max-w-36 truncate text-muted-foreground">
+                            {run.model}
+                          </span>
                         </td>
                         <td
                           className={`${denseTableCell} text-xs text-muted-foreground`}

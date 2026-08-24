@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { repository } from "@/lib/repository";
+import { getRuntimeConfig, runtimeIds } from "@/lib/runtime-config";
+import { listRuntimeCatalog } from "@/lib/runtime-service";
 import { createRunExecution, executeRunInBackground } from "@/lib/run-service";
 
 export const runtime = "nodejs";
@@ -15,9 +17,15 @@ const schema = z.object({
   mode: z.enum(["review", "task"]).default("review"),
 });
 
-function ensureCoo() {
+async function ensureCoo() {
   const current = repository.getAgent("coo");
   if (current) return current;
+  const runtime =
+    (await listRuntimeCatalog()).find(
+      (item) => item.enabled && item.registered && item.health === "available",
+    )?.id ??
+    runtimeIds.find((runtimeId) => getRuntimeConfig(runtimeId).enabled) ??
+    "codex";
   return repository.createAgent({
     name: "COO",
     slug: "coo",
@@ -25,6 +33,7 @@ function ensureCoo() {
     instructions:
       "Use Work and Docs to identify priorities, blockers, owners, and concrete next actions. Be concise, evidence-based, and operational.",
     model: "default",
+    runtime,
     enabled: true,
     fullAccess: false,
   });
@@ -35,7 +44,7 @@ export async function POST(request: Request) {
     const input = schema.parse(await request.json());
     const agent = input.agentId
       ? repository.getAgent(input.agentId)
-      : ensureCoo();
+      : await ensureCoo();
     if (!agent) throw new Error("Agent not found");
     if (!agent.enabled) throw new Error("This agent is disabled.");
 

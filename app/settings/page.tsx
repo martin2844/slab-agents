@@ -7,6 +7,7 @@ import { getPublicSettings } from "@/lib/settings";
 import { getSetupStatus } from "@/lib/setup";
 import { authStatus } from "@/lib/auth/service";
 import { configuredPublicOrigin } from "@/lib/request-origin";
+import { listRuntimeCatalog } from "@/lib/runtime-service";
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 export default async function SettingsPage({
@@ -20,7 +21,9 @@ export default async function SettingsPage({
 }) {
   const query = await searchParams;
   const initialTab =
-    query.tab === "email"
+    query.tab === "runtime"
+      ? "runtime"
+      : query.tab === "email"
       ? "email"
       : query.tab === "calendar"
         ? "calendar"
@@ -46,6 +49,7 @@ export default async function SettingsPage({
           : null
       }
       calendarCallbackOrigin={configuredPublicOrigin()}
+      initialRuntimes={await listRuntimeCatalog()}
     />
   );
 }

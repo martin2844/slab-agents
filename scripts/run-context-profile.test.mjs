@@ -158,6 +158,7 @@ test("run profile correlates per-call usage with repeated and expensive tools", 
   assert.equal(profile.captured, true);
   assert.equal(profile.durationMs, 10_000);
   assert.equal(profile.modelCalls.length, 2);
+  assert.equal(profile.modelCallCount, 2);
   assert.equal(profile.cumulativeInputTokens, 2_700);
   assert.equal(profile.cumulativeCachedInputTokens, 1_900);
   assert.equal(profile.contextGrowthTokens, 700);
@@ -180,6 +181,34 @@ test("run profile correlates per-call usage with repeated and expensive tools", 
     profile.timeline.map((entry) => entry.entryType),
     ["model", "tool", "tool", "model"],
   );
+});
+
+test("aggregate runtime usage does not invent per-call context metrics", () => {
+  const profile = buildRunContextProfile(run, [
+    event(
+      "usage_updated",
+      {
+        callIndex: 1,
+        usageScope: "run_aggregate",
+        providerTurnCount: 2,
+        inputTokens: 2_700,
+        cachedInputTokens: 1_900,
+        uncachedInputTokens: 800,
+        outputTokens: 110,
+        totalTokens: 2_810,
+        modelContextWindow: 200_000,
+      },
+      5,
+    ),
+  ]);
+
+  assert.equal(profile.modelCallCount, null);
+  assert.equal(profile.providerTurnCount, 2);
+  assert.equal(profile.cumulativeInputTokens, 2_700);
+  assert.equal(profile.initialModelCallInputTokens, null);
+  assert.equal(profile.peakModelCallInputTokens, null);
+  assert.equal(profile.contextGrowthTokens, null);
+  assert.match(profile.limitations.join(" "), /aggregate Run usage/);
 });
 
 test("legacy usage remains analyzable without claiming bootstrap capture", () => {

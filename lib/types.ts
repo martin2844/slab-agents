@@ -11,7 +11,7 @@ export type Agent = {
   slug: string;
   role: string;
   instructions: string;
-  runtime: "codex";
+  runtime: string;
   model: string;
   enabled: boolean;
   fullAccess: boolean;
@@ -34,6 +34,7 @@ export type Thread = {
   agentId: string;
   title: string;
   runtimeThreadId: string | null;
+  runtime: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -67,6 +68,7 @@ export type Run = {
   runInstructions: string;
   status: RunStatus;
   runtime: string;
+  model: string;
   startedAt: string | null;
   completedAt: string | null;
   error: string | null;
@@ -257,6 +259,7 @@ export type AgentDetailData = {
   threads: Thread[];
   automations: Automation[];
   runs: Run[];
+  runtimes: RuntimeCatalogItem[];
 };
 
 export type ThreadData = {
@@ -306,6 +309,24 @@ export type WorkspaceSettings = {
   docsMcpUrl: string;
   docsApiKeyConfigured: boolean;
   runnerUrl: string;
+};
+
+export type RuntimeCatalogItem = {
+  id: string;
+  displayName: string;
+  stability: "stable" | "experimental";
+  authModes: string[];
+  capabilities: Record<string, boolean>;
+  registered: boolean;
+  enabled: boolean;
+  configured: boolean;
+  authMode: "runtime_owned" | "api_key";
+  health: "available" | "authentication_required" | "unavailable" | "not_tested";
+  healthDetail: string;
+  lastVerifiedAt: string | null;
+  configVersion: number;
+  models: string[];
+  defaultModel: string;
 };
 
 export type CalendarProvider =

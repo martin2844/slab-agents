@@ -19,6 +19,11 @@ import { RunnerRequestError } from "@/lib/runner-errors";
 import { readSecret } from "@/lib/server-config";
 import type { RunExecution } from "@/lib/run-execution";
 import {
+  getRuntimeAuthentication,
+  getRuntimeConfig,
+  isRuntimeId,
+} from "@/lib/runtime-config";
+import {
   attachRunnerTransport,
   createRunnerTransport,
 } from "@/lib/runner-transport";
@@ -37,6 +42,19 @@ type RunnerRuntimeDependencies = {
 };
 
 const runnerUrl = () => getSetting("runner_url").replace(/\/$/, "");
+
+export type RunnerRuntimeSummary = {
+  id: string;
+  displayName: string;
+  stability: "stable" | "experimental";
+  authModes: string[];
+  capabilities: Record<string, boolean>;
+  available: boolean;
+  status: "available" | "authentication_required" | "unavailable";
+  reasonCode: string;
+  authentication: { status: string; mode: string | null };
+  checkedAt: string;
+};
 
 function workCoordinationContext() {
   const agents = repository
@@ -255,6 +273,7 @@ export async function startRunnerRun(
       runtime: {
         type: input.agent.runtime,
         model: input.agent.model === "default" ? null : input.agent.model,
+        authentication: getRuntimeAuthentication(input.agent.runtime),
       },
       thread: { runtimeThreadId: input.thread.runtimeThreadId },
       message: input.prompt,
@@ -282,6 +301,13 @@ export async function startRunnerRun(
         ({ snapshot }) => snapshot,
       ),
       changesApplyTo: "next_run",
+      runtime: {
+        id: input.agent.runtime,
+        model: input.agent.model,
+        configVersion: isRuntimeId(input.agent.runtime)
+          ? getRuntimeConfig(input.agent.runtime).configVersion
+          : null,
+      },
     },
   };
 }
@@ -313,17 +339,21 @@ export async function testRunner() {
   return response.json().catch(() => ({ status: "ok" }));
 }
 
-export async function testCodexRuntime() {
+export async function listRunnerRuntimes(): Promise<RunnerRuntimeSummary[]> {
   const response = await fetch(`${runnerUrl()}/runtimes`, {
     headers: runnerHeaders(),
     signal: AbortSignal.timeout(5_000),
     cache: "no-store",
   });
   if (!response.ok) throw await runnerError(response);
-  const payload = (await response.json()) as {
-    data?: { id?: string; available?: boolean }[];
-  };
-  const codex = payload.data?.find((runtime) => runtime.id === "codex");
+  const payload = (await response.json()) as { data?: RunnerRuntimeSummary[] };
+  return Array.isArray(payload.data) ? payload.data : [];
+}
+
+export async function testCodexRuntime() {
+  const codex = (await listRunnerRuntimes()).find(
+    (runtime) => runtime.id === "codex",
+  );
   if (!codex) throw new Error("Runner did not report the Codex runtime.");
   if (!codex.available)
     throw new Error(

@@ -24,21 +24,34 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api } from "@/lib/client-api";
-import type { Agent } from "@/lib/types";
+import type { Agent, RuntimeCatalogItem } from "@/lib/types";
 
 export function AgentCreateDialog({
   onCreated,
   trigger,
+  runtimes,
 }: {
   onCreated?: (agent: Agent) => void;
   trigger?: React.ReactElement;
+  runtimes: RuntimeCatalogItem[];
 }) {
+  const availableRuntimes = runtimes.filter(
+    (runtime) =>
+      runtime.enabled && runtime.registered && runtime.health === "available",
+  );
+  const initialRuntime =
+    availableRuntimes.find(({ id }) => id === "codex")?.id ??
+    availableRuntimes[0]?.id ??
+    "codex";
   const router = useRouter(),
     [open, setOpen] = useState(false),
     [saving, setSaving] = useState(false),
     [enabled, setEnabled] = useState(true),
     [fullAccess, setFullAccess] = useState(false),
+    [runtime, setRuntime] = useState(initialRuntime),
     [model, setModel] = useState("default");
+  const runtimeModels =
+    runtimes.find(({ id }) => id === runtime)?.models ?? ["default"];
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -50,6 +63,7 @@ export function AgentCreateDialog({
           name: form.get("name"),
           role: form.get("role"),
           instructions: form.get("instructions"),
+          runtime,
           model,
           enabled,
           fullAccess,
@@ -114,12 +128,22 @@ export function AgentCreateDialog({
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-2 text-sm font-semibold">
                 Runtime
-                <Select value="codex" disabled>
+                <Select
+                  value={runtime}
+                  onValueChange={(value) => {
+                    setRuntime(value);
+                    setModel("default");
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="codex">Codex</SelectItem>
+                    {availableRuntimes.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.displayName}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </label>
@@ -130,9 +154,11 @@ export function AgentCreateDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="default">Default</SelectItem>
-                    <SelectItem value="gpt-5.4">GPT-5.4</SelectItem>
-                    <SelectItem value="gpt-5.5">GPT-5.5</SelectItem>
+                    {runtimeModels.map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {item === "default" ? "Workspace default" : item}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </label>

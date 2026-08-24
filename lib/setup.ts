@@ -3,7 +3,9 @@ import "server-only";
 import { DocsClient } from "@/lib/mcp/docs-client";
 import { WorkClient } from "@/lib/mcp/work-client";
 import { repository } from "@/lib/repository";
-import { testCodexRuntime, testRunner } from "@/lib/runner";
+import { getRuntimeConfig, runtimeIds } from "@/lib/runtime-config";
+import { listRuntimeCatalog } from "@/lib/runtime-service";
+import { testRunner } from "@/lib/runner";
 import { getPublicSettings } from "@/lib/settings";
 import type {
   SetupCheck,
@@ -23,7 +25,7 @@ const labels: Record<SetupService, string> = {
   work: "Slab MCP / HTTP",
   docs: "Slab Docs MCP / HTTP",
   runner: "Runner local",
-  codex: "Codex runtime",
+  codex: "Agent runtime",
 };
 
 const statusKey = (service: SetupService) => `setup_status_${service}`;
@@ -34,7 +36,13 @@ function fingerprint(service: SetupService) {
     return `${settings.workMcpUrl}|${settings.workApiKeyConfigured}`;
   if (service === "docs")
     return `${settings.docsMcpUrl}|${settings.docsApiKeyConfigured}`;
-  return settings.runnerUrl;
+  if (service === "runner") return settings.runnerUrl;
+  return `${settings.runnerUrl}|${runtimeIds
+    .map((runtimeId) => {
+      const config = getRuntimeConfig(runtimeId);
+      return `${runtimeId}:${config.enabled}:${config.configVersion}`;
+    })
+    .join("|")}`;
 }
 
 function missingConfig(service: SetupService) {
@@ -50,7 +58,7 @@ function configuredDetail(service: SetupService) {
   if (service === "work") return "Configured; connection has not been tested.";
   if (service === "docs") return "Configured; connection has not been tested.";
   if (service === "runner") return "Loopback URL configured; not yet tested.";
-  return "Codex availability has not been verified.";
+  return "No enabled agent runtime has been verified.";
 }
 
 export function getSetupStatus(): SetupStatus {
@@ -102,13 +110,23 @@ async function performCheck(service: SetupService) {
   if (missingConfig(service)) return;
   const checkedAt = new Date().toISOString();
   try {
+    let availableRuntime: Awaited<ReturnType<typeof listRuntimeCatalog>>[number] | null =
+      null;
     if (service === "work") await WorkClient.test();
     else if (service === "docs") await DocsClient.test();
     else if (service === "runner") await testRunner();
-    else await testCodexRuntime();
+    else {
+      availableRuntime =
+        (await listRuntimeCatalog()).find(
+          (item) =>
+            item.enabled && item.registered && item.health === "available",
+        ) ?? null;
+      if (!availableRuntime)
+        throw new Error("No enabled agent runtime is available.");
+    }
     const detail =
       service === "codex"
-        ? "Codex is available through the local Runner."
+        ? `${availableRuntime?.displayName ?? "Agent runtime"} is available through the local Runner.`
         : `${labels[service]} connected successfully.`;
     repository.setSetting(
       statusKey(service),

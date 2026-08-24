@@ -78,7 +78,7 @@ export function RunDetail({ data }: { data: RunDetailData }) {
               ["Issue", data.run.issueKey ?? "None"],
               [
                 "Runtime",
-                `${data.run.runtime} · ${runtimeContinuity ?? "fresh"}`,
+                `${data.run.runtime} / ${data.run.model} · ${runtimeContinuity ?? "fresh"}`,
               ],
             ].map(([label, value]) => (
               <div
@@ -132,7 +132,10 @@ export function RunDetail({ data }: { data: RunDetailData }) {
                 <div className="flex min-h-11 items-center justify-between">
                   <dt className="text-muted-foreground">Model calls</dt>
                   <dd className="font-mono">
-                    {data.contextProfile.modelCalls.length}
+                    {data.contextProfile.modelCallCount ??
+                      (data.contextProfile.providerTurnCount
+                        ? `${data.contextProfile.providerTurnCount} provider turns`
+                        : "Aggregate only")}
                   </dd>
                 </div>
                 <div className="flex min-h-11 items-center justify-between">

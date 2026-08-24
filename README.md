@@ -1,6 +1,7 @@
 # Slab Agent Workspace
 
-A local, single-user control plane for shared work between humans and Codex agents.
+A local, single-user control plane for shared work between humans and software
+agents running through Codex or the experimental Claude Agent SDK adapter.
 
 ```text
 Slab       = what needs to be done
@@ -37,6 +38,23 @@ SLAB_EMAIL_ADMIN_KEY=...
 ```
 
 URLs and replacement credentials can also be saved from Settings. Stored credentials are never returned by the API; the browser receives only `*ApiKeyConfigured` booleans.
+
+## Runtime choice
+
+Settings → Runtime lists the adapters registered by Slab Runner. Codex keeps
+its existing Runner-owned ChatGPT authentication. Claude uses an Anthropic API
+key entered through a write-only password field and encrypted in the control
+plane database; API and page responses expose only configured/health metadata.
+Testing Claude performs bounded server-side model discovery. Agents select a
+runtime plus a discovered model or the workspace default, and each Run persists
+the effective runtime/model before entering the queue. Changing an Agent does
+not rewrite queued or historical Runs, and there is no silent provider
+fallback.
+
+The private Runner request carries the selected Claude credential only for that
+Run. Runner exchanges it for a short-lived loopback surrogate before the Claude
+SDK child starts, keeping the real provider key out of the model context,
+runtime environment, MCP definitions, events, and profiling.
 
 ## Email integration
 

@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { repository } from "@/lib/repository";
+import { assertRuntimeSelectable } from "@/lib/runtime-config";
 
 export const runtime = "nodejs";
 const schema = z.object({
   name: z.string().min(2).optional(),
   role: z.string().min(2).optional(),
   instructions: z.string().min(10).optional(),
+  runtime: z.string().min(1).max(64).optional(),
   model: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   fullAccess: z.boolean().optional(),
@@ -40,10 +42,14 @@ export async function PATCH(
 ) {
   try {
     const { id } = await ctx.params;
-    const agent = repository.updateAgent(
-      id,
-      schema.parse(await request.json()),
+    const current = repository.getAgent(id);
+    if (!current) throw new Error("Agent not found");
+    const input = schema.parse(await request.json());
+    assertRuntimeSelectable(
+      input.runtime ?? current.runtime,
+      input.model ?? current.model,
     );
+    const agent = repository.updateAgent(id, input);
     if (!agent) throw new Error("Agent not found");
     return Response.json({ data: agent });
   } catch (error) {

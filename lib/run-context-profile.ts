@@ -34,6 +34,8 @@ export type ControlPlaneContextProfile = {
 
 export type ModelCallProfile = {
   callIndex: number;
+  usageScope: "model_call" | "run_aggregate";
+  providerTurnCount: number | null;
   createdAt: string;
   inputTokens: number;
   cachedInputTokens: number;
@@ -102,6 +104,8 @@ export type RunContextProfile = {
   contextComponents: ContextComponent[];
   mcpServers: McpServerDefinitionMetric[];
   modelCalls: ModelCallProfile[];
+  modelCallCount: number | null;
+  providerTurnCount: number | null;
   cumulativeInputTokens: number;
   cumulativeCachedInputTokens: number;
   cumulativeUncachedInputTokens: number;
@@ -239,6 +243,11 @@ function modelCalls(events: RunEvent[]): ModelCallProfile[] {
       );
       const call: ModelCallProfile = {
         callIndex: number(event.payload.callIndex) || index + 1,
+        usageScope:
+          event.payload.usageScope === "run_aggregate"
+            ? "run_aggregate"
+            : "model_call",
+        providerTurnCount: nullableNumber(event.payload.providerTurnCount),
         createdAt: event.createdAt,
         inputTokens,
         cachedInputTokens,
@@ -253,9 +262,11 @@ function modelCalls(events: RunEvent[]): ModelCallProfile[] {
         totalTokens: number(event.payload.totalTokens ?? last.totalTokens),
         modelContextWindow: nullableNumber(event.payload.modelContextWindow),
         inputDeltaTokens:
-          previousInput === null ? null : inputTokens - previousInput,
+          event.payload.usageScope === "run_aggregate" || previousInput === null
+            ? null
+            : inputTokens - previousInput,
       };
-      previousInput = inputTokens;
+      if (call.usageScope === "model_call") previousInput = inputTokens;
       return call;
     });
 }
@@ -427,11 +438,17 @@ export function buildRunContextProfile(
     componentTokens +
     definitionsTokens;
   const calls = modelCalls(events);
+  const perCallUsage = calls.filter(
+    ({ usageScope }) => usageScope === "model_call",
+  );
+  const aggregateUsage = calls.filter(
+    ({ usageScope }) => usageScope === "run_aggregate",
+  );
   const tools = toolCalls(events);
   const breakdown = toolBreakdown(tools);
-  const initialInput = calls[0]?.inputTokens ?? null;
-  const peakInput = calls.length
-    ? Math.max(...calls.map((call) => call.inputTokens))
+  const initialInput = perCallUsage[0]?.inputTokens ?? null;
+  const peakInput = perCallUsage.length
+    ? Math.max(...perCallUsage.map((call) => call.inputTokens))
     : null;
   const startedAt = run.startedAt ? Date.parse(run.startedAt) : Number.NaN;
   const endedAt = run.completedAt ? Date.parse(run.completedAt) : Number.NaN;
@@ -455,6 +472,11 @@ export function buildRunContextProfile(
       "At least one MCP definition probe failed; its schema weight is excluded from the known bootstrap estimate.",
     );
   }
+  if (aggregateUsage.length > 0) {
+    limitations.push(
+      "This runtime reports aggregate Run usage, so per-model-call initial, peak, growth, and timeline boundaries are unavailable.",
+    );
+  }
   const timeline = correlatedTimeline(events, calls, tools);
 
   return {
@@ -474,6 +496,14 @@ export function buildRunContextProfile(
     contextComponents,
     mcpServers: controlPlane?.mcpServers ?? [],
     modelCalls: calls,
+    modelCallCount: aggregateUsage.length > 0 ? null : perCallUsage.length,
+    providerTurnCount:
+      aggregateUsage.length > 0
+        ? aggregateUsage.reduce(
+            (total, call) => total + (call.providerTurnCount ?? 0),
+            0,
+          ) || null
+        : null,
     cumulativeInputTokens: calls.reduce(
       (total, call) => total + call.inputTokens,
       0,

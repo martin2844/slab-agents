@@ -16,7 +16,13 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { Agent, AgentEmailAccess, Integration, Run } from "@/lib/types";
+import type {
+  Agent,
+  AgentEmailAccess,
+  Integration,
+  Run,
+  RuntimeCatalogItem,
+} from "@/lib/types";
 
 function agentState(agent: Agent, runs: Run[]) {
   if (!agent.enabled) return "disabled";
@@ -61,11 +67,13 @@ export function AgentsView({
   initialRuns,
   integrations,
   emailAssignments,
+  runtimes,
 }: {
   initialAgents: Agent[];
   initialRuns: Run[];
   integrations: Integration[];
   emailAssignments: AgentEmailAccess[];
+  runtimes: RuntimeCatalogItem[];
 }) {
   const [agents, setAgents] = useState<Agent[] | null>(initialAgents);
   const [error] = useState("");
@@ -87,6 +95,7 @@ export function AgentsView({
         description={`${enabled} enabled · ${running} active · ${initialRuns.filter((run) => run.status === "queued").length} queued`}
         actions={
           <AgentCreateDialog
+            runtimes={runtimes}
             onCreated={(agent) =>
               setAgents((current) => [...(current ?? []), agent])
             }
@@ -107,6 +116,7 @@ export function AgentsView({
                 </Link>
               </Button>
               <AgentCreateDialog
+                runtimes={runtimes}
                 trigger={
                   <Button variant="outline">
                     <Plus /> New agent
