@@ -1,10 +1,7 @@
-import { repository } from "@/lib/repository";
+import { getRunsPageData } from "@/lib/page-data";
 export const dynamic = "force-dynamic";
 export async function GET() {
   return Response.json({
-    data: {
-      runs: repository.listRuns(),
-      approvals: repository.listApprovals(),
-    },
+    data: getRunsPageData(),
   });
 }

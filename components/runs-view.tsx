@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   Check,
   LoaderCircle,
+  MessageSquare,
   ShieldAlert,
   X,
 } from "lucide-react";
@@ -40,8 +41,17 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
   const [error, setError] = useState("");
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const load = () =>
-    api<RunsData>("/api/runs")
-      .then(setData)
+    api<Partial<RunsData>>("/api/runs")
+      .then((next) =>
+        setData((current) => {
+          const previous = current ?? initialData;
+          return {
+            runs: next.runs ?? previous.runs,
+            approvals: next.approvals ?? previous.approvals,
+            agents: next.agents ?? previous.agents,
+          };
+        }),
+      )
       .catch((cause) => setError(cause.message));
 
   async function decide(id: string, decision: "approve" | "deny") {
@@ -67,17 +77,18 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
     }
   }
 
-  const pending =
-    data?.approvals.filter((approval) => approval.status === "pending") ?? [];
-  const active =
-    data?.runs.filter((run) =>
-      ["running", "queued", "waiting_approval"].includes(run.status),
-    ).length ?? 0;
-  const failed =
-    data?.runs.filter((run) => run.status === "failed").length ?? 0;
+  const runs = data?.runs ?? [];
+  const approvals = data?.approvals ?? [];
+  const agents = data?.agents ?? [];
+  const pending = approvals.filter((approval) => approval.status === "pending");
+  const active = runs.filter((run) =>
+    ["running", "queued", "waiting_approval"].includes(run.status),
+  ).length;
+  const failed = runs.filter((run) => run.status === "failed").length;
   const agentName = (agentId: string) =>
-    data?.agents.find((agent) => agent.id === agentId)?.name ??
-    agentId.slice(0, 8);
+    agents.find((agent) => agent.id === agentId)?.name ?? agentId.slice(0, 8);
+  const chatHref = (run: Run) =>
+    run.threadId ? `/agents/${run.agentId}/threads/${run.threadId}` : null;
 
   return (
     <>
@@ -97,43 +108,54 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
                 action={<ShieldAlert className="size-4 text-amber-800" />}
               />
               <div className="divide-y border-y border-amber-800/15">
-                {pending.map((approval) => (
-                  <div
-                    key={approval.id}
-                    className="grid min-h-14 gap-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-mono text-xs">
-                        {approval.command}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Run {approval.runId.slice(0, 12)}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        disabled={resolvingId === approval.id}
-                        onClick={() => decide(approval.id, "approve")}
-                      >
-                        {resolvingId === approval.id ? (
-                          <LoaderCircle className="animate-spin" />
-                        ) : (
-                          <Check />
+                {pending.map((approval) => {
+                  const run = runs.find((item) => item.id === approval.runId);
+                  const href = run ? chatHref(run) : null;
+                  return (
+                    <div
+                      key={approval.id}
+                      className="grid min-h-14 gap-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-xs">
+                          {approval.command}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Run {approval.runId.slice(0, 12)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {href && (
+                          <Button size="sm" variant="outline" asChild>
+                            <Link href={href}>
+                              <MessageSquare /> Open chat
+                            </Link>
+                          </Button>
                         )}
-                        Approve
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={resolvingId === approval.id}
-                        onClick={() => decide(approval.id, "deny")}
-                      >
-                        <X /> Deny
-                      </Button>
+                        <Button
+                          size="sm"
+                          disabled={resolvingId === approval.id}
+                          onClick={() => decide(approval.id, "approve")}
+                        >
+                          {resolvingId === approval.id ? (
+                            <LoaderCircle className="animate-spin" />
+                          ) : (
+                            <Check />
+                          )}
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={resolvingId === approval.id}
+                          onClick={() => decide(approval.id, "deny")}
+                        >
+                          <X /> Deny
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           )}
@@ -141,9 +163,9 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
           <section>
             <SectionHeader
               title="Execution history"
-              meta={`${data.runs.length} runs`}
+              meta={`${runs.length} runs`}
             />
-            {!data.runs.length ? (
+            {!runs.length ? (
               <EmptyState
                 title="No runs yet"
                 description="Runs appear when an agent receives a task, chat message, or automation."
@@ -151,7 +173,7 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
             ) : (
               <>
                 <div className="divide-y rounded-lg border bg-card md:hidden">
-                  {data.runs.map((run) => (
+                  {runs.map((run) => (
                     <Link
                       key={run.id}
                       href={`/runs/${run.id}`}
@@ -188,13 +210,13 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
                       <th className={denseTableHead}>Runtime</th>
                       <th className={denseTableHead}>Duration</th>
                       <th className={denseTableHead}>Started</th>
-                      <th className={`${denseTableHead} w-10`}>
-                        <span className="sr-only">Open</span>
+                      <th className={`${denseTableHead} w-20`}>
+                        <span className="sr-only">Actions</span>
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.runs.map((run) => (
+                    {runs.map((run) => (
                       <tr key={run.id} className="group hover:bg-muted/25">
                         <td
                           className={`${denseTableCell} font-mono text-xs font-medium`}
@@ -240,14 +262,26 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
                             : "Queued"}
                         </td>
                         <td className={denseTableCell}>
-                          <Button asChild size="icon-sm" variant="ghost">
-                            <Link
-                              href={`/runs/${run.id}`}
-                              aria-label={`Open run ${run.id}`}
-                            >
-                              <ArrowUpRight />
-                            </Link>
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            {chatHref(run) && (
+                              <Button asChild size="icon-sm" variant="ghost">
+                                <Link
+                                  href={chatHref(run)!}
+                                  aria-label={`Open chat for run ${run.id}`}
+                                >
+                                  <MessageSquare />
+                                </Link>
+                              </Button>
+                            )}
+                            <Button asChild size="icon-sm" variant="ghost">
+                              <Link
+                                href={`/runs/${run.id}`}
+                                aria-label={`Open run ${run.id}`}
+                              >
+                                <ArrowUpRight />
+                              </Link>
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}

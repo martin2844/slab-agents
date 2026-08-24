@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { ArrowLeft, CircleDot, Terminal, Wrench } from "lucide-react";
+import {
+  ArrowLeft,
+  CircleDot,
+  MessageSquare,
+  Terminal,
+  Wrench,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -63,11 +69,22 @@ export function RunDetail({ data }: { data: RunDetailData }) {
         title={`Run ${data.run.id.slice(0, 12)}`}
         description={`${data.run.mode.replaceAll("_", " ")} · ${data.run.trigger.replaceAll("_", " ")}${data.run.issueKey ? ` · ${data.run.issueKey}` : ""}`}
         actions={
-          <Button variant="outline" asChild>
-            <Link href="/runs">
-              <ArrowLeft /> All runs
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {data.run.threadId && (
+              <Button variant="outline" asChild>
+                <Link
+                  href={`/agents/${data.run.agentId}/threads/${data.run.threadId}`}
+                >
+                  <MessageSquare /> Open chat
+                </Link>
+              </Button>
+            )}
+            <Button variant="outline" asChild>
+              <Link href="/runs">
+                <ArrowLeft /> All runs
+              </Link>
+            </Button>
+          </div>
         }
       />
       <Tabs defaultValue="overview" className="space-y-5">
