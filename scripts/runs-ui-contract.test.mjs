@@ -20,15 +20,34 @@ test("Runs refresh keeps the complete page-data contract", async () => {
 });
 
 test("Runs expose their existing product chat without creating another run", async () => {
-  const [view, detail] = await Promise.all([
+  const [view, detail, threadPage] = await Promise.all([
     read("components/runs-view.tsx"),
     read("components/run-detail.tsx"),
+    read("app/agents/[id]/threads/[threadId]/page.tsx"),
   ]);
 
   for (const source of [view, detail]) {
     assert.match(source, /\/agents\/\$\{[^}]+\}\/threads\/\$\{[^}]+\}/);
+    assert.match(source, /\?run=\$\{[^}]+\}/);
     assert.match(source, /Open chat/);
   }
+  assert.match(threadPage, /repository\.getActiveRunForThread\(threadId\)/);
+  assert.match(threadPage, /linkedRun\?\.threadId === threadId/);
   assert.doesNotMatch(view, /POST[\s\S]*\/api\/threads/);
   assert.doesNotMatch(detail, /POST[\s\S]*\/api\/threads/);
+});
+
+test("Background chat polling observes terminal run state before reloading messages", async () => {
+  const chat = await read("components/thread-chat.tsx");
+
+  const runFetch = chat.indexOf("/api/runs/${backgroundRunId}");
+  const threadFetch = chat.indexOf("/api/threads/${threadId}");
+
+  assert.notEqual(runFetch, -1);
+  assert.notEqual(threadFetch, -1);
+  assert.ok(runFetch < threadFetch);
+  assert.doesNotMatch(
+    chat,
+    /Promise\.all\(\[\s*api<ThreadData>[\s\S]*api<RunDetailData>/,
+  );
 });

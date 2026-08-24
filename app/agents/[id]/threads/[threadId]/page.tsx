@@ -1,5 +1,6 @@
 import { ThreadChat } from "@/components/thread-chat";
 import { getThreadPageData } from "@/lib/page-data";
+import { repository } from "@/lib/repository";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -12,12 +13,17 @@ export default async function ThreadPage({
   const { run } = await searchParams;
   const data = getThreadPageData(threadId);
   if (!data) notFound();
+  const requestedRun = typeof run === "string" ? repository.getRun(run) : null;
+  const linkedRun =
+    requestedRun?.threadId === threadId
+      ? requestedRun
+      : repository.getActiveRunForThread(threadId);
   return (
     <ThreadChat
       key={threadId}
       threadId={threadId}
       initialData={data}
-      initialRunId={typeof run === "string" ? run : null}
+      initialRunId={linkedRun?.threadId === threadId ? linkedRun.id : null}
     />
   );
 }

@@ -88,7 +88,9 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
   const agentName = (agentId: string) =>
     agents.find((agent) => agent.id === agentId)?.name ?? agentId.slice(0, 8);
   const chatHref = (run: Run) =>
-    run.threadId ? `/agents/${run.agentId}/threads/${run.threadId}` : null;
+    run.threadId
+      ? `/agents/${run.agentId}/threads/${run.threadId}?run=${run.id}`
+      : null;
 
   return (
     <>

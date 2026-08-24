@@ -72,12 +72,18 @@ export function ThreadChat({
   useEffect(() => {
     if (!backgroundRunId) return;
     let cancelled = false;
+    let refreshing = false;
     const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
       try {
-        const [threadData, runData] = await Promise.all([
-          api<ThreadData>(`/api/threads/${threadId}`),
-          api<RunDetailData>(`/api/runs/${backgroundRunId}`),
-        ]);
+        // Read the run first. Once it is terminal, its assistant message has
+        // already been committed, so the following thread read cannot stop on
+        // a stale pre-completion snapshot.
+        const runData = await api<RunDetailData>(
+          `/api/runs/${backgroundRunId}`,
+        );
+        const threadData = await api<ThreadData>(`/api/threads/${threadId}`);
         if (cancelled) return;
         setData(threadData);
         setRunEvents(runData.events);
@@ -113,6 +119,8 @@ export function ThreadChat({
             error instanceof Error ? error.message : "Could not refresh run",
           );
         }
+      } finally {
+        refreshing = false;
       }
     };
     void refresh();

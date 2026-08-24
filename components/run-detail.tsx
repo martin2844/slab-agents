@@ -73,7 +73,7 @@ export function RunDetail({ data }: { data: RunDetailData }) {
             {data.run.threadId && (
               <Button variant="outline" asChild>
                 <Link
-                  href={`/agents/${data.run.agentId}/threads/${data.run.threadId}`}
+                  href={`/agents/${data.run.agentId}/threads/${data.run.threadId}?run=${data.run.id}`}
                 >
                   <MessageSquare /> Open chat
                 </Link>
