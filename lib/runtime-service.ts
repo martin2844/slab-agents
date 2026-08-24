@@ -36,12 +36,49 @@ const fallbackDefinitions: Record<
     authModes: ["api_key"],
     capabilities: {},
   },
+  direct_api: {
+    id: "direct_api",
+    displayName: "Direct API",
+    stability: "experimental",
+    authModes: ["api_key"],
+    capabilities: {},
+  },
 };
 
 class RuntimeConfigurationChangedError extends Error {
   constructor() {
-    super("Runtime configuration changed while the test was running. Test it again.");
+    super(
+      "Runtime configuration changed while the test was running. Test it again.",
+    );
   }
+}
+
+async function readJsonLimited(
+  response: Response,
+  maxBytes = 1_048_576,
+): Promise<unknown> {
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      bytes += next.value.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel();
+        throw new Error("Runtime model discovery response is too large.");
+      }
+      chunks.push(next.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = Buffer.concat(
+    chunks.map((chunk) => Buffer.from(chunk)),
+  ).toString("utf8");
+  return JSON.parse(body);
 }
 
 function catalogItem(
@@ -67,14 +104,13 @@ function catalogItem(
         : "Codex is unavailable in slab-runner.";
   } else if (runner.status === "unavailable") {
     health = "unavailable";
-    healthDetail = "Claude is unavailable in slab-runner.";
+    healthDetail = `${definition.displayName} is unavailable in slab-runner.`;
   } else if (!configured) {
     health = "authentication_required";
-    healthDetail = "Add an Anthropic API key, then test the runtime.";
+    healthDetail = `Add an API key, then test ${definition.displayName}.`;
   } else if (config.lastVerificationStatus === "connected") {
     health = "available";
-    healthDetail =
-      config.lastVerificationDetail ?? "Anthropic API key verified.";
+    healthDetail = config.lastVerificationDetail ?? "API key verified.";
   } else if (config.lastVerificationStatus === "failed") {
     health = "unavailable";
     healthDetail =
@@ -97,6 +133,8 @@ function catalogItem(
     configVersion: config.configVersion,
     models: config.models,
     defaultModel: config.defaultModel,
+    baseUrl: config.baseUrl,
+    apiFormat: config.apiFormat,
   };
 }
 
@@ -108,10 +146,7 @@ export async function listRuntimeCatalog(): Promise<RuntimeCatalogItem[]> {
     // A disconnected Runner is represented on each catalog row.
   }
   return runtimeIds.map((runtimeId) =>
-    catalogItem(
-      runtimeId,
-      runtimes.find(({ id }) => id === runtimeId) ?? null,
-    ),
+    catalogItem(runtimeId, runtimes.find(({ id }) => id === runtimeId) ?? null),
   );
 }
 
@@ -120,11 +155,11 @@ export async function updateRuntime(input: {
   enabled?: boolean;
   apiKey?: string;
   defaultModel?: string;
+  baseUrl?: string;
+  apiFormat?: "responses" | "chat_completions";
 }) {
   saveRuntimeConfiguration(input);
-  return (await listRuntimeCatalog()).find(
-    ({ id }) => id === input.runtimeId,
-  )!;
+  return (await listRuntimeCatalog()).find(({ id }) => id === input.runtimeId)!;
 }
 
 export async function testRuntime(
@@ -142,26 +177,32 @@ export async function testRuntime(
   try {
     if (runtimeId === "codex") {
       await testCodex();
-      if (!repository.completeRuntimeVerification({
-        runtimeId,
-        expectedConfigVersion: config.configVersion,
-        status: "connected",
-        detail: "Codex is available through slab-runner.",
-        checkedAt,
-      })) throw new RuntimeConfigurationChangedError();
-    } else {
+      if (
+        !repository.completeRuntimeVerification({
+          runtimeId,
+          expectedConfigVersion: config.configVersion,
+          status: "connected",
+          detail: "Codex is available through slab-runner.",
+          checkedAt,
+        })
+      )
+        throw new RuntimeConfigurationChangedError();
+    } else if (runtimeId === "claude") {
       if (!config.credentialCiphertext) {
         throw new Error("Configure an Anthropic API key first.");
       }
-      const response = await fetcher("https://api.anthropic.com/v1/models?limit=100", {
-        headers: {
-          "x-api-key": decryptLocalSecret(config.credentialCiphertext),
-          "anthropic-version": "2023-06-01",
+      const response = await fetcher(
+        "https://api.anthropic.com/v1/models?limit=100",
+        {
+          headers: {
+            "x-api-key": decryptLocalSecret(config.credentialCiphertext),
+            "anthropic-version": "2023-06-01",
+          },
+          signal: AbortSignal.timeout(10_000),
+          cache: "no-store",
+          redirect: "manual",
         },
-        signal: AbortSignal.timeout(10_000),
-        cache: "no-store",
-        redirect: "manual",
-      });
+      );
       if (!response.ok) {
         throw new Error(
           response.status === 401 || response.status === 403
@@ -169,7 +210,7 @@ export async function testRuntime(
             : `Anthropic model discovery returned ${response.status}.`,
         );
       }
-      const payload = (await response.json()) as {
+      const payload = (await readJsonLimited(response)) as {
         data?: Array<{ id?: unknown }>;
       };
       const discovered = (payload.data ?? [])
@@ -177,28 +218,87 @@ export async function testRuntime(
         .filter((id) => id.length > 0 && id.length <= 200)
         .slice(0, 100);
       const models = ["default", ...new Set(discovered)];
-      if (!repository.completeRuntimeVerification({
-        runtimeId,
-        expectedConfigVersion: config.configVersion,
-        models,
-        defaultModel: models.includes(config.defaultModel)
-          ? config.defaultModel
-          : "default",
-        status: "connected",
-        detail: `${discovered.length} Anthropic models available.`,
-        checkedAt,
-      })) throw new RuntimeConfigurationChangedError();
+      if (
+        !repository.completeRuntimeVerification({
+          runtimeId,
+          expectedConfigVersion: config.configVersion,
+          models,
+          defaultModel: models.includes(config.defaultModel)
+            ? config.defaultModel
+            : "default",
+          status: "connected",
+          detail: `${discovered.length} Anthropic models available.`,
+          checkedAt,
+        })
+      )
+        throw new RuntimeConfigurationChangedError();
+    } else {
+      if (!config.credentialCiphertext || !config.baseUrl) {
+        throw new Error("Configure a Direct API endpoint and API key first.");
+      }
+      const response = await fetcher(
+        `${config.baseUrl.replace(/\/$/, "")}/models`,
+        {
+          headers: {
+            Authorization: `Bearer ${decryptLocalSecret(config.credentialCiphertext)}`,
+            Accept: "application/json",
+          },
+          signal: AbortSignal.timeout(10_000),
+          cache: "no-store",
+          redirect: "manual",
+        },
+      );
+      if (response.status >= 300 && response.status < 400) {
+        throw new Error("Direct API model discovery refused a redirect.");
+      }
+      if (!response.ok) {
+        throw new Error(
+          response.status === 401 || response.status === 403
+            ? "The provider rejected the configured API key."
+            : `Direct API model discovery returned ${response.status}.`,
+        );
+      }
+      const payload = (await readJsonLimited(response)) as {
+        data?: Array<{ id?: unknown }>;
+      };
+      const discovered = (payload.data ?? [])
+        .map(({ id }) => (typeof id === "string" ? id : ""))
+        .filter((id) => id.length > 0 && id.length <= 200)
+        .slice(0, 200);
+      if (discovered.length === 0) {
+        throw new Error("Direct API did not report any usable models.");
+      }
+      const models = [...new Set(discovered)];
+      if (
+        !repository.completeRuntimeVerification({
+          runtimeId,
+          expectedConfigVersion: config.configVersion,
+          models,
+          defaultModel: models.includes(config.defaultModel)
+            ? config.defaultModel
+            : models[0],
+          status: "connected",
+          detail: `${models.length} provider models available through ${config.apiFormat ?? "responses"}.`,
+          checkedAt,
+        })
+      )
+        throw new RuntimeConfigurationChangedError();
     }
   } catch (error) {
     if (error instanceof RuntimeConfigurationChangedError) throw error;
-    if (!repository.completeRuntimeVerification({
-      runtimeId,
-      expectedConfigVersion: config.configVersion,
-      status: "failed",
-      detail:
-        error instanceof Error ? error.message : "Runtime verification failed.",
-      checkedAt,
-    })) throw new RuntimeConfigurationChangedError();
+    if (
+      !repository.completeRuntimeVerification({
+        runtimeId,
+        expectedConfigVersion: config.configVersion,
+        status: "failed",
+        detail:
+          error instanceof Error
+            ? error.message
+            : "Runtime verification failed.",
+        checkedAt,
+      })
+    )
+      throw new RuntimeConfigurationChangedError();
     throw error;
   }
   return (await listRuntimeCatalog()).find(({ id }) => id === runtimeId)!;

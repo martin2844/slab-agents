@@ -9,6 +9,8 @@ const schema = z.object({
   enabled: z.boolean().optional(),
   apiKey: z.string().trim().min(16).max(16_384).optional(),
   defaultModel: z.string().trim().min(1).max(200).optional(),
+  baseUrl: z.string().trim().url().max(2_048).optional(),
+  apiFormat: z.enum(["responses", "chat_completions"]).optional(),
 });
 
 export async function PATCH(

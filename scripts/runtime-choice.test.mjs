@@ -29,14 +29,13 @@ test("runtime configuration, model selection, and credentials stay server-side",
     runtimeService,
     { createRunExecution },
     setup,
-  ] =
-    await Promise.all([
-      import("../lib/repository.ts"),
-      import("../lib/runtime-config.ts"),
-      import("../lib/runtime-service.ts"),
-      import("../lib/run-service.ts"),
-      import("../lib/setup.ts"),
-    ]);
+  ] = await Promise.all([
+    import("../lib/repository.ts"),
+    import("../lib/runtime-config.ts"),
+    import("../lib/runtime-service.ts"),
+    import("../lib/run-service.ts"),
+    import("../lib/setup.ts"),
+  ]);
 
   const rawKey = "sk-ant-runtime-choice-secret-should-never-leak";
   runtimeConfig.saveRuntimeConfiguration({
@@ -109,6 +108,65 @@ test("runtime configuration, model selection, and credentials stay server-side",
     },
   });
 
+  const directKey = "openai-compatible-secret-never-returned";
+  runtimeConfig.saveRuntimeConfiguration({
+    runtimeId: "direct_api",
+    apiKey: directKey,
+    baseUrl: "https://provider.example.test/v1/",
+    apiFormat: "chat_completions",
+    defaultModel: "kimi-test",
+  });
+  const storedDirect = repository.getRuntimeConfig("direct_api");
+  assert.equal(storedDirect?.baseUrl, "https://provider.example.test/v1");
+  assert.equal(storedDirect?.apiFormat, "chat_completions");
+  assert.ok(storedDirect?.credentialCiphertext);
+  assert.doesNotMatch(storedDirect.credentialCiphertext, /never-returned/);
+  await runtimeService.testRuntime("direct_api", {
+    fetcher: async (url, init) => {
+      assert.equal(String(url), "https://provider.example.test/v1/models");
+      assert.equal(init?.headers.Authorization, `Bearer ${directKey}`);
+      assert.equal(init?.redirect, "manual");
+      return Response.json({
+        data: [{ id: "kimi-test" }, { id: "kimi-fast" }],
+      });
+    },
+    now: () => "2026-08-24T12:00:01.000Z",
+  });
+  runtimeConfig.saveRuntimeConfiguration({
+    runtimeId: "direct_api",
+    enabled: true,
+    defaultModel: "kimi-test",
+  });
+  assert.equal(
+    repository.getRuntimeConfig("direct_api")?.lastVerificationStatus,
+    "connected",
+    "enable/model-only saves must preserve a current connection verification",
+  );
+  runtimeConfig.saveRuntimeConfiguration({
+    runtimeId: "direct_api",
+    baseUrl: "https://provider.example.test/v1/",
+    apiFormat: "chat_completions",
+  });
+  assert.equal(
+    repository.getRuntimeConfig("direct_api")?.lastVerificationStatus,
+    "connected",
+    "equivalent normalized endpoint fields must preserve verification",
+  );
+  assert.deepEqual(runtimeConfig.getRuntimeAuthentication("direct_api"), {
+    mode: "api_key",
+    credential: directKey,
+    baseUrl: "https://provider.example.test/v1",
+    apiFormat: "chat_completions",
+  });
+  assert.throws(
+    () =>
+      runtimeConfig.saveRuntimeConfiguration({
+        runtimeId: "direct_api",
+        baseUrl: "https://provider.example.test/v1?redirect=https://evil.test",
+      }),
+    /query string or fragment/,
+  );
+
   const agent = repository.createAgent({
     name: "Claude Operator",
     slug: "claude-operator",
@@ -129,6 +187,30 @@ test("runtime configuration, model selection, and credentials stay server-side",
   });
   assert.equal(run.runtime, "claude");
   assert.equal(run.model, "claude-sonnet-4-20250514");
+
+  const directAgent = repository.createAgent({
+    name: "Direct Operator",
+    slug: "direct-operator",
+    role: "Operations",
+    instructions: "Operate through the configured Direct API runtime.",
+    runtime: "direct_api",
+    model: "default",
+    enabled: true,
+    fullAccess: false,
+  });
+  const directThread = repository.createThread(
+    directAgent.id,
+    "Direct runtime",
+  );
+  const directRun = createRunExecution({
+    agentId: directAgent.id,
+    threadId: directThread.id,
+    trigger: "chat",
+    mode: "chat",
+    prompt: "Confirm the direct runtime.",
+  });
+  assert.equal(directRun.runtime, "direct_api");
+  assert.equal(directRun.model, "kimi-test");
 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
@@ -167,8 +249,15 @@ test("runtime configuration, model selection, and credentials stay server-side",
   const serialized = JSON.stringify(publicCatalog);
   assert.doesNotMatch(serialized, /runtime-choice-secret/);
   assert.doesNotMatch(serialized, /credentialCiphertext|credential_ciphertext/);
-  assert.equal(publicCatalog.find(({ id }) => id === "claude")?.configured, true);
-  runtimeConfig.saveRuntimeConfiguration({ runtimeId: "codex", enabled: false });
+  assert.doesNotMatch(serialized, /openai-compatible-secret/);
+  assert.equal(
+    publicCatalog.find(({ id }) => id === "claude")?.configured,
+    true,
+  );
+  runtimeConfig.saveRuntimeConfiguration({
+    runtimeId: "codex",
+    enabled: false,
+  });
   const runtimeSetup = await setup.runSetupCheck("codex");
   const runtimeCheck = runtimeSetup.checks.find(
     ({ service }) => service === "codex",
@@ -201,12 +290,22 @@ test("runtime configuration, model selection, and credentials stay server-side",
 });
 
 test("runtime UI is write-only for provider credentials and run audit shows selection", async () => {
-  const [settings, runDetail, migration] = await Promise.all([
-    readFile(new URL("../components/runtime-settings.tsx", import.meta.url), "utf8"),
+  const [settings, runDetail, migration, directMigration] = await Promise.all([
+    readFile(
+      new URL("../components/runtime-settings.tsx", import.meta.url),
+      "utf8",
+    ),
     readFile(new URL("../components/run-detail.tsx", import.meta.url), "utf8"),
     readFile(
       new URL(
         "../db/migrations/202608240022_runtime_provider_choice.cjs",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+    readFile(
+      new URL(
+        "../db/migrations/202608240024_direct_api_runtime.cjs",
         import.meta.url,
       ),
       "utf8",
@@ -220,4 +319,7 @@ test("runtime UI is write-only for provider credentials and run audit shows sele
   assert.match(runDetail, /run\.model/);
   assert.match(migration, /version|config_version/);
   assert.match(migration, /UPDATE threads SET runtime = 'codex'/);
+  assert.match(settings, /OpenAI Responses/);
+  assert.match(settings, /OpenAI-compatible Chat Completions/);
+  assert.match(directMigration, /direct_api/);
 });

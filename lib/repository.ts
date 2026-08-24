@@ -121,6 +121,8 @@ export type RuntimeConfigRecord = {
   enabled: boolean;
   authMode: "runtime_owned" | "api_key";
   credentialCiphertext: string | null;
+  baseUrl: string | null;
+  apiFormat: "responses" | "chat_completions" | null;
   defaultModel: string;
   models: string[];
   configVersion: number;
@@ -139,6 +141,10 @@ function mapRuntimeConfig(row: Row): RuntimeConfigRecord {
     credentialCiphertext: row.credential_ciphertext
       ? String(row.credential_ciphertext)
       : null,
+    baseUrl: row.base_url ? String(row.base_url) : null,
+    apiFormat: row.api_format
+      ? (String(row.api_format) as RuntimeConfigRecord["apiFormat"])
+      : null,
     defaultModel: String(row.default_model ?? "default"),
     models: json(row.models_json, ["default"]),
     configVersion: Number(row.config_version ?? 1),
@@ -150,9 +156,7 @@ function mapRuntimeConfig(row: Row): RuntimeConfigRecord {
     lastVerificationDetail: row.last_verification_detail
       ? String(row.last_verification_detail)
       : null,
-    lastVerifiedAt: row.last_verified_at
-      ? String(row.last_verified_at)
-      : null,
+    lastVerifiedAt: row.last_verified_at ? String(row.last_verified_at) : null,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
@@ -1468,6 +1472,8 @@ export const repository = {
     enabled: boolean;
     authMode: RuntimeConfigRecord["authMode"];
     credentialCiphertext?: string | null;
+    baseUrl?: string | null;
+    apiFormat?: RuntimeConfigRecord["apiFormat"];
     defaultModel: string;
     models: string[];
     lastVerificationStatus?: RuntimeConfigRecord["lastVerificationStatus"];
@@ -1478,12 +1484,14 @@ export const repository = {
     const timestamp = now();
     db.prepare(
       `INSERT INTO runtime_configs
-        (runtime_id,enabled,auth_mode,credential_ciphertext,default_model,models_json,config_version,last_verification_status,last_verification_detail,last_verified_at,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        (runtime_id,enabled,auth_mode,credential_ciphertext,base_url,api_format,default_model,models_json,config_version,last_verification_status,last_verification_detail,last_verified_at,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(runtime_id) DO UPDATE SET
         enabled=excluded.enabled,
         auth_mode=excluded.auth_mode,
         credential_ciphertext=excluded.credential_ciphertext,
+        base_url=excluded.base_url,
+        api_format=excluded.api_format,
         default_model=excluded.default_model,
         models_json=excluded.models_json,
         config_version=excluded.config_version,
@@ -1496,6 +1504,8 @@ export const repository = {
       input.enabled ? 1 : 0,
       input.authMode,
       input.credentialCiphertext ?? current?.credentialCiphertext ?? null,
+      input.baseUrl ?? current?.baseUrl ?? null,
+      input.apiFormat ?? current?.apiFormat ?? null,
       input.defaultModel,
       JSON.stringify([...new Set(input.models)]),
       current ? current.configVersion + 1 : 1,
@@ -1524,36 +1534,40 @@ export const repository = {
     defaultModel?: string;
   }) {
     const result = input.models
-      ? db.prepare(
-          `UPDATE runtime_configs
+      ? db
+          .prepare(
+            `UPDATE runtime_configs
            SET models_json=?, default_model=?, config_version=config_version+1,
                last_verification_status=?, last_verification_detail=?,
                last_verified_at=?, updated_at=?
            WHERE runtime_id=? AND config_version=?`,
-        ).run(
-          JSON.stringify([...new Set(input.models)]),
-          input.defaultModel ?? "default",
-          input.status,
-          input.detail,
-          input.checkedAt,
-          now(),
-          input.runtimeId,
-          input.expectedConfigVersion,
-        )
-      : db.prepare(
-          `UPDATE runtime_configs
+          )
+          .run(
+            JSON.stringify([...new Set(input.models)]),
+            input.defaultModel ?? "default",
+            input.status,
+            input.detail,
+            input.checkedAt,
+            now(),
+            input.runtimeId,
+            input.expectedConfigVersion,
+          )
+      : db
+          .prepare(
+            `UPDATE runtime_configs
            SET config_version=config_version+1,
                last_verification_status=?, last_verification_detail=?,
                last_verified_at=?, updated_at=?
            WHERE runtime_id=? AND config_version=?`,
-        ).run(
-          input.status,
-          input.detail,
-          input.checkedAt,
-          now(),
-          input.runtimeId,
-          input.expectedConfigVersion,
-        );
+          )
+          .run(
+            input.status,
+            input.detail,
+            input.checkedAt,
+            now(),
+            input.runtimeId,
+            input.expectedConfigVersion,
+          );
     return result.changes === 1;
   },
 

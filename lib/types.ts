@@ -329,6 +329,8 @@ export type RuntimeCatalogItem = {
   configVersion: number;
   models: string[];
   defaultModel: string;
+  baseUrl: string | null;
+  apiFormat: "responses" | "chat_completions" | null;
 };
 
 export type BudgetPolicy = {

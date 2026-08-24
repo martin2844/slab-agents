@@ -42,14 +42,23 @@ export function RuntimeSettings({
   async function save(runtime: RuntimeCatalogItem) {
     setBusy(`${runtime.id}:save`);
     try {
-      const next = await api<RuntimeCatalogItem>(`/api/runtimes/${runtime.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          enabled: runtime.enabled,
-          defaultModel: runtime.defaultModel,
-          ...(keys[runtime.id] ? { apiKey: keys[runtime.id] } : {}),
-        }),
-      });
+      const next = await api<RuntimeCatalogItem>(
+        `/api/runtimes/${runtime.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            enabled: runtime.enabled,
+            defaultModel: runtime.defaultModel,
+            ...(keys[runtime.id] ? { apiKey: keys[runtime.id] } : {}),
+            ...(runtime.id === "direct_api"
+              ? {
+                  baseUrl: runtime.baseUrl,
+                  apiFormat: runtime.apiFormat,
+                }
+              : {}),
+          }),
+        },
+      );
       replace(next);
       setKeys((current) => ({ ...current, [runtime.id]: "" }));
       toast.success(`${runtime.displayName} configuration saved`);
@@ -66,10 +75,18 @@ export function RuntimeSettings({
     setBusy(`${runtime.id}:test`);
     try {
       let current = runtime;
-      if (keys[runtime.id]) {
+      if (keys[runtime.id] || runtime.id === "direct_api") {
         current = await api<RuntimeCatalogItem>(`/api/runtimes/${runtime.id}`, {
           method: "PATCH",
-          body: JSON.stringify({ apiKey: keys[runtime.id] }),
+          body: JSON.stringify({
+            ...(keys[runtime.id] ? { apiKey: keys[runtime.id] } : {}),
+            ...(runtime.id === "direct_api"
+              ? {
+                  baseUrl: runtime.baseUrl,
+                  apiFormat: runtime.apiFormat,
+                }
+              : {}),
+          }),
         });
         replace(current);
         setKeys((values) => ({ ...values, [runtime.id]: "" }));
@@ -112,19 +129,57 @@ export function RuntimeSettings({
               Enabled
               <Switch
                 checked={runtime.enabled}
-                onCheckedChange={(enabled) =>
-                  replace({ ...runtime, enabled })
-                }
+                onCheckedChange={(enabled) => replace({ ...runtime, enabled })}
                 disabled={!runtime.registered}
                 aria-label={`Enable ${runtime.displayName}`}
               />
             </div>
           </div>
 
+          {runtime.id === "direct_api" ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="grid gap-1.5 text-xs font-semibold">
+                API base URL
+                <Input
+                  value={runtime.baseUrl ?? ""}
+                  placeholder="https://api.openai.com/v1"
+                  onChange={(event) =>
+                    replace({ ...runtime, baseUrl: event.target.value })
+                  }
+                  inputMode="url"
+                />
+              </label>
+              <label className="grid gap-1.5 text-xs font-semibold">
+                API protocol
+                <Select
+                  value={runtime.apiFormat ?? "responses"}
+                  onValueChange={(apiFormat) =>
+                    replace({
+                      ...runtime,
+                      apiFormat: apiFormat as RuntimeCatalogItem["apiFormat"],
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="responses">OpenAI Responses</SelectItem>
+                    <SelectItem value="chat_completions">
+                      OpenAI-compatible Chat Completions
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
+            </div>
+          ) : null}
+
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-end">
             {runtime.authMode === "api_key" ? (
               <label className="grid gap-1.5 text-xs font-semibold">
-                Anthropic API key
+                {runtime.id === "claude"
+                  ? "Anthropic API key"
+                  : "Provider API key"}
                 <div className="relative">
                   <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -134,7 +189,9 @@ export function RuntimeSettings({
                     placeholder={
                       runtime.configured
                         ? "Configured · replace only"
-                        : "sk-ant-…"
+                        : runtime.id === "claude"
+                          ? "sk-ant-…"
+                          : "Write-only credential"
                     }
                     onChange={(event) =>
                       setKeys((current) => ({
@@ -194,7 +251,8 @@ export function RuntimeSettings({
           </div>
           <p className="text-xs text-muted-foreground">
             {runtime.models.length} model option
-            {runtime.models.length === 1 ? "" : "s"} · config revision {runtime.configVersion}
+            {runtime.models.length === 1 ? "" : "s"} · config revision{" "}
+            {runtime.configVersion}
             {runtime.lastVerifiedAt
               ? ` · verified ${formatDateTime(runtime.lastVerifiedAt)}`
               : ""}

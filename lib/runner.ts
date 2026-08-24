@@ -236,7 +236,8 @@ export async function startRunnerRun(
   ];
   const combinedInstructions = instructionParts.join("\n\n");
   const shouldRehydrateConversation =
-    input.execution.mode === "chat" && !input.thread.runtimeThreadId;
+    input.execution.mode === "chat" &&
+    (!input.thread.runtimeThreadId || input.agent.runtime === "direct_api");
   const context = shouldRehydrateConversation
     ? contextMessages
         .filter(({ role }) => role === "user" || role === "assistant")

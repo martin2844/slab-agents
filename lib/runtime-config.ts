@@ -3,7 +3,7 @@ import "server-only";
 import { decryptLocalSecret, encryptLocalSecret } from "@/lib/secrets";
 import { repository, type RuntimeConfigRecord } from "@/lib/repository";
 
-export const runtimeIds = ["codex", "claude"] as const;
+export const runtimeIds = ["codex", "claude", "direct_api"] as const;
 export type RuntimeId = (typeof runtimeIds)[number];
 
 export const runtimeBudgetCapabilities: Record<
@@ -23,6 +23,11 @@ export const runtimeBudgetCapabilities: Record<
     nativeTokenLimit: false,
     nativeCostLimit: true,
     incrementalTokenUsage: false,
+  },
+  direct_api: {
+    nativeTokenLimit: false,
+    nativeCostLimit: false,
+    incrementalTokenUsage: true,
   },
 };
 
@@ -47,6 +52,13 @@ export const runtimeDefaults: Record<
     defaultModel: "default",
     models: ["default"],
   },
+  direct_api: {
+    runtimeId: "direct_api",
+    enabled: false,
+    authMode: "api_key",
+    defaultModel: "gpt-5.4",
+    models: ["gpt-5.4"],
+  },
 };
 
 export function isRuntimeId(value: string): value is RuntimeId {
@@ -61,6 +73,8 @@ export function getRuntimeConfig(runtimeId: RuntimeId): RuntimeConfigRecord {
   return {
     ...defaults,
     credentialCiphertext: null,
+    baseUrl: runtimeId === "direct_api" ? "https://api.openai.com/v1" : null,
+    apiFormat: runtimeId === "direct_api" ? "responses" : null,
     configVersion: 0,
     lastVerificationStatus: null,
     lastVerificationDetail: null,
@@ -75,6 +89,8 @@ export function saveRuntimeConfiguration(input: {
   enabled?: boolean;
   apiKey?: string;
   defaultModel?: string;
+  baseUrl?: string;
+  apiFormat?: "responses" | "chat_completions";
 }) {
   const current = getRuntimeConfig(input.runtimeId);
   const apiKey = input.apiKey?.trim();
@@ -88,9 +104,25 @@ export function saveRuntimeConfiguration(input: {
   if (input.runtimeId === "claude" && enabled && !credentialCiphertext) {
     throw new Error("Configure an Anthropic API key before enabling Claude.");
   }
+  if (input.runtimeId === "direct_api" && enabled && !credentialCiphertext) {
+    throw new Error("Configure an API key before enabling Direct API.");
+  }
+  const baseUrl =
+    input.runtimeId === "direct_api"
+      ? normalizeDirectApiUrl(input.baseUrl ?? current.baseUrl ?? "")
+      : current.baseUrl;
+  const apiFormat =
+    input.runtimeId === "direct_api"
+      ? (input.apiFormat ?? current.apiFormat ?? "responses")
+      : current.apiFormat;
+  const connectionChanged =
+    Boolean(apiKey) ||
+    (input.runtimeId === "direct_api" &&
+      (baseUrl !== current.baseUrl || apiFormat !== current.apiFormat));
   const defaultModel = input.defaultModel?.trim() || current.defaultModel;
   if (
     input.runtimeId !== "codex" &&
+    input.runtimeId !== "direct_api" &&
     !current.models.includes(defaultModel) &&
     defaultModel !== "default"
   ) {
@@ -101,9 +133,11 @@ export function saveRuntimeConfiguration(input: {
     enabled,
     authMode: current.authMode,
     credentialCiphertext,
+    baseUrl,
+    apiFormat,
     defaultModel,
     models: current.models,
-    ...(apiKey
+    ...(connectionChanged
       ? {
           lastVerificationStatus: null,
           lastVerificationDetail: null,
@@ -138,13 +172,35 @@ export function resolveRuntimeModel(runtimeId: string, model: string) {
 }
 
 export function getRuntimeAuthentication(runtimeId: string) {
-  if (runtimeId !== "claude") return null;
-  const config = getRuntimeConfig("claude");
+  if (runtimeId !== "claude" && runtimeId !== "direct_api") return null;
+  const config = getRuntimeConfig(runtimeId);
   if (!config.enabled || !config.credentialCiphertext) {
-    throw new Error("Claude is disabled or missing an Anthropic API key.");
+    throw new Error(`${runtimeId} is disabled or missing an API key.`);
   }
   return {
     mode: "api_key" as const,
     credential: decryptLocalSecret(config.credentialCiphertext),
+    ...(runtimeId === "direct_api"
+      ? {
+          baseUrl: normalizeDirectApiUrl(config.baseUrl ?? ""),
+          apiFormat: config.apiFormat ?? "responses",
+        }
+      : {}),
   };
+}
+
+function normalizeDirectApiUrl(value: string): string {
+  const parsed = new URL(value.trim());
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Direct API URL must use HTTP or HTTPS.");
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error("Direct API credentials must not be embedded in the URL.");
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error(
+      "Direct API URL cannot include a query string or fragment.",
+    );
+  }
+  return parsed.toString().replace(/\/+$/, "");
 }
