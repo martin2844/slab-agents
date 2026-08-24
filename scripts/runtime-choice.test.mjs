@@ -315,6 +315,34 @@ test("runtime configuration, model selection, and credentials stay server-side",
     publicCatalog.find(({ id }) => id === "gemini")?.health,
     "available",
   );
+
+  const fullRunnerFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      data: [
+        {
+          id: "codex",
+          displayName: "Codex",
+          stability: "stable",
+          available: true,
+          status: "available",
+          reasonCode: "ready",
+          authentication: { status: "authenticated", mode: "chatgpt" },
+          checkedAt: "2026-08-24T12:00:30.000Z",
+        },
+      ],
+    });
+  const legacyRunnerCatalog = await runtimeService.listRuntimeCatalog();
+  assert.deepEqual(
+    legacyRunnerCatalog.find(({ id }) => id === "codex")?.authModes,
+    ["chatgpt", "api_key", "cloud_provider"],
+  );
+  assert.deepEqual(
+    legacyRunnerCatalog.find(({ id }) => id === "codex")?.capabilities,
+    {},
+  );
+  globalThis.fetch = fullRunnerFetch;
+
   runtimeConfig.saveRuntimeConfiguration({
     runtimeId: "codex",
     enabled: false,

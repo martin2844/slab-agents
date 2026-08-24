@@ -93,7 +93,15 @@ function catalogItem(
   runner: RunnerRuntimeSummary | null,
 ): RuntimeCatalogItem {
   const config = getRuntimeConfig(runtimeId);
-  const definition = runner ?? fallbackDefinitions[runtimeId];
+  const fallback = fallbackDefinitions[runtimeId];
+  const definition = runner ?? fallback;
+  const authModes = Array.isArray(runner?.authModes)
+    ? runner.authModes
+    : fallback.authModes;
+  const capabilities =
+    runner?.capabilities && typeof runner.capabilities === "object"
+      ? runner.capabilities
+      : fallback.capabilities;
   const runtimeOwned = config.authMode === "runtime_owned";
   const configured = runtimeOwned || Boolean(config.credentialCiphertext);
   let health: RuntimeCatalogItem["health"] = "not_tested";
@@ -129,8 +137,8 @@ function catalogItem(
     id: runtimeId,
     displayName: definition.displayName,
     stability: definition.stability,
-    authModes: [...definition.authModes],
-    capabilities: { ...definition.capabilities },
+    authModes: [...authModes],
+    capabilities: { ...capabilities },
     registered: Boolean(runner),
     enabled: config.enabled,
     configured,
