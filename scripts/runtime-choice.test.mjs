@@ -167,6 +167,27 @@ test("runtime configuration, model selection, and credentials stay server-side",
     /query string or fragment/,
   );
 
+  let testedRuntime = null;
+  await runtimeService.testRuntime("gemini", {
+    testRuntimeOwned: async (runtimeId) => {
+      testedRuntime = runtimeId;
+    },
+    now: () => "2026-08-24T12:00:02.000Z",
+  });
+  assert.equal(testedRuntime, "gemini");
+  runtimeConfig.saveRuntimeConfiguration({
+    runtimeId: "gemini",
+    enabled: true,
+  });
+  assert.throws(
+    () =>
+      runtimeConfig.saveRuntimeConfiguration({
+        runtimeId: "gemini",
+        apiKey: "must-never-be-stored",
+      }),
+    /authentication is owned by slab-runner/,
+  );
+
   const agent = repository.createAgent({
     name: "Claude Operator",
     slug: "claude-operator",
@@ -212,6 +233,30 @@ test("runtime configuration, model selection, and credentials stay server-side",
   assert.equal(directRun.runtime, "direct_api");
   assert.equal(directRun.model, "kimi-test");
 
+  const geminiAgent = repository.createAgent({
+    name: "Gemini Operator",
+    slug: "gemini-operator",
+    role: "Operations",
+    instructions: "Operate through the configured Gemini runtime.",
+    runtime: "gemini",
+    model: "default",
+    enabled: true,
+    fullAccess: false,
+  });
+  const geminiThread = repository.createThread(
+    geminiAgent.id,
+    "Gemini runtime",
+  );
+  const geminiRun = createRunExecution({
+    agentId: geminiAgent.id,
+    threadId: geminiThread.id,
+    trigger: "chat",
+    mode: "chat",
+    prompt: "Confirm the Gemini runtime.",
+  });
+  assert.equal(geminiRun.runtime, "gemini");
+  assert.equal(geminiRun.model, "default");
+
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
     Response.json({
@@ -226,6 +271,18 @@ test("runtime configuration, model selection, and credentials stay server-side",
           status: "available",
           reasonCode: "ready",
           authentication: { status: "authenticated", mode: "chatgpt" },
+          checkedAt: "2026-08-24T12:00:00.000Z",
+        },
+        {
+          id: "gemini",
+          displayName: "Gemini CLI",
+          stability: "experimental",
+          authModes: ["oauth"],
+          capabilities: {},
+          available: true,
+          status: "available",
+          reasonCode: "ready",
+          authentication: { status: "authenticated", mode: "oauth" },
           checkedAt: "2026-08-24T12:00:00.000Z",
         },
         {
@@ -253,6 +310,10 @@ test("runtime configuration, model selection, and credentials stay server-side",
   assert.equal(
     publicCatalog.find(({ id }) => id === "claude")?.configured,
     true,
+  );
+  assert.equal(
+    publicCatalog.find(({ id }) => id === "gemini")?.health,
+    "available",
   );
   runtimeConfig.saveRuntimeConfiguration({
     runtimeId: "codex",
@@ -290,7 +351,13 @@ test("runtime configuration, model selection, and credentials stay server-side",
 });
 
 test("runtime UI is write-only for provider credentials and run audit shows selection", async () => {
-  const [settings, runDetail, migration, directMigration] = await Promise.all([
+  const [
+    settings,
+    runDetail,
+    migration,
+    directMigration,
+    geminiMigration,
+  ] = await Promise.all([
     readFile(
       new URL("../components/runtime-settings.tsx", import.meta.url),
       "utf8",
@@ -310,6 +377,13 @@ test("runtime UI is write-only for provider credentials and run audit shows sele
       ),
       "utf8",
     ),
+    readFile(
+      new URL(
+        "../db/migrations/202608240025_gemini_runtime.cjs",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
   ]);
 
   assert.match(settings, /type="password"/);
@@ -322,4 +396,7 @@ test("runtime UI is write-only for provider credentials and run audit shows sele
   assert.match(settings, /OpenAI Responses/);
   assert.match(settings, /OpenAI-compatible Chat Completions/);
   assert.match(directMigration, /direct_api/);
+  assert.match(geminiMigration, /gemini/);
+  assert.match(geminiMigration, /runtime_owned/);
+  assert.match(settings, /sudo slabctl gemini login/);
 });

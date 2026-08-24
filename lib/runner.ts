@@ -440,14 +440,18 @@ export async function listRunnerRuntimes(
   return Array.isArray(payload.data) ? payload.data : [];
 }
 
-export async function testCodexRuntime() {
-  const codex = (await listRunnerRuntimes()).find(
-    (runtime) => runtime.id === "codex",
+export async function testRunnerRuntime(runtimeId: string) {
+  const runtime = (await listRunnerRuntimes()).find(
+    (candidate) => candidate.id === runtimeId,
   );
-  if (!codex) throw new Error("Runner did not report the Codex runtime.");
-  if (!codex.available)
+  if (!runtime) throw new Error(`Runner did not report the ${runtimeId} runtime.`);
+  if (!runtime.available)
     throw new Error(
-      "Codex is not authenticated or unavailable. On a self-hosted server, run sudo slabctl codex login.",
+      `${runtimeId} is not authenticated or unavailable. On a self-hosted server, run sudo slabctl ${runtimeId} login.`,
     );
-  return codex;
+  return runtime;
+}
+
+export async function testCodexRuntime() {
+  return testRunnerRuntime("codex");
 }

@@ -9,7 +9,7 @@ import {
 } from "@/lib/runtime-config";
 import {
   listRunnerRuntimes,
-  testCodexRuntime,
+  testRunnerRuntime,
   type RunnerRuntimeSummary,
 } from "@/lib/runner";
 import { repository } from "@/lib/repository";
@@ -41,6 +41,13 @@ const fallbackDefinitions: Record<
     displayName: "Direct API",
     stability: "experimental",
     authModes: ["api_key"],
+    capabilities: {},
+  },
+  gemini: {
+    id: "gemini",
+    displayName: "Gemini CLI",
+    stability: "experimental",
+    authModes: ["oauth"],
     capabilities: {},
   },
 };
@@ -87,21 +94,22 @@ function catalogItem(
 ): RuntimeCatalogItem {
   const config = getRuntimeConfig(runtimeId);
   const definition = runner ?? fallbackDefinitions[runtimeId];
-  const configured =
-    runtimeId === "codex" || Boolean(config.credentialCiphertext);
+  const runtimeOwned = config.authMode === "runtime_owned";
+  const configured = runtimeOwned || Boolean(config.credentialCiphertext);
   let health: RuntimeCatalogItem["health"] = "not_tested";
   let healthDetail = "Runtime has not been verified.";
 
   if (!runner) {
     health = "unavailable";
     healthDetail = "The connected Runner does not provide this runtime.";
-  } else if (runtimeId === "codex") {
+  } else if (runtimeOwned) {
     health = runner.status;
+    const command = runtimeId === "gemini" ? "gemini" : "codex";
     healthDetail = runner.available
       ? "Authenticated in slab-runner."
       : runner.status === "authentication_required"
-        ? "Authenticate Codex with sudo slabctl codex login."
-        : "Codex is unavailable in slab-runner.";
+        ? `Authenticate ${definition.displayName} with sudo slabctl ${command} login.`
+        : `${definition.displayName} is unavailable in slab-runner.`;
   } else if (runner.status === "unavailable") {
     health = "unavailable";
     healthDetail = `${definition.displayName} is unavailable in slab-runner.`;
@@ -166,23 +174,23 @@ export async function testRuntime(
   runtimeId: RuntimeId,
   dependencies: {
     fetcher?: typeof fetch;
-    testCodex?: typeof testCodexRuntime;
+    testRuntimeOwned?: typeof testRunnerRuntime;
     now?: () => string;
   } = {},
 ) {
   const fetcher = dependencies.fetcher ?? fetch;
-  const testCodex = dependencies.testCodex ?? testCodexRuntime;
+  const testRuntimeOwned = dependencies.testRuntimeOwned ?? testRunnerRuntime;
   const config = getRuntimeConfig(runtimeId);
   const checkedAt = dependencies.now?.() ?? new Date().toISOString();
   try {
-    if (runtimeId === "codex") {
-      await testCodex();
+    if (runtimeId === "codex" || runtimeId === "gemini") {
+      await testRuntimeOwned(runtimeId);
       if (
         !repository.completeRuntimeVerification({
           runtimeId,
           expectedConfigVersion: config.configVersion,
           status: "connected",
-          detail: "Codex is available through slab-runner.",
+          detail: `${fallbackDefinitions[runtimeId].displayName} is available through slab-runner.`,
           checkedAt,
         })
       )

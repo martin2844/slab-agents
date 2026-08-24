@@ -3,7 +3,7 @@ import "server-only";
 import { decryptLocalSecret, encryptLocalSecret } from "@/lib/secrets";
 import { repository, type RuntimeConfigRecord } from "@/lib/repository";
 
-export const runtimeIds = ["codex", "claude", "direct_api"] as const;
+export const runtimeIds = ["codex", "claude", "direct_api", "gemini"] as const;
 export type RuntimeId = (typeof runtimeIds)[number];
 
 export const runtimeBudgetCapabilities: Record<
@@ -28,6 +28,11 @@ export const runtimeBudgetCapabilities: Record<
     nativeTokenLimit: false,
     nativeCostLimit: false,
     incrementalTokenUsage: true,
+  },
+  gemini: {
+    nativeTokenLimit: false,
+    nativeCostLimit: false,
+    incrementalTokenUsage: false,
   },
 };
 
@@ -58,6 +63,13 @@ export const runtimeDefaults: Record<
     authMode: "api_key",
     defaultModel: "gpt-5.4",
     models: ["gpt-5.4"],
+  },
+  gemini: {
+    runtimeId: "gemini",
+    enabled: false,
+    authMode: "runtime_owned",
+    defaultModel: "default",
+    models: ["default"],
   },
 };
 
@@ -94,8 +106,10 @@ export function saveRuntimeConfiguration(input: {
 }) {
   const current = getRuntimeConfig(input.runtimeId);
   const apiKey = input.apiKey?.trim();
-  if (input.runtimeId === "codex" && apiKey) {
-    throw new Error("Codex authentication is owned by slab-runner.");
+  if (current.authMode === "runtime_owned" && apiKey) {
+    throw new Error(
+      `${input.runtimeId} authentication is owned by slab-runner.`,
+    );
   }
   const credentialCiphertext = apiKey
     ? encryptLocalSecret(apiKey)

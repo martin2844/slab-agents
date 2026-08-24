@@ -205,7 +205,9 @@ export function RuntimeSettings({
               </label>
             ) : (
               <div className="text-xs text-muted-foreground">
-                Authentication is stored inside slab-runner.
+                {runtime.id === "gemini"
+                  ? "Google account authentication is stored inside slab-runner. Run sudo slabctl gemini login on the host."
+                  : "Authentication is stored inside slab-runner."}
               </div>
             )}
             <label className="grid gap-1.5 text-xs font-semibold">
