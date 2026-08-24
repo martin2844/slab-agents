@@ -51,6 +51,16 @@ the effective runtime/model before entering the queue. Changing an Agent does
 not rewrite queued or historical Runs, and there is no silent provider
 fallback.
 
+The same Runtime settings page owns hard Run and Workspace budgets. Admission
+reserves the maximum configured Run cost atomically after FIFO and Work
+preflight, before Runner starts. Daily and monthly windows use UTC; Agent
+overrides may only tighten the Workspace ceiling. Usage observations reconcile
+idempotently against the Run's immutable pricing snapshot and an observed
+ceiling cancels the active Runner execution. Claude also receives its native
+SDK token/cost limits. Codex subscription Runs can use token ceilings, but USD
+limits require an operator-configured model price—Slab never invents a dollar
+cost for subscription usage.
+
 The private Runner request carries the selected Claude credential only for that
 Run. Runner exchanges it for a short-lived loopback surrogate before the Claude
 SDK child starts, keeping the real provider key out of the model context,

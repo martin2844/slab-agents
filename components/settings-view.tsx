@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { EmailIntegrationEditor } from "@/components/email-integration-editor";
 import { CalendarIntegrationEditor } from "@/components/calendar-integration-editor";
 import { RuntimeSettings } from "@/components/runtime-settings";
+import { BudgetSettings } from "@/components/budget-settings";
 import { PageHeader } from "@/components/page-header";
 import { ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +35,7 @@ import type {
   SetupStatus,
   WorkspaceSettings,
   RuntimeCatalogItem,
+  BudgetConfiguration,
 } from "@/lib/types";
 
 type Service = "work" | "docs" | "runner" | "codex";
@@ -51,6 +53,7 @@ export function SettingsView({
   initialCalendarOpen,
   initialCalendarResult,
   initialRuntimes,
+  initialBudget,
   calendarCallbackOrigin: configuredCalendarCallbackOrigin,
 }: {
   initialSettings: WorkspaceSettings;
@@ -65,6 +68,7 @@ export function SettingsView({
   initialCalendarResult: "connected" | "failed" | null;
   calendarCallbackOrigin: string;
   initialRuntimes: RuntimeCatalogItem[];
+  initialBudget: BudgetConfiguration;
 }) {
   const router = useRouter();
   const initialServiceState = (service: Service): State => {
@@ -277,6 +281,11 @@ export function SettingsView({
               </Button>
             </div>
             <RuntimeSettings initialRuntimes={initialRuntimes} />
+            <BudgetSettings
+              initialBudget={initialBudget}
+              agents={agents}
+              runtimes={initialRuntimes}
+            />
           </section>
         </TabsContent>
 

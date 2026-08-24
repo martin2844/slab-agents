@@ -6,6 +6,14 @@ import { repository, type RuntimeConfigRecord } from "@/lib/repository";
 export const runtimeIds = ["codex", "claude"] as const;
 export type RuntimeId = (typeof runtimeIds)[number];
 
+export const runtimeBudgetCapabilities: Record<
+  RuntimeId,
+  { nativeTokenLimit: boolean; nativeCostLimit: boolean }
+> = {
+  codex: { nativeTokenLimit: false, nativeCostLimit: false },
+  claude: { nativeTokenLimit: true, nativeCostLimit: true },
+};
+
 export const runtimeDefaults: Record<
   RuntimeId,
   Pick<
@@ -65,11 +73,7 @@ export function saveRuntimeConfiguration(input: {
     ? encryptLocalSecret(apiKey)
     : current.credentialCiphertext;
   const enabled = input.enabled ?? current.enabled;
-  if (
-    input.runtimeId === "claude" &&
-    enabled &&
-    !credentialCiphertext
-  ) {
+  if (input.runtimeId === "claude" && enabled && !credentialCiphertext) {
     throw new Error("Configure an Anthropic API key before enabling Claude.");
   }
   const defaultModel = input.defaultModel?.trim() || current.defaultModel;
@@ -115,7 +119,8 @@ export function assertRuntimeSelectable(runtimeId: string, model: string) {
 
 export function resolveRuntimeModel(runtimeId: string, model: string) {
   if (!isRuntimeId(runtimeId)) throw new Error("Unsupported agent runtime.");
-  const selected = model === "default" ? getRuntimeConfig(runtimeId).defaultModel : model;
+  const selected =
+    model === "default" ? getRuntimeConfig(runtimeId).defaultModel : model;
   assertRuntimeSelectable(runtimeId, selected);
   return selected;
 }

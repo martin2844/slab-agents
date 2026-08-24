@@ -17,6 +17,9 @@ export function apiError(error: unknown, fallback = "Request failed") {
       { status: 409 },
     );
   }
+  if (coded?.code === "BUDGET_INVALID") {
+    return Response.json({ error: message, code: coded.code }, { status: 400 });
+  }
   const status = /not found/i.test(message) ? 404 : 502;
   return Response.json({ error: message }, { status });
 }

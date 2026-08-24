@@ -18,6 +18,7 @@ import { inspectMcpDefinitions } from "@/lib/mcp/client";
 import { RunnerRequestError } from "@/lib/runner-errors";
 import { readSecret } from "@/lib/server-config";
 import type { RunExecution } from "@/lib/run-execution";
+import type { RuntimeBudget } from "@/lib/budget-control";
 import {
   getRuntimeAuthentication,
   getRuntimeConfig,
@@ -103,6 +104,7 @@ export async function startRunnerRun(
     messages: Message[];
     prompt: string;
     execution: RunExecution;
+    budget?: RuntimeBudget | null;
     runnerEventCursor?: number;
   },
   dependencies: RunnerRuntimeDependencies = {},
@@ -275,6 +277,7 @@ export async function startRunnerRun(
         model: input.agent.model === "default" ? null : input.agent.model,
         authentication: getRuntimeAuthentication(input.agent.runtime),
       },
+      budget: input.budget ?? null,
       thread: { runtimeThreadId: input.thread.runtimeThreadId },
       message: input.prompt,
       context,
@@ -310,6 +313,16 @@ export async function startRunnerRun(
       },
     },
   };
+}
+
+export async function cancelRunnerRun(runId: string) {
+  const response = await fetch(
+    `${runnerUrl()}/runs/${encodeURIComponent(runId)}`,
+    { method: "DELETE", headers: runnerHeaders() },
+  );
+  if (!response.ok && response.status !== 404)
+    throw await runnerError(response);
+  return response.ok;
 }
 
 export async function resolveRunnerApproval(

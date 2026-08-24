@@ -8,6 +8,7 @@ import { getSetupStatus } from "@/lib/setup";
 import { authStatus } from "@/lib/auth/service";
 import { configuredPublicOrigin } from "@/lib/request-origin";
 import { listRuntimeCatalog } from "@/lib/runtime-service";
+import { getBudgetConfiguration } from "@/lib/budget-control";
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 export default async function SettingsPage({
@@ -24,10 +25,10 @@ export default async function SettingsPage({
     query.tab === "runtime"
       ? "runtime"
       : query.tab === "email"
-      ? "email"
-      : query.tab === "calendar"
-        ? "calendar"
-        : "sources";
+        ? "email"
+        : query.tab === "calendar"
+          ? "calendar"
+          : "sources";
   const initialEmailOpen =
     query.email === "connected" || query.email === "oauth_failed";
   return (
@@ -50,6 +51,7 @@ export default async function SettingsPage({
       }
       calendarCallbackOrigin={configuredPublicOrigin()}
       initialRuntimes={await listRuntimeCatalog()}
+      initialBudget={getBudgetConfiguration()}
     />
   );
 }

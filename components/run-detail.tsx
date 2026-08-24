@@ -155,6 +155,48 @@ export function RunDetail({ data }: { data: RunDetailData }) {
               </dl>
             </div>
           </section>
+          {data.budget ? (
+            <section className="rounded-lg border bg-card p-4">
+              <h2 className="text-sm font-semibold">Budget accounting</h2>
+              <dl className="mt-3 grid divide-y border-y text-sm sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-5">
+                {[
+                  ["State", data.budget.status.replaceAll("_", " ")],
+                  [
+                    "Token ceiling",
+                    data.budget.maxTokens === null
+                      ? "Unlimited"
+                      : integer.format(data.budget.maxTokens),
+                  ],
+                  [
+                    "Cost ceiling",
+                    data.budget.maxCostUsd === null
+                      ? "Unlimited"
+                      : `$${data.budget.maxCostUsd.toFixed(4)}`,
+                  ],
+                  ["Observed tokens", integer.format(data.budget.actualTokens)],
+                  [
+                    "Observed cost",
+                    data.budget.actualCostUsd === null
+                      ? "Not priced"
+                      : `$${data.budget.actualCostUsd.toFixed(4)}`,
+                  ],
+                ].map(([label, amount]) => (
+                  <div key={String(label)} className="min-h-16 p-3">
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className="mt-1 font-mono text-xs capitalize">
+                      {amount}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              {data.budget.reason ? (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Reason:{" "}
+                  <span className="font-mono">{data.budget.reason}</span>
+                </p>
+              ) : null}
+            </section>
+          ) : null}
           {skipped && (
             <section className="rounded-lg border border-stone-400/40 bg-stone-500/5 p-4">
               <h2 className="text-sm font-semibold">

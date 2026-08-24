@@ -15,11 +15,14 @@ test("Work preflight runs after durable lease admission and before Runner", asyn
   const dequeue = source.indexOf("lease = await admission.ready");
   const preflight = source.indexOf("await runPreflight(run, agent)");
   const running = source.indexOf('repository.updateRun(run.id, "running")');
+  const budget = source.indexOf("admitBudget(run, agent)");
   const runner = source.indexOf("await startRunner({");
 
   assert.ok(dequeue >= 0);
   assert.ok(preflight > dequeue);
   assert.ok(running > preflight);
+  assert.ok(budget > preflight);
+  assert.ok(runner > budget);
   assert.ok(runner > running);
   assert.match(
     source.slice(preflight, running),

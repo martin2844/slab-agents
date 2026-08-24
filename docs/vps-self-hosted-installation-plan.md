@@ -1056,9 +1056,9 @@ Controls:
 - disable-on-budget-exhaustion behavior;
 - estimated and provider-reported cost stored separately.
 
-Before an API call or run starts, create a transactional budget reservation so concurrent agents cannot both spend the final allowance. Reconcile the reservation with reported usage afterward. A crashed run expires its reservation through a recovery job.
+Before a run starts, Slab Agents creates a transactional reservation so concurrent agents cannot both spend the final allowance. Normalized usage observations reconcile it idempotently afterward. When terminal usage is unavailable, the reservation remains conservatively charged instead of silently releasing unknown exposure.
 
-Codex/Claude subscription runtimes may not expose authoritative USD cost. For those, enforce step, token, and time limits and label any cost number as estimated. Never imply dollar precision that the provider does not expose.
+Codex subscription authentication does not expose authoritative USD cost. It supports token limits without a dollar claim; USD enforcement requires an operator-owned model price. Claude's API path reports provider cost and receives native SDK limits. Never imply dollar precision that a provider does not expose.
 
 ## 18. Health, observability, and logs
 
@@ -1466,12 +1466,12 @@ Exit gate: update and restore are tested on copies of real multi-service data, n
 
 ### Phase 7: web-managed runtimes and cost policy
 
-- [ ] Add runtime provider/model/credential/policy tables and encrypted write-only APIs.
-- [ ] Add Settings runtime UI.
-- [ ] Add per-agent runtime/model/cost controls.
-- [ ] Add budget reservation and usage reconciliation.
-- [ ] Add provider/model pricing catalog with versioned estimates.
-- [ ] Preserve current run profiling across adapters.
+- [x] Add runtime provider/model/credential/policy tables and encrypted write-only APIs.
+- [x] Add Settings runtime UI.
+- [x] Add per-agent runtime/model/cost controls.
+- [x] Add budget reservation and usage reconciliation.
+- [x] Add provider/model pricing catalog with versioned estimates.
+- [x] Preserve current run profiling across adapters.
 
 Exit gate: an operator can configure an API runtime and hard spending limits from the web without exposing a provider key.
 

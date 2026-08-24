@@ -19,6 +19,7 @@ import type {
   ThreadData,
   WorkPageData,
 } from "@/lib/types";
+import { getRunBudget } from "@/lib/budget-control";
 import {
   getOperatorPackSummaries,
   operatorPackMetrics,
@@ -158,6 +159,7 @@ export function getRunDetailPageData(id: string): RunDetailData | null {
       .listApprovals()
       .filter((approval) => approval.runId === id),
     contextProfile: buildRunContextProfile(run, events),
+    budget: getRunBudget(id),
   };
 }
 

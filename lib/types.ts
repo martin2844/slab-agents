@@ -275,6 +275,7 @@ export type RunDetailData = {
   events: RunEvent[];
   approvals: Approval[];
   contextProfile: RunContextProfile;
+  budget: RunBudgetSnapshot | null;
 };
 
 export type AutomationsData = {
@@ -321,12 +322,56 @@ export type RuntimeCatalogItem = {
   enabled: boolean;
   configured: boolean;
   authMode: "runtime_owned" | "api_key";
-  health: "available" | "authentication_required" | "unavailable" | "not_tested";
+  health:
+    "available" | "authentication_required" | "unavailable" | "not_tested";
   healthDetail: string;
   lastVerifiedAt: string | null;
   configVersion: number;
   models: string[];
   defaultModel: string;
+};
+
+export type BudgetPolicy = {
+  version: number;
+  maxTokensPerRun: number | null;
+  maxCostUsdPerRun: number | null;
+  dailyCostUsd: number | null;
+  monthlyCostUsd: number | null;
+};
+
+export type AgentBudgetPolicy = {
+  agentId: string;
+  maxTokensPerRun: number | null;
+  maxCostUsdPerRun: number | null;
+};
+
+export type RuntimeModelPrice = {
+  runtimeId: string;
+  model: string;
+  version: number;
+  inputUsdPerMillion: number;
+  cachedInputUsdPerMillion: number;
+  outputUsdPerMillion: number;
+};
+
+export type BudgetConfiguration = {
+  workspace: BudgetPolicy;
+  agents: AgentBudgetPolicy[];
+  prices: RuntimeModelPrice[];
+};
+
+export type RunBudgetSnapshot = {
+  runId: string;
+  status: "reserved" | "active" | "rejected" | "settled" | "exceeded";
+  terminalStatus: string | null;
+  policyVersion: number;
+  pricingVersion: number | null;
+  maxTokens: number | null;
+  maxCostUsd: number | null;
+  reservedCostUsd: number;
+  actualTokens: number;
+  actualCostUsd: number | null;
+  reason: string | null;
 };
 
 export type CalendarProvider =
