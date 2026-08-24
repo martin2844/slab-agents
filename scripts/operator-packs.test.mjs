@@ -701,7 +701,15 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
       checkedAt: new Date().toISOString(),
       fingerprint: "http://work.test/mcp|true",
     }));
-    WorkClient.listProjects = async () => [{ key: "QA", name: "QA", description: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() }];
+    const workProjects = [];
+    let createProjectCalls = 0;
+    WorkClient.listProjects = async () => workProjects;
+    WorkClient.createProject = async (input) => {
+      createProjectCalls += 1;
+      const project = { ...input, id: "qa-project", created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      workProjects.push(project);
+      return project;
+    };
     WorkClient.createIssue = async (input) => ({
       id: "qa-acceptance-1",
       key: "QA-1",
@@ -734,6 +742,9 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     await installOperatorPack(acceptancePack.id, "preserve");
     const acceptanceRun = await startOperatorPackAcceptance(acceptancePack.id);
     assert.equal(repository.getRun(acceptanceRun.runId).agentId, acceptanceAgent.id);
+    assert.equal(createProjectCalls, 1);
+    assert.equal(workProjects[0].key, "QA");
+    assert.equal(workProjects[0].name, "Operator Pack Acceptance");
   `;
   const run = spawnSync(
     process.execPath,

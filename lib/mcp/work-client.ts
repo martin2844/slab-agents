@@ -26,6 +26,11 @@ function connection() {
 
 export const WorkClient = {
   listProjects: () => callMcpTool<Project[]>(connection(), "list_projects"),
+  createProject: (input: {
+    key: string;
+    name: string;
+    description?: string;
+  }) => callMcpTool<Project>(connection(), "create_project", input),
   listIssues: async (projectKey: string) => {
     const result = await callMcpTool<
       { issues?: RemoteIssue[]; data?: RemoteIssue[] } | RemoteIssue[]

@@ -39,6 +39,7 @@ import type {
   OperatorPackPreviewChange,
   OperatorPackResource,
   OperatorPackSummary,
+  Project,
 } from "@/lib/types";
 import { tickWorkCoordination } from "@/lib/work-coordination";
 
@@ -1011,10 +1012,23 @@ async function createAcceptanceFixtures(
   acceptance: OperatorPackAcceptance,
   agent: Agent,
 ) {
-  const projects = await WorkClient.listProjects();
-  const project = projects[0];
-  if (!project)
-    throw new Error("A Work project is required for acceptance QA.");
+  let projects = await WorkClient.listProjects();
+  let project: Project | undefined = projects[0];
+  if (!project) {
+    try {
+      project = await WorkClient.createProject({
+        key: "QA",
+        name: "Operator Pack Acceptance",
+        description:
+          "Synthetic Work fixtures created by Slab Agents acceptance QA.",
+      });
+    } catch (error) {
+      // Another acceptance may have created the project after our initial read.
+      projects = await WorkClient.listProjects();
+      project = projects.find((candidate) => candidate.key === "QA");
+      if (!project) throw error;
+    }
+  }
   const tag = acceptanceTag(acceptance.id);
   const doc =
     scenario.fixture.docTitle && scenario.fixture.docBody
