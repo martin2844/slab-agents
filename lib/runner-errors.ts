@@ -8,6 +8,13 @@ export class RunnerRequestError extends Error {
   }
 }
 
+export class RunnerBudgetCompatibilityError extends RunnerRequestError {
+  constructor(message: string) {
+    super(message, 409);
+    this.name = "RunnerBudgetCompatibilityError";
+  }
+}
+
 export function isRunnerRunNotFound(
   error: unknown,
 ): error is RunnerRequestError {

@@ -14,11 +14,21 @@ import type { RunDetailData } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const usd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 6,
+});
 
 export function RunDetail({ data }: { data: RunDetailData }) {
   const skipped = [...data.events]
     .reverse()
     .find((event) => event.type === "run_skipped");
+  const budgetSkipped = skipped?.payload.reason === "budget_rejected";
+  const budgetSkipReason = String(
+    skipped?.payload.budgetReason ?? data.budget?.reason ?? "budget_rejected",
+  ).replaceAll("_", " ");
   const runtimeStarted = data.events.some(
     (event) => event.type === "runner_run_started",
   );
@@ -171,14 +181,14 @@ export function RunDetail({ data }: { data: RunDetailData }) {
                     "Cost ceiling",
                     data.budget.maxCostUsd === null
                       ? "Unlimited"
-                      : `$${data.budget.maxCostUsd.toFixed(4)}`,
+                      : usd.format(data.budget.maxCostUsd),
                   ],
                   ["Observed tokens", integer.format(data.budget.actualTokens)],
                   [
                     "Observed cost",
                     data.budget.actualCostUsd === null
                       ? "Not priced"
-                      : `$${data.budget.actualCostUsd.toFixed(4)}`,
+                      : usd.format(data.budget.actualCostUsd),
                   ],
                 ].map(([label, amount]) => (
                   <div key={String(label)} className="min-h-16 p-3">
@@ -200,21 +210,28 @@ export function RunDetail({ data }: { data: RunDetailData }) {
           {skipped && (
             <section className="rounded-lg border border-stone-400/40 bg-stone-500/5 p-4">
               <h2 className="text-sm font-semibold">
-                Skipped · stale Work trigger
+                {budgetSkipped
+                  ? "Skipped · budget policy"
+                  : "Skipped · stale Work trigger"}
               </h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                {skipReason} Runner was not invoked.
+                {budgetSkipped
+                  ? `Run did not start because the budget policy rejected it (${budgetSkipReason}).`
+                  : skipReason}{" "}
+                Runner was not invoked.
               </p>
-              <pre className="mt-3 max-w-full overflow-auto rounded-md border bg-background/70 p-3 font-mono text-xs leading-5">
-                {JSON.stringify(
-                  {
-                    expected: skipped.payload.expectedCondition,
-                    observed: skipped.payload.observedState,
-                  },
-                  null,
-                  2,
-                )}
-              </pre>
+              {!budgetSkipped ? (
+                <pre className="mt-3 max-w-full overflow-auto rounded-md border bg-background/70 p-3 font-mono text-xs leading-5">
+                  {JSON.stringify(
+                    {
+                      expected: skipped.payload.expectedCondition,
+                      observed: skipped.payload.observedState,
+                    },
+                    null,
+                    2,
+                  )}
+                </pre>
+              ) : null}
             </section>
           )}
           {data.run.error && (

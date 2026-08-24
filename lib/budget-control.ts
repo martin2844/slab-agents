@@ -72,6 +72,14 @@ function positiveOrNull(value: NullableNumber, field: string) {
   return value;
 }
 
+function positiveUsdOrNull(value: NullableNumber, field: string) {
+  const parsed = positiveOrNull(value, field);
+  if (parsed !== null) {
+    assertMicroUsd(parsed, field);
+  }
+  return parsed;
+}
+
 function integerOrNull(value: NullableNumber, field: string) {
   const parsed = positiveOrNull(value, field);
   if (parsed !== null && !Number.isSafeInteger(parsed)) {
@@ -90,6 +98,23 @@ function nonnegative(value: number, field: string) {
     invalid(`${field} must be zero or a positive number.`);
   }
   return value;
+}
+
+function nonnegativeUsd(value: number, field: string) {
+  const parsed = nonnegative(value, field);
+  if (parsed > 0) assertMicroUsd(parsed, field);
+  return parsed;
+}
+
+function assertMicroUsd(value: number, field: string) {
+  const micros = value * MICRO_USD;
+  if (micros < 1) {
+    invalid(`${field} cannot be smaller than $0.000001.`);
+  }
+  const floatingTolerance = Number.EPSILON * Math.max(1, Math.abs(micros)) * 4;
+  if (Math.abs(micros - Math.round(micros)) > floatingTolerance) {
+    invalid(`${field} cannot have more than 6 decimal places.`);
+  }
 }
 
 function minDefined(...values: NullableNumber[]) {
@@ -231,15 +256,15 @@ export function updateBudgetConfiguration(input: {
     input.workspace.maxTokensPerRun,
     "Run token limit",
   );
-  const maxCost = positiveOrNull(
+  const maxCost = positiveUsdOrNull(
     input.workspace.maxCostUsdPerRun,
     "Run cost limit",
   );
-  const daily = positiveOrNull(
+  const daily = positiveUsdOrNull(
     input.workspace.dailyCostUsd,
     "Daily cost limit",
   );
-  const monthly = positiveOrNull(
+  const monthly = positiveUsdOrNull(
     input.workspace.monthlyCostUsd,
     "Monthly cost limit",
   );
@@ -270,7 +295,7 @@ export function updateBudgetConfiguration(input: {
   }
   for (const policy of input.agents) {
     integerOrNull(policy.maxTokensPerRun, "Agent token limit");
-    positiveOrNull(policy.maxCostUsdPerRun, "Agent cost limit");
+    positiveUsdOrNull(policy.maxCostUsdPerRun, "Agent cost limit");
     if (
       policy.maxCostUsdPerRun !== null &&
       policy.maxCostUsdPerRun > MAX_BUDGET_USD
@@ -301,9 +326,9 @@ export function updateBudgetConfiguration(input: {
   for (const price of input.prices) {
     if (!price.runtimeId.trim() || !price.model.trim())
       invalid("Runtime and model are required for pricing.");
-    nonnegative(price.inputUsdPerMillion, "Input price");
-    nonnegative(price.cachedInputUsdPerMillion, "Cached input price");
-    nonnegative(price.outputUsdPerMillion, "Output price");
+    nonnegativeUsd(price.inputUsdPerMillion, "Input price");
+    nonnegativeUsd(price.cachedInputUsdPerMillion, "Cached input price");
+    nonnegativeUsd(price.outputUsdPerMillion, "Output price");
     if (
       price.inputUsdPerMillion +
         price.cachedInputUsdPerMillion +
@@ -448,8 +473,15 @@ export function admitRunBudget(
       const hasNativeCostLimit =
         isRuntimeId(run.runtime) &&
         runtimeBudgetCapabilities[run.runtime].nativeCostLimit;
+      const hasEnforceableTokenLimit =
+        isRuntimeId(run.runtime) &&
+        (runtimeBudgetCapabilities[run.runtime].nativeTokenLimit ||
+          runtimeBudgetCapabilities[run.runtime].incrementalTokenUsage);
+      if (maxTokens !== null && !hasEnforceableTokenLimit) {
+        reason = "token_limit_unavailable";
+      }
       if (maxCostMicro !== null && !price && !hasNativeCostLimit)
-        reason = "pricing_unavailable";
+        reason ??= "pricing_unavailable";
       const { dayStart, dayEnd, monthStart, monthEnd } = utcWindow(currentTime);
       if (!reason && maxCostMicro !== null) {
         const daily = numberOrNull(workspace.daily_cost_micro_usd);
@@ -680,6 +712,19 @@ export function settleRunBudget(runId: string, terminalStatus: string) {
   db.prepare(
     `UPDATE run_budget_reservations SET status=CASE WHEN status='exceeded' THEN status WHEN status='rejected' THEN status ELSE 'settled' END,
      terminal_status=?,settled_at=COALESCE(settled_at,?),updated_at=? WHERE run_id=?`,
+  ).run(terminalStatus, now(), now(), runId);
+  return getRunBudget(runId);
+}
+
+export function releaseRunBudgetWithoutRuntime(
+  runId: string,
+  terminalStatus: string,
+) {
+  db.prepare(
+    `UPDATE run_budget_reservations SET status=CASE WHEN status='rejected' THEN status ELSE 'settled' END,
+     terminal_status=?,actual_input_tokens=0,actual_cached_input_tokens=0,actual_output_tokens=0,actual_total_tokens=0,
+     calculated_cost_micro_usd=0,provider_cost_micro_usd=0,actual_cost_micro_usd=0,
+     settled_at=COALESCE(settled_at,?),updated_at=? WHERE run_id=?`,
   ).run(terminalStatus, now(), now(), runId);
   return getRunBudget(runId);
 }

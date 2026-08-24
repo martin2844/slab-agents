@@ -15,7 +15,10 @@ import {
   getAgentPostHogMcp,
 } from "@/lib/integrations/service";
 import { inspectMcpDefinitions } from "@/lib/mcp/client";
-import { RunnerRequestError } from "@/lib/runner-errors";
+import {
+  RunnerBudgetCompatibilityError,
+  RunnerRequestError,
+} from "@/lib/runner-errors";
 import { readSecret } from "@/lib/server-config";
 import type { RunExecution } from "@/lib/run-execution";
 import type { RuntimeBudget } from "@/lib/budget-control";
@@ -23,6 +26,7 @@ import {
   getRuntimeAuthentication,
   getRuntimeConfig,
   isRuntimeId,
+  runtimeBudgetCapabilities,
 } from "@/lib/runtime-config";
 import {
   attachRunnerTransport,
@@ -43,6 +47,60 @@ type RunnerRuntimeDependencies = {
 };
 
 const runnerUrl = () => getSetting("runner_url").replace(/\/$/, "");
+
+async function assertRunnerBudgetSupport(
+  runtimeId: string,
+  budget: RuntimeBudget | null | undefined,
+  fetcher: typeof fetch,
+) {
+  if (!budget || (budget.maxTokens === null && budget.maxCostUsd === null)) {
+    return;
+  }
+  if (!isRuntimeId(runtimeId)) {
+    throw new RunnerBudgetCompatibilityError(
+      `Runtime ${runtimeId} cannot prove budget enforcement.`,
+    );
+  }
+  const local = runtimeBudgetCapabilities[runtimeId];
+  const requiresIncrementalToken =
+    budget.maxTokens !== null && local.incrementalTokenUsage;
+  const requiresNativeToken =
+    budget.maxTokens !== null && !local.incrementalTokenUsage;
+  const requiresIncrementalCost =
+    budget.maxCostUsd !== null &&
+    Boolean(budget.pricing) &&
+    local.incrementalTokenUsage;
+  const requiresNativeCost =
+    budget.maxCostUsd !== null &&
+    !(budget.pricing && local.incrementalTokenUsage);
+
+  let runtimes: RunnerRuntimeSummary[];
+  try {
+    runtimes = await listRunnerRuntimes(fetcher);
+  } catch (error) {
+    const detail =
+      error instanceof Error ? error.message : "Runtime catalog unavailable.";
+    throw new RunnerBudgetCompatibilityError(
+      `Runner budget capabilities could not be verified: ${detail}`,
+    );
+  }
+  const runtime = runtimes.find(({ id }) => id === runtimeId);
+  const supportsIncremental =
+    runtime?.capabilities.budgetIncrementalUsage === true;
+  const supportsToken = runtime?.capabilities.budgetNativeTokenLimit === true;
+  const supportsCost = runtime?.capabilities.budgetNativeCostLimit === true;
+  if (
+    !runtime ||
+    ((requiresIncrementalToken || requiresIncrementalCost) &&
+      !supportsIncremental) ||
+    (requiresNativeToken && !supportsToken) ||
+    (requiresNativeCost && !supportsCost)
+  ) {
+    throw new RunnerBudgetCompatibilityError(
+      `The connected Runner does not advertise the budget enforcement required by ${runtimeId}. Upgrade Runner before starting this limited run.`,
+    );
+  }
+}
 
 export type RunnerRuntimeSummary = {
   id: string;
@@ -105,6 +163,7 @@ export async function startRunnerRun(
     prompt: string;
     execution: RunExecution;
     budget?: RuntimeBudget | null;
+    attachOnly?: boolean;
     runnerEventCursor?: number;
   },
   dependencies: RunnerRuntimeDependencies = {},
@@ -132,6 +191,17 @@ export async function startRunnerRun(
       capabilitySnapshot: null,
     };
   }
+  if (input.attachOnly) {
+    throw new RunnerRequestError(
+      "Budget-exceeded Runner execution is no longer available.",
+      410,
+    );
+  }
+  await assertRunnerBudgetSupport(
+    input.agent.runtime,
+    input.budget,
+    dependencies.fetcher ?? fetch,
+  );
 
   const contextMessages =
     input.messages.at(-1)?.role === "user" &&
@@ -318,7 +388,11 @@ export async function startRunnerRun(
 export async function cancelRunnerRun(runId: string) {
   const response = await fetch(
     `${runnerUrl()}/runs/${encodeURIComponent(runId)}`,
-    { method: "DELETE", headers: runnerHeaders() },
+    {
+      method: "DELETE",
+      headers: runnerHeaders(),
+      signal: AbortSignal.timeout(10_000),
+    },
   );
   if (!response.ok && response.status !== 404)
     throw await runnerError(response);
@@ -352,8 +426,10 @@ export async function testRunner() {
   return response.json().catch(() => ({ status: "ok" }));
 }
 
-export async function listRunnerRuntimes(): Promise<RunnerRuntimeSummary[]> {
-  const response = await fetch(`${runnerUrl()}/runtimes`, {
+export async function listRunnerRuntimes(
+  fetcher: typeof fetch = fetch,
+): Promise<RunnerRuntimeSummary[]> {
+  const response = await fetcher(`${runnerUrl()}/runtimes`, {
     headers: runnerHeaders(),
     signal: AbortSignal.timeout(5_000),
     cache: "no-store",

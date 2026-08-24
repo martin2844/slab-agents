@@ -10,11 +10,76 @@ import type {
   Agent,
   BudgetConfiguration,
   RuntimeCatalogItem,
-  RuntimeModelPrice,
 } from "@/lib/types";
 
-const nullable = (value: string) => (value.trim() ? Number(value) : null);
+type WorkspaceDraft = Record<
+  keyof Omit<BudgetConfiguration["workspace"], "version">,
+  string
+>;
+type AgentDraft = {
+  maxTokensPerRun: string;
+  maxCostUsdPerRun: string;
+};
+type PriceDraft = {
+  clientId: string;
+  runtimeId: string;
+  model: string;
+  inputUsdPerMillion: string;
+  cachedInputUsdPerMillion: string;
+  outputUsdPerMillion: string;
+};
+type BudgetDraft = {
+  workspace: WorkspaceDraft;
+  agents: Record<string, AgentDraft>;
+  prices: PriceDraft[];
+};
+
 const value = (input: number | null) => (input === null ? "" : String(input));
+
+function draftFromConfiguration(
+  configuration: BudgetConfiguration,
+): BudgetDraft {
+  return {
+    workspace: {
+      maxTokensPerRun: value(configuration.workspace.maxTokensPerRun),
+      maxCostUsdPerRun: value(configuration.workspace.maxCostUsdPerRun),
+      dailyCostUsd: value(configuration.workspace.dailyCostUsd),
+      monthlyCostUsd: value(configuration.workspace.monthlyCostUsd),
+    },
+    agents: Object.fromEntries(
+      configuration.agents.map((policy) => [
+        policy.agentId,
+        {
+          maxTokensPerRun: value(policy.maxTokensPerRun),
+          maxCostUsdPerRun: value(policy.maxCostUsdPerRun),
+        },
+      ]),
+    ),
+    prices: configuration.prices.map((price, index) => ({
+      clientId: `saved:${price.runtimeId}:${price.model}:${index}`,
+      runtimeId: price.runtimeId,
+      model: price.model,
+      inputUsdPerMillion: String(price.inputUsdPerMillion),
+      cachedInputUsdPerMillion: String(price.cachedInputUsdPerMillion),
+      outputUsdPerMillion: String(price.outputUsdPerMillion),
+    })),
+  };
+}
+
+function nullableNumber(input: string, label: string) {
+  if (!input.trim()) return null;
+  const parsed = Number(input);
+  if (!Number.isFinite(parsed)) throw new Error(`${label} must be a number.`);
+  return parsed;
+}
+
+function requiredNumber(input: string, label: string) {
+  const parsed = Number(input);
+  if (!input.trim() || !Number.isFinite(parsed)) {
+    throw new Error(`${label} must be a number.`);
+  }
+  return parsed;
+}
 
 export function BudgetSettings({
   initialBudget,
@@ -25,16 +90,19 @@ export function BudgetSettings({
   agents: Agent[];
   runtimes: RuntimeCatalogItem[];
 }) {
-  const [budget, setBudget] = useState(initialBudget);
+  const [configuration, setConfiguration] = useState(initialBudget);
+  const [draft, setDraft] = useState(() =>
+    draftFromConfiguration(initialBudget),
+  );
   const [busy, setBusy] = useState(false);
 
   function workspaceField(
     field: keyof Omit<BudgetConfiguration["workspace"], "version">,
     next: string,
   ) {
-    setBudget((current) => ({
+    setDraft((current) => ({
       ...current,
-      workspace: { ...current.workspace, [field]: nullable(next) },
+      workspace: { ...current.workspace, [field]: next },
     }));
   }
 
@@ -43,41 +111,28 @@ export function BudgetSettings({
     field: "maxTokensPerRun" | "maxCostUsdPerRun",
     next: string,
   ) {
-    setBudget((current) => {
-      const existing = current.agents.find((item) => item.agentId === agentId);
-      const policy = {
-        agentId,
-        maxTokensPerRun: existing?.maxTokensPerRun ?? null,
-        maxCostUsdPerRun: existing?.maxCostUsdPerRun ?? null,
-        [field]: nullable(next),
-      };
-      return {
-        ...current,
-        agents: [
-          ...current.agents.filter((item) => item.agentId !== agentId),
-          policy,
-        ],
-      };
-    });
+    setDraft((current) => ({
+      ...current,
+      agents: {
+        ...current.agents,
+        [agentId]: {
+          maxTokensPerRun: current.agents[agentId]?.maxTokensPerRun ?? "",
+          maxCostUsdPerRun: current.agents[agentId]?.maxCostUsdPerRun ?? "",
+          [field]: next,
+        },
+      },
+    }));
   }
 
   function priceField(
-    index: number,
-    field: keyof Omit<RuntimeModelPrice, "version">,
+    clientId: string,
+    field: Exclude<keyof PriceDraft, "clientId">,
     next: string,
   ) {
-    setBudget((current) => ({
+    setDraft((current) => ({
       ...current,
-      prices: current.prices.map((price, itemIndex) =>
-        itemIndex === index
-          ? {
-              ...price,
-              [field]:
-                field === "runtimeId" || field === "model"
-                  ? next
-                  : Number(next),
-            }
-          : price,
+      prices: current.prices.map((price) =>
+        price.clientId === clientId ? { ...price, [field]: next } : price,
       ),
     }));
   }
@@ -88,28 +143,62 @@ export function BudgetSettings({
       const next = await api<BudgetConfiguration>("/api/budget", {
         method: "PATCH",
         body: JSON.stringify({
-          expectedVersion: budget.workspace.version,
+          expectedVersion: configuration.workspace.version,
           workspace: {
-            maxTokensPerRun: budget.workspace.maxTokensPerRun,
-            maxCostUsdPerRun: budget.workspace.maxCostUsdPerRun,
-            dailyCostUsd: budget.workspace.dailyCostUsd,
-            monthlyCostUsd: budget.workspace.monthlyCostUsd,
+            maxTokensPerRun: nullableNumber(
+              draft.workspace.maxTokensPerRun,
+              "Run token limit",
+            ),
+            maxCostUsdPerRun: nullableNumber(
+              draft.workspace.maxCostUsdPerRun,
+              "Run cost limit",
+            ),
+            dailyCostUsd: nullableNumber(
+              draft.workspace.dailyCostUsd,
+              "Daily cost limit",
+            ),
+            monthlyCostUsd: nullableNumber(
+              draft.workspace.monthlyCostUsd,
+              "Monthly cost limit",
+            ),
           },
-          agents: budget.agents.filter(
-            (policy) =>
-              policy.maxTokensPerRun !== null ||
-              policy.maxCostUsdPerRun !== null,
-          ),
-          prices: budget.prices.map((price) => ({
+          agents: Object.entries(draft.agents)
+            .map(([agentId, policy]) => ({
+              agentId,
+              maxTokensPerRun: nullableNumber(
+                policy.maxTokensPerRun,
+                "Agent token limit",
+              ),
+              maxCostUsdPerRun: nullableNumber(
+                policy.maxCostUsdPerRun,
+                "Agent cost limit",
+              ),
+            }))
+            .filter(
+              (policy) =>
+                policy.maxTokensPerRun !== null ||
+                policy.maxCostUsdPerRun !== null,
+            ),
+          prices: draft.prices.map((price) => ({
             runtimeId: price.runtimeId,
             model: price.model,
-            inputUsdPerMillion: price.inputUsdPerMillion,
-            cachedInputUsdPerMillion: price.cachedInputUsdPerMillion,
-            outputUsdPerMillion: price.outputUsdPerMillion,
+            inputUsdPerMillion: requiredNumber(
+              price.inputUsdPerMillion,
+              "Input price",
+            ),
+            cachedInputUsdPerMillion: requiredNumber(
+              price.cachedInputUsdPerMillion,
+              "Cached input price",
+            ),
+            outputUsdPerMillion: requiredNumber(
+              price.outputUsdPerMillion,
+              "Output price",
+            ),
           })),
         }),
       });
-      setBudget(next);
+      setConfiguration(next);
+      setDraft(draftFromConfiguration(next));
       toast.success("Budget policy saved");
     } catch (error) {
       toast.error(
@@ -140,22 +229,22 @@ export function BudgetSettings({
       <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
         <BudgetInput
           label="Tokens / run"
-          value={value(budget.workspace.maxTokensPerRun)}
+          value={draft.workspace.maxTokensPerRun}
           onChange={(next) => workspaceField("maxTokensPerRun", next)}
         />
         <BudgetInput
           label="USD / run"
-          value={value(budget.workspace.maxCostUsdPerRun)}
+          value={draft.workspace.maxCostUsdPerRun}
           onChange={(next) => workspaceField("maxCostUsdPerRun", next)}
         />
         <BudgetInput
           label="USD / day"
-          value={value(budget.workspace.dailyCostUsd)}
+          value={draft.workspace.dailyCostUsd}
           onChange={(next) => workspaceField("dailyCostUsd", next)}
         />
         <BudgetInput
           label="USD / month"
-          value={value(budget.workspace.monthlyCostUsd)}
+          value={draft.workspace.monthlyCostUsd}
           onChange={(next) => workspaceField("monthlyCostUsd", next)}
         />
       </div>
@@ -165,9 +254,7 @@ export function BudgetSettings({
           <h4 className="text-xs font-semibold">Stricter agent overrides</h4>
           <div className="mt-3 divide-y rounded-md border">
             {agents.map((agent) => {
-              const policy = budget.agents.find(
-                (item) => item.agentId === agent.id,
-              );
+              const policy = draft.agents[agent.id];
               return (
                 <div
                   key={agent.id}
@@ -176,14 +263,14 @@ export function BudgetSettings({
                   <div className="text-sm font-semibold">{agent.name}</div>
                   <BudgetInput
                     label="Tokens / run"
-                    value={value(policy?.maxTokensPerRun ?? null)}
+                    value={policy?.maxTokensPerRun ?? ""}
                     onChange={(next) =>
                       agentField(agent.id, "maxTokensPerRun", next)
                     }
                   />
                   <BudgetInput
                     label="USD / run"
-                    value={value(policy?.maxCostUsdPerRun ?? null)}
+                    value={policy?.maxCostUsdPerRun ?? ""}
                     onChange={(next) =>
                       agentField(agent.id, "maxCostUsdPerRun", next)
                     }
@@ -209,17 +296,17 @@ export function BudgetSettings({
             size="sm"
             variant="outline"
             onClick={() =>
-              setBudget((current) => ({
+              setDraft((current) => ({
                 ...current,
                 prices: [
                   ...current.prices,
                   {
+                    clientId: `new:${Date.now()}:${current.prices.length}`,
                     runtimeId: runtimes[0]?.id ?? "codex",
                     model: "default",
-                    version: 1,
-                    inputUsdPerMillion: 0,
-                    cachedInputUsdPerMillion: 0,
-                    outputUsdPerMillion: 0,
+                    inputUsdPerMillion: "0",
+                    cachedInputUsdPerMillion: "0",
+                    outputUsdPerMillion: "0",
                   },
                 ],
               }))
@@ -229,42 +316,44 @@ export function BudgetSettings({
           </Button>
         </div>
         <div className="mt-3 space-y-2">
-          {budget.prices.map((price, index) => (
+          {draft.prices.map((price) => (
             <div
-              key={`${price.runtimeId}:${price.model}:${index}`}
+              key={price.clientId}
               className="grid gap-2 rounded-md border p-3 md:grid-cols-[9rem_1fr_repeat(3,9rem)_auto] md:items-end"
             >
               <BudgetInput
                 label="Runtime"
                 type="text"
                 value={price.runtimeId}
-                onChange={(next) => priceField(index, "runtimeId", next)}
+                onChange={(next) =>
+                  priceField(price.clientId, "runtimeId", next)
+                }
               />
               <BudgetInput
                 label="Model"
                 type="text"
                 value={price.model}
-                onChange={(next) => priceField(index, "model", next)}
+                onChange={(next) => priceField(price.clientId, "model", next)}
               />
               <BudgetInput
                 label="Input / 1M"
-                value={String(price.inputUsdPerMillion)}
+                value={price.inputUsdPerMillion}
                 onChange={(next) =>
-                  priceField(index, "inputUsdPerMillion", next)
+                  priceField(price.clientId, "inputUsdPerMillion", next)
                 }
               />
               <BudgetInput
                 label="Cached / 1M"
-                value={String(price.cachedInputUsdPerMillion)}
+                value={price.cachedInputUsdPerMillion}
                 onChange={(next) =>
-                  priceField(index, "cachedInputUsdPerMillion", next)
+                  priceField(price.clientId, "cachedInputUsdPerMillion", next)
                 }
               />
               <BudgetInput
                 label="Output / 1M"
-                value={String(price.outputUsdPerMillion)}
+                value={price.outputUsdPerMillion}
                 onChange={(next) =>
-                  priceField(index, "outputUsdPerMillion", next)
+                  priceField(price.clientId, "outputUsdPerMillion", next)
                 }
               />
               <Button
@@ -272,10 +361,10 @@ export function BudgetSettings({
                 variant="ghost"
                 aria-label="Remove price"
                 onClick={() =>
-                  setBudget((current) => ({
+                  setDraft((current) => ({
                     ...current,
                     prices: current.prices.filter(
-                      (_, itemIndex) => itemIndex !== index,
+                      (item) => item.clientId !== price.clientId,
                     ),
                   }))
                 }

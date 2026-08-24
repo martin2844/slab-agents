@@ -8,10 +8,22 @@ export type RuntimeId = (typeof runtimeIds)[number];
 
 export const runtimeBudgetCapabilities: Record<
   RuntimeId,
-  { nativeTokenLimit: boolean; nativeCostLimit: boolean }
+  {
+    nativeTokenLimit: boolean;
+    nativeCostLimit: boolean;
+    incrementalTokenUsage: boolean;
+  }
 > = {
-  codex: { nativeTokenLimit: false, nativeCostLimit: false },
-  claude: { nativeTokenLimit: true, nativeCostLimit: true },
+  codex: {
+    nativeTokenLimit: false,
+    nativeCostLimit: false,
+    incrementalTokenUsage: true,
+  },
+  claude: {
+    nativeTokenLimit: false,
+    nativeCostLimit: true,
+    incrementalTokenUsage: false,
+  },
 };
 
 export const runtimeDefaults: Record<

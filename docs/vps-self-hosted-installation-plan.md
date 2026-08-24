@@ -1058,7 +1058,7 @@ Controls:
 
 Before a run starts, Slab Agents creates a transactional reservation so concurrent agents cannot both spend the final allowance. Normalized usage observations reconcile it idempotently afterward. When terminal usage is unavailable, the reservation remains conservatively charged instead of silently releasing unknown exposure.
 
-Codex subscription authentication does not expose authoritative USD cost. It supports token limits without a dollar claim; USD enforcement requires an operator-owned model price. Claude's API path reports provider cost and receives native SDK limits. Never imply dollar precision that a provider does not expose.
+Codex subscription authentication does not expose authoritative USD cost. It supports observed token limits without a dollar claim; USD enforcement requires an operator-owned model price. Claude's API path reports provider cost and receives the SDK's native cost limit. Claude `taskBudget` is advisory, so hard token-limited Claude Runs fail closed until the runtime exposes an enforceable boundary. Never imply precision or enforcement that a provider does not expose.
 
 ## 18. Health, observability, and logs
 

@@ -14,6 +14,7 @@ import {
   startRunnerRun,
   type RunnerEvent,
 } from "@/lib/runner";
+import { RunnerBudgetCompatibilityError } from "@/lib/runner-errors";
 import { RunnerStreamInterruptedError } from "@/lib/runner-transport";
 import { restoreRunProgress } from "@/lib/run-recovery-state";
 import { preflightWorkRun } from "@/lib/work-run-preflight-service";
@@ -26,8 +27,8 @@ import {
   observeRunUsage,
   markRunBudgetExceeded,
   settleRunBudget,
+  releaseRunBudgetWithoutRuntime,
   type BudgetAdmission,
-  type BudgetObservation,
 } from "@/lib/budget-control";
 
 const state = globalThis as unknown as { slabExecutingRuns?: Set<string> };
@@ -105,6 +106,7 @@ type RunExecutionDependencies = {
   observeBudget?: typeof observeRunUsage;
   markBudgetExceeded?: typeof markRunBudgetExceeded;
   settleBudget?: typeof settleRunBudget;
+  releaseBudgetWithoutRuntime?: typeof releaseRunBudgetWithoutRuntime;
   cancelRunner?: typeof cancelRunnerRun;
 };
 
@@ -120,6 +122,8 @@ export async function* executeRun(
   const markBudgetExceeded =
     dependencies.markBudgetExceeded ?? markRunBudgetExceeded;
   const settleBudget = dependencies.settleBudget ?? settleRunBudget;
+  const releaseBudgetWithoutRuntime =
+    dependencies.releaseBudgetWithoutRuntime ?? releaseRunBudgetWithoutRuntime;
   const cancelRunner = dependencies.cancelRunner ?? cancelRunnerRun;
   const run = repository.getRun(input.runId);
   if (!run || !run.threadId) throw new Error("Run or thread not found.");
@@ -254,6 +258,28 @@ export async function* executeRun(
       return;
     }
 
+    const requestBudgetCancellation = async (runnerRunId: string) => {
+      try {
+        return await cancelRunner(runnerRunId);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Runner cancellation could not be confirmed.";
+        repository.transaction(() => {
+          if (!repository.ownsRunLease(run.id, leaseOwner)) return;
+          repository.addRunEvent(run.id, "run_budget_cancel_failed", {
+            error: message,
+            runnerRunId,
+            retryable: true,
+          });
+        });
+        throw new RunnerStreamInterruptedError(
+          `Budget cancellation could not be confirmed: ${message}`,
+        );
+      }
+    };
+
     const startedPersisted = repository.transaction(() => {
       if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
       repository.updateRun(run.id, "running");
@@ -339,8 +365,12 @@ export async function* executeRun(
             policy: run.runInstructions,
           },
           budget: budgetAdmission.runtimeBudget,
+          attachOnly: budgetAdmission.snapshot.status === "exceeded",
           runnerEventCursor,
         });
+        if (budgetAdmission.snapshot.status === "exceeded") {
+          await requestBudgetCancellation(attemptRunnerRunId);
+        }
         const snapshotPersisted = repository.transaction(() => {
           if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
           const currentRunner = repository.getRun(run.id);
@@ -525,11 +555,22 @@ export async function* executeRun(
               const status = repository.getRun(run.id)?.status ?? "running";
               repository.updateRun(run.id, status, { usage });
               repository.addRunEvent(run.id, "usage_updated", usage);
+              const budgetOutcome = observeBudget(
+                run.id,
+                `${event.runId}:${event.id}`,
+                data,
+              );
+              if (budgetOutcome?.newlyExceeded) {
+                repository.addRunEvent(run.id, "run_budget_exceeded", {
+                  reason: budgetOutcome.reason,
+                  budget: budgetOutcome.snapshot,
+                  runnerRunId: event.runId,
+                });
+              }
               return advance({
                 action: "next" as const,
                 modelCallIndex: nextModelCallIndex,
-                budgetUsage: data,
-                budgetEventKey: `${event.runId}:${event.id}`,
+                cancelForBudget: budgetOutcome?.newlyExceeded === true,
               });
             }
             if (
@@ -588,6 +629,17 @@ export async function* executeRun(
                   runnerRunId: rehydratedRunnerRunId,
                 };
               }
+              const budgetOutcome =
+                failure.code === "RUNTIME_BUDGET_EXCEEDED"
+                  ? markBudgetExceeded(run.id)
+                  : null;
+              if (budgetOutcome?.newlyExceeded) {
+                repository.addRunEvent(run.id, "run_budget_exceeded", {
+                  reason: budgetOutcome.reason,
+                  budget: budgetOutcome.snapshot,
+                  runnerRunId: event.runId,
+                });
+              }
               const closedApprovals = repository.closePendingApprovals(run.id);
               repository.updateRun(run.id, "failed", {
                 error: failure.message,
@@ -596,9 +648,9 @@ export async function* executeRun(
                 error: failure.message,
                 closedApprovals,
               });
+              settleBudget(run.id, "failed");
               return advance({
                 action: "failed" as const,
-                budgetFailure: failure.code === "RUNTIME_BUDGET_EXCEEDED",
                 browser: {
                   type: "run_failed",
                   error: failure.message,
@@ -610,6 +662,7 @@ export async function* executeRun(
               repository.closePendingApprovals(run.id);
               repository.updateRun(run.id, "cancelled");
               repository.addRunEvent(run.id, "run_cancelled", data);
+              settleBudget(run.id, "cancelled");
               return advance({
                 action: "cancelled" as const,
                 browser: browserEvent("run_cancelled", event),
@@ -632,6 +685,7 @@ export async function* executeRun(
               }
               repository.updateRun(run.id, "completed");
               repository.addRunEvent(run.id, "run_completed", completedData);
+              settleBudget(run.id, "completed");
               return advance({
                 action: "completed" as const,
                 browser: browserEvent("run_completed", event, completedData),
@@ -649,20 +703,8 @@ export async function* executeRun(
           if ("modelCallIndex" in outcome) {
             modelCallIndex = Number(outcome.modelCallIndex);
           }
-          if ("budgetUsage" in outcome && "budgetEventKey" in outcome) {
-            const budgetOutcome: BudgetObservation | null = observeBudget(
-              run.id,
-              String(outcome.budgetEventKey),
-              outcome.budgetUsage as Record<string, unknown>,
-            );
-            if (budgetOutcome?.newlyExceeded) {
-              repository.addRunEvent(run.id, "run_budget_exceeded", {
-                reason: budgetOutcome.reason,
-                budget: budgetOutcome.snapshot,
-                runnerRunId: eventRunnerRunId,
-              });
-              await cancelRunner(eventRunnerRunId);
-            }
+          if ("cancelForBudget" in outcome && outcome.cancelForBudget) {
+            await requestBudgetCancellation(eventRunnerRunId);
           }
           if ("runtimeThreadId" in outcome) {
             runtimeThreadId =
@@ -674,16 +716,6 @@ export async function* executeRun(
               outcome.runtimeContinuity === "fresh"
             ) {
               runtimeContinuity = "fresh";
-            }
-          }
-          if ("budgetFailure" in outcome && outcome.budgetFailure) {
-            const budgetOutcome = markBudgetExceeded(run.id);
-            if (budgetOutcome?.newlyExceeded) {
-              repository.addRunEvent(run.id, "run_budget_exceeded", {
-                reason: budgetOutcome.reason,
-                budget: budgetOutcome.snapshot,
-                runnerRunId: eventRunnerRunId,
-              });
             }
           }
           if ("browser" in outcome && outcome.browser) {
@@ -699,11 +731,9 @@ export async function* executeRun(
             break;
           }
           if (outcome.action === "failed" || outcome.action === "cancelled") {
-            settleBudget(run.id, outcome.action);
             return;
           }
           if (outcome.action === "completed") {
-            settleBudget(run.id, "completed");
             completed = true;
           }
         }
@@ -721,6 +751,24 @@ export async function* executeRun(
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unknown runner error";
+      if (error instanceof RunnerBudgetCompatibilityError) {
+        const persisted = repository.transaction(() => {
+          if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
+          const closedApprovals = repository.closePendingApprovals(run.id);
+          repository.updateRun(run.id, "failed", { error: message });
+          repository.addRunEvent(run.id, "run_failed", {
+            error: message,
+            closedApprovals,
+            phase: "runner_budget_compatibility",
+            runtimeStarted: false,
+          });
+          releaseBudgetWithoutRuntime(run.id, "failed");
+          return true;
+        });
+        if (!persisted) return;
+        yield { type: "run_failed", error: message, runId: run.id };
+        return;
+      }
       if (error instanceof RunnerStreamInterruptedError) {
         const requeued = repository.transaction(() => {
           if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
@@ -756,10 +804,10 @@ export async function* executeRun(
           error: message,
           closedApprovals,
         });
+        settleBudget(run.id, "failed");
         return true;
       });
       if (!persisted) return;
-      settleBudget(run.id, "failed");
       yield { type: "run_failed", error: message, runId: run.id };
     }
   } finally {

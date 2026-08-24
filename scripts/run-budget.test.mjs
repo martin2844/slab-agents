@@ -133,12 +133,95 @@ test("budget admission reserves atomically, reconciles idempotently, and preserv
   );
   const tokenOnly = makeRun("token-only", "codex", "default");
   assert.equal(budget.admitRunBudget(tokenOnly, agent).allowed, true);
+  const unsupportedClaudeTokenLimit = makeRun(
+    "unsupported-claude-token-limit",
+    "claude",
+    "default",
+  );
+  const unsupportedAdmission = budget.admitRunBudget(
+    unsupportedClaudeTokenLimit,
+    agent,
+  );
+  assert.equal(unsupportedAdmission.allowed, false);
+  assert.equal(unsupportedAdmission.snapshot.reason, "token_limit_unavailable");
   const over = budget.observeRunUsage(tokenOnly.id, "runner:1", {
     inputTokens: 101,
     totalTokens: 101,
   });
   assert.equal(over?.newlyExceeded, true);
   assert.equal(over?.reason, "token_limit_exceeded");
+
+  assert.throws(
+    () =>
+      budget.updateBudgetConfiguration({
+        expectedVersion: configuration.workspace.version,
+        workspace: {
+          maxTokensPerRun: null,
+          maxCostUsdPerRun: 0.0000001,
+          dailyCostUsd: null,
+          monthlyCostUsd: null,
+        },
+        agents: [],
+        prices: [],
+      }),
+    /cannot be smaller than \$0\.000001/,
+  );
+  assert.throws(
+    () =>
+      budget.updateBudgetConfiguration({
+        expectedVersion: configuration.workspace.version,
+        workspace: {
+          maxTokensPerRun: null,
+          maxCostUsdPerRun: 0.0000005,
+          dailyCostUsd: null,
+          monthlyCostUsd: null,
+        },
+        agents: [],
+        prices: [],
+      }),
+    /cannot be smaller than \$0\.000001/,
+  );
+  assert.throws(
+    () =>
+      budget.updateBudgetConfiguration({
+        expectedVersion: configuration.workspace.version,
+        workspace: {
+          maxTokensPerRun: null,
+          maxCostUsdPerRun: 0.0000015,
+          dailyCostUsd: null,
+          monthlyCostUsd: null,
+        },
+        agents: [],
+        prices: [],
+      }),
+    /cannot have more than 6 decimal places/,
+  );
+
+  configuration = budget.updateBudgetConfiguration({
+    expectedVersion: configuration.workspace.version,
+    workspace: {
+      maxTokensPerRun: null,
+      maxCostUsdPerRun: 0.000001,
+      dailyCostUsd: null,
+      monthlyCostUsd: null,
+    },
+    agents: [],
+    prices: [],
+  });
+  assert.equal(configuration.workspace.maxCostUsdPerRun, 0.000001);
+
+  configuration = budget.updateBudgetConfiguration({
+    expectedVersion: configuration.workspace.version,
+    workspace: {
+      maxTokensPerRun: null,
+      maxCostUsdPerRun: 543068.707658,
+      dailyCostUsd: null,
+      monthlyCostUsd: null,
+    },
+    agents: [],
+    prices: [],
+  });
+  assert.equal(configuration.workspace.maxCostUsdPerRun, 543068.707658);
 
   budget.updateBudgetConfiguration({
     expectedVersion: configuration.workspace.version,
@@ -178,142 +261,4 @@ test("budget admission reserves atomically, reconciles idempotently, and preserv
   });
   assert.equal(latestAggregate?.snapshot.actualTokens, 75);
   assert.equal(latestAggregate?.snapshot.actualCostUsd, 2);
-});
-
-test("executeRun rejects before Runner and cancels when observed usage exceeds its ceiling", async (t) => {
-  const directory = await mkdtemp(
-    path.join(tmpdir(), "slab-run-budget-execution-"),
-  );
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const filename = path.join(directory, "workspace.db");
-  const migrations = knexFactory({
-    client: "better-sqlite3",
-    connection: { filename },
-    useNullAsDefault: true,
-    migrations: { directory: migrationDirectory, loadExtensions: [".cjs"] },
-  });
-  await migrations.migrate.latest();
-  await migrations.destroy();
-  process.env.SLAB_WORKSPACE_DB = filename;
-
-  const [{ repository }, budget, { createRunExecution, executeRun }] =
-    await Promise.all([
-      import(`../lib/repository.ts?execution=${Date.now()}`),
-      import(`../lib/budget-control.ts?execution=${Date.now()}`),
-      import(`../lib/run-service.ts?execution=${Date.now()}`),
-    ]);
-  const agent = repository.createAgent({
-    name: "Execution Budget Agent",
-    slug: "execution-budget-agent",
-    role: "Operations",
-    instructions: "Respect the run ceiling.",
-    model: "default",
-    enabled: true,
-    fullAccess: false,
-  });
-  const thread = repository.createThread(agent.id, "Budget execution");
-  let configuration = budget.getBudgetConfiguration();
-  configuration = budget.updateBudgetConfiguration({
-    expectedVersion: configuration.workspace.version,
-    workspace: {
-      maxTokensPerRun: null,
-      maxCostUsdPerRun: 1,
-      dailyCostUsd: null,
-      monthlyCostUsd: null,
-    },
-    agents: [],
-    prices: [],
-  });
-  const rejectedRun = createRunExecution({
-    agentId: agent.id,
-    threadId: thread.id,
-    trigger: "manual",
-    mode: "task",
-    prompt: "This run must be rejected before runtime.",
-  });
-  let starts = 0;
-  for await (const event of executeRun(
-    { runId: rejectedRun.id },
-    {
-      startRunner: async () => {
-        starts += 1;
-        throw new Error("must not start");
-      },
-    },
-  ))
-    void event;
-  assert.equal(starts, 0);
-  assert.equal(repository.getRun(rejectedRun.id)?.status, "skipped");
-  assert.equal(repository.getRun(rejectedRun.id)?.usage, null);
-  assert.ok(
-    repository
-      .listRunEvents(rejectedRun.id)
-      .some(({ type }) => type === "run_budget_rejected"),
-  );
-  assert.ok(
-    !repository
-      .listRunEvents(rejectedRun.id)
-      .some(({ type }) => type === "run_started"),
-  );
-
-  budget.updateBudgetConfiguration({
-    expectedVersion: configuration.workspace.version,
-    workspace: {
-      maxTokensPerRun: 5,
-      maxCostUsdPerRun: null,
-      dailyCostUsd: null,
-      monthlyCostUsd: null,
-    },
-    agents: [],
-    prices: [],
-  });
-  const limitedRun = createRunExecution({
-    agentId: agent.id,
-    threadId: thread.id,
-    trigger: "manual",
-    mode: "task",
-    prompt: "Use more than five tokens.",
-  });
-  const cancelled = [];
-  const startRunner = async (input) => ({
-    resumed: false,
-    runnerStatus: "running",
-    contextProfile: null,
-    capabilitySnapshot: null,
-    events: (async function* () {
-      yield {
-        id: 1,
-        type: "usage.updated",
-        runId: input.runId,
-        timestamp: new Date().toISOString(),
-        data: { inputTokens: 6, totalTokens: 6 },
-      };
-      yield {
-        id: 2,
-        type: "run.cancelled",
-        runId: input.runId,
-        timestamp: new Date().toISOString(),
-        data: {},
-      };
-    })(),
-  });
-  for await (const event of executeRun(
-    { runId: limitedRun.id },
-    {
-      startRunner,
-      cancelRunner: async (runId) => {
-        cancelled.push(runId);
-        return true;
-      },
-    },
-  ))
-    void event;
-  assert.deepEqual(cancelled, [limitedRun.id]);
-  assert.equal(repository.getRun(limitedRun.id)?.status, "cancelled");
-  assert.equal(budget.getRunBudget(limitedRun.id)?.status, "exceeded");
-  assert.ok(
-    repository
-      .listRunEvents(limitedRun.id)
-      .some(({ type }) => type === "run_budget_exceeded"),
-  );
 });

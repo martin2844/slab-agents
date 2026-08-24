@@ -56,10 +56,16 @@ reserves the maximum configured Run cost atomically after FIFO and Work
 preflight, before Runner starts. Daily and monthly windows use UTC; Agent
 overrides may only tighten the Workspace ceiling. Usage observations reconcile
 idempotently against the Run's immutable pricing snapshot and an observed
-ceiling cancels the active Runner execution. Claude also receives its native
-SDK token/cost limits. Codex subscription Runs can use token ceilings, but USD
-limits require an operator-configured model price—Slab never invents a dollar
-cost for subscription usage.
+ceiling cancels the active Runner execution. Claude receives the SDK's native
+cost limit; its advisory `taskBudget` is not treated as a hard token limit, so
+Claude Runs with a configured hard token ceiling fail closed before runtime.
+Codex subscription Runs can use observed token ceilings, but USD limits require
+an operator-configured model price—Slab never invents a dollar cost for
+subscription usage.
+
+Native enforcement is negotiated from the Runner runtime catalog. If a rolling
+upgrade leaves Runner without the required budget capability, the control plane
+fails the limited Run before creating a new Runner execution.
 
 The private Runner request carries the selected Claude credential only for that
 Run. Runner exchanges it for a short-lived loopback surrogate before the Claude
