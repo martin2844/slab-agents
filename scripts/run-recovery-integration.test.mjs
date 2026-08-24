@@ -9,7 +9,7 @@ import knexFactory from "knex";
 const migrationDirectory = path.resolve("db/migrations");
 register("./test-alias-loader.mjs", import.meta.url);
 
-test("executeRun resumes the durable runner cursor and applies terminal replay once", async (t) => {
+test("executeRun resumes durable cursors and persists runtime identity", async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), "slab-run-resume-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const filename = path.join(directory, "workspace.db");
@@ -140,4 +140,59 @@ test("executeRun resumes the durable runner cursor and applies terminal replay o
   }
   assert.equal(starts.length, 1);
   assert.equal(calls.length, 2);
+
+  const auditThread = repository.createThread(agent.id, "Runtime audit");
+  const auditRun = createRunExecution({
+    runId: "runtime-audit-run",
+    agentId: agent.id,
+    threadId: auditThread.id,
+    trigger: "chat",
+    mode: "chat",
+    prompt: "Record the selected runtime.",
+  });
+  const runtimeDefinition = {
+    id: "codex",
+    displayName: "Codex",
+    stability: "stable",
+    authModes: ["chatgpt"],
+    capabilities: { freshThreads: true },
+  };
+  const auditStartRunner = async (input) => ({
+    resumed: false,
+    runnerStatus: "running",
+    contextProfile: null,
+    capabilitySnapshot: null,
+    events: (async function* () {
+      yield {
+        id: 1,
+        type: "run.started",
+        runId: input.runId,
+        timestamp: new Date().toISOString(),
+        data: { runtime: "codex", runtimeDefinition },
+      };
+      yield {
+        id: 2,
+        type: "run.completed",
+        runId: input.runId,
+        timestamp: new Date().toISOString(),
+        data: { runtimeThreadId: "runtime-audit-thread" },
+      };
+    })(),
+  });
+
+  for await (const event of executeRun(
+    { runId: auditRun.id },
+    { startRunner: auditStartRunner },
+  )) {
+    void event;
+  }
+  const runnerStarted = repository
+    .listRunEvents(auditRun.id)
+    .find(({ type }) => type === "runner_run_started");
+  assert.deepEqual(runnerStarted?.payload, {
+    runtime: "codex",
+    runtimeDefinition,
+    runnerRunId: auditRun.id,
+  });
+  assert.equal(repository.getRun(auditRun.id)?.status, "completed");
 });

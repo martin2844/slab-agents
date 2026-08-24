@@ -335,6 +335,7 @@ export async function* executeRun(
             };
             if (event.type === "run.started") {
               repository.addRunEvent(run.id, "runner_run_started", {
+                ...data,
                 runnerRunId: event.runId,
               });
               return advance({ action: "next" as const });
