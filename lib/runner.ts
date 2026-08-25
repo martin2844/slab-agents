@@ -1,6 +1,8 @@
 import { agentRepository } from "@/lib/repositories/agent-repository";
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { getSetting } from "@/lib/settings";
 import type { Agent, Message, Thread } from "@/lib/types";
 import {
@@ -19,6 +21,7 @@ import {
   RunnerBudgetCompatibilityError,
   RunnerRequestError,
 } from "@/lib/runner-errors";
+import { OperationalError } from "@/lib/operational-error";
 import { readSecret } from "@/lib/server-config";
 import type { RunExecution } from "@/lib/run-execution";
 import type { RuntimeBudget } from "@/lib/budget-control";
@@ -455,4 +458,158 @@ export async function testRunnerRuntime(runtimeId: string) {
 
 export async function testCodexRuntime() {
   return testRunnerRuntime("codex");
+}
+
+export async function runStatelessConfigurationAssistant(
+  input: {
+    instructions: string;
+    message: string;
+    timeoutMs?: number;
+  },
+  dependencies: { fetcher?: typeof fetch } = {},
+) {
+  const baseUrl = runnerUrl();
+  const timeoutMs = Math.min(
+    Math.max(input.timeoutMs ?? 90_000, 10_000),
+    120_000,
+  );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const baseFetcher = dependencies.fetcher ?? fetch;
+  const fetcher: typeof fetch = (resource, init = {}) =>
+    baseFetcher(resource, {
+      ...init,
+      signal: init.signal
+        ? AbortSignal.any([init.signal, controller.signal])
+        : controller.signal,
+    });
+  const runId = `configuration-assistant-${randomUUID()}`;
+  const headers = runnerHeaders({
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  });
+  try {
+    const config = getRuntimeConfig("codex");
+    const runtime = (await listRunnerRuntimes(fetcher)).find(
+      ({ id }) => id === "codex",
+    );
+    if (!config.enabled || runtime?.status !== "available") {
+      throw new OperationalError(
+        "Codex must be enabled and authenticated to edit integrations with AI.",
+        "AI_ASSISTANT_UNAVAILABLE",
+        503,
+      );
+    }
+    const model =
+      config.defaultModel === "default" ? null : config.defaultModel;
+    const transport = await createRunnerTransport({
+      baseUrl,
+      runId,
+      headers,
+      fetcher,
+      errorFromResponse: runnerError,
+      body: JSON.stringify({
+        runId,
+        agent: {
+          id: "slab-configuration-assistant",
+          name: "Slab configuration assistant",
+          role: "Edit declarative integration manifests",
+          instructions: input.instructions,
+          fullAccess: false,
+        },
+        runtime: {
+          type: "codex",
+          model,
+          authentication: null,
+        },
+        budget: null,
+        thread: { runtimeThreadId: null },
+        message: input.message,
+        context: [],
+        mcpServers: [],
+        cwd: null,
+      }),
+    });
+    let message = "";
+    let totalTokens: number | null = null;
+    for await (const event of transport.events) {
+      if (event.type === "assistant.delta") {
+        message += String(event.data.delta ?? "");
+      } else if (event.type === "assistant.completed") {
+        message = String(event.data.message ?? message);
+      } else if (event.type === "usage.updated") {
+        const observed = Number(event.data.totalTokens);
+        if (Number.isFinite(observed) && observed >= 0) {
+          totalTokens = Math.max(totalTokens ?? 0, observed);
+        }
+      } else if (event.type === "approval.required") {
+        const approvalId = String(event.data.approvalId ?? "");
+        if (approvalId) {
+          await fetcher(
+            `${baseUrl}/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(approvalId)}`,
+            {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ decision: "deny" }),
+              cache: "no-store",
+            },
+          ).catch(() => null);
+        }
+        throw new OperationalError(
+          "The configuration assistant attempted to use a runtime tool. No changes were proposed.",
+          "AI_ASSISTANT_TOOL_REQUESTED",
+          502,
+        );
+      } else if (event.type === "tool.started") {
+        throw new OperationalError(
+          "The configuration assistant attempted to use a runtime tool. No changes were proposed.",
+          "AI_ASSISTANT_TOOL_REQUESTED",
+          502,
+        );
+      } else if (event.type === "run.failed") {
+        throw new OperationalError(
+          String(event.data.message ?? "The configuration assistant failed."),
+          "AI_ASSISTANT_FAILED",
+          502,
+        );
+      } else if (event.type === "run.cancelled") {
+        throw new OperationalError(
+          "The configuration assistant was cancelled.",
+          "AI_ASSISTANT_CANCELLED",
+          502,
+        );
+      }
+    }
+    if (!message.trim()) {
+      throw new OperationalError(
+        "The configuration assistant returned an empty response.",
+        "AI_ASSISTANT_INVALID_RESPONSE",
+        502,
+      );
+    }
+    if (Buffer.byteLength(message, "utf8") > 200_000) {
+      throw new OperationalError(
+        "The configuration assistant response was too large.",
+        "AI_ASSISTANT_INVALID_RESPONSE",
+        502,
+      );
+    }
+    return { message, runtime: { id: "codex", model }, usage: { totalTokens } };
+  } catch (error) {
+    await fetch(`${baseUrl}/runs/${encodeURIComponent(runId)}`, {
+      method: "DELETE",
+      headers: runnerHeaders(),
+      signal: AbortSignal.timeout(5_000),
+    }).catch(() => null);
+    if (controller.signal.aborted) {
+      throw new OperationalError(
+        "The configuration assistant timed out.",
+        "AI_ASSISTANT_TIMEOUT",
+        504,
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }

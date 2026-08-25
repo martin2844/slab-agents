@@ -59,6 +59,7 @@ test("Integrations stays focused on external tools while Email is an optional Se
   assert.match(source, /custom HTTP integration/);
   assert.match(source, /custom MCP integration/);
   assert.match(source, /Draft tools from documentation/);
+  assert.match(source, /CustomHttpAiEditor/);
   assert.match(source, /key=\{operation\.editorKey\}/);
   assert.match(source, /key=\{parameter\.editorKey\}/);
   assert.doesNotMatch(source, /key=\{`\$\{operation\.key\}/);

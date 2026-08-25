@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { CustomHttpAiEditor } from "@/components/custom-http-ai-editor";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
@@ -66,6 +67,7 @@ import {
 } from "@/lib/integrations/naming";
 import type {
   Agent,
+  CustomHttpEditableDefinition,
   CustomHttpIntegrationDraft,
   Integration,
   IntegrationCatalogItem,
@@ -792,6 +794,79 @@ function CustomHttpEditor({
         ),
     [operations, slug],
   );
+  const aiEditableDefinition = useMemo<CustomHttpEditableDefinition>(
+    () => ({
+      schemaVersion: 1,
+      name: name.trim(),
+      baseUrl: baseUrl.trim(),
+      authType,
+      ...(authType === "api_key_header" && authHeaderName.trim()
+        ? { authHeaderName: authHeaderName.trim() }
+        : {}),
+      timeoutMs: Number(timeoutMs) || 15_000,
+      operations: operations
+        .filter(
+          (operation) =>
+            operation.key.trim() &&
+            operation.name.trim() &&
+            operation.path.trim(),
+        )
+        .map((operation) => ({
+          key: operation.key.trim(),
+          name: operation.name.trim(),
+          description: operation.description.trim(),
+          method: operation.method,
+          path: operation.path.trim(),
+          parameters: operation.parameters
+            .filter((parameter) => parameter.name.trim())
+            .map((parameter) => ({
+              name: parameter.name.trim(),
+              location: parameter.location,
+              type: parameter.type,
+              required: parameter.location === "path" || parameter.required,
+              ...(parameter.description.trim()
+                ? { description: parameter.description.trim() }
+                : {}),
+            })),
+          ...(operation.responsePath.trim()
+            ? { responsePath: operation.responsePath.trim() }
+            : {}),
+          maxResponseBytes: Number(operation.maxResponseBytes) || 32_768,
+          maxItems: operation.maxItems.trim()
+            ? Number(operation.maxItems)
+            : null,
+        })),
+    }),
+    [authHeaderName, authType, baseUrl, name, operations, timeoutMs],
+  );
+  const aiDisabledReason = useMemo(() => {
+    if (!name.trim() || !baseUrl.trim()) {
+      return "Add a name and base URL before generating a proposal.";
+    }
+    const hasPartialOperation = operations.some((operation) => {
+      const requiredValues = [
+        operation.key.trim(),
+        operation.name.trim(),
+        operation.path.trim(),
+      ];
+      const hasAnyValue =
+        requiredValues.some(Boolean) ||
+        operation.description.trim() ||
+        operation.parameters.length > 0;
+      return hasAnyValue && !requiredValues.every(Boolean);
+    });
+    if (hasPartialOperation) {
+      return "Complete or remove partially configured operations before using AI.";
+    }
+    if (
+      operations.some((operation) =>
+        operation.parameters.some((parameter) => !parameter.name.trim()),
+      )
+    ) {
+      return "Complete or remove unnamed parameters before using AI.";
+    }
+    return undefined;
+  }, [baseUrl, name, operations]);
 
   function setOperation(index: number, patch: Partial<EditableHttpOperation>) {
     setOperations((current) => {
@@ -938,6 +1013,69 @@ function CustomHttpEditor({
     } finally {
       setImporting(false);
     }
+  }
+
+  function applyAiDraft(draft: CustomHttpIntegrationDraft) {
+    const previousOperations = new Map(
+      operations.map((operation) => [
+        normalizeIntegrationToolKey(operation.key),
+        operation,
+      ]),
+    );
+    const nextOperations = draft.operations.map(
+      (operation, operationIndex): EditableHttpOperation => {
+        const previous = previousOperations.get(
+          normalizeIntegrationToolKey(operation.key),
+        );
+        const previousParameters = new Map(
+          previous?.parameters.map((parameter) => [
+            `${parameter.location}:${parameter.name.toLowerCase()}`,
+            parameter,
+          ]) ?? [],
+        );
+        return {
+          editorKey:
+            previous?.editorKey ??
+            newEditorKey(`ai-operation-${operationIndex}`),
+          ...(previous?.id ? { id: previous.id } : {}),
+          key: operation.key,
+          name: operation.name,
+          description: operation.description,
+          method: operation.method,
+          path: operation.path,
+          responsePath: operation.responsePath ?? "",
+          maxResponseBytes: String(operation.maxResponseBytes),
+          maxItems:
+            operation.maxItems == null ? "" : String(operation.maxItems),
+          parameters: operation.parameters.map((parameter, parameterIndex) => ({
+            editorKey:
+              previousParameters.get(
+                `${parameter.location}:${parameter.name.toLowerCase()}`,
+              )?.editorKey ??
+              newEditorKey(
+                `ai-operation-${operationIndex}-parameter-${parameterIndex}`,
+              ),
+            ...parameter,
+            description: parameter.description ?? "",
+          })),
+        };
+      },
+    );
+    const allowedTools = new Set(
+      nextOperations.map(
+        (operation) => `${slug}__${normalizeIntegrationToolKey(operation.key)}`,
+      ),
+    );
+    setOperations(nextOperations);
+    setPermissions((current) =>
+      Object.fromEntries(
+        Object.entries(current).map(([agentId, tools]) => [
+          agentId,
+          tools.filter((tool) => allowedTools.has(tool)),
+        ]),
+      ),
+    );
+    setImportWarnings(draft.warnings);
   }
 
   async function save() {
@@ -1108,6 +1246,12 @@ function CustomHttpEditor({
           </section>
 
           <section className="border-b py-5">
+            <CustomHttpAiEditor
+              current={aiEditableDefinition}
+              disabled={Boolean(aiDisabledReason)}
+              disabledReason={aiDisabledReason}
+              onApply={applyAiDraft}
+            />
             <details className="mb-5 overflow-hidden rounded-lg border bg-muted/20">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 [&::-webkit-details-marker]:hidden">
                 <span className="flex min-w-0 items-center gap-3">

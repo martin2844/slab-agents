@@ -91,10 +91,7 @@ const manifestSchema = z
 
 function importedText(value: string) {
   return value
-    .replace(
-      /(authorization\s*:\s*bearer\s+)([^\s"'`,;]+)/gi,
-      "$1[redacted]",
-    )
+    .replace(/(authorization\s*:\s*bearer\s+)([^\s"'`,;]+)/gi, "$1[redacted]")
     .replace(
       /((?:password|token|secret|api[-_ ]?key)\s*(?::|=|\bis\b)\s*)("[^"]*"|'[^']*'|[^\s,;]+)/gi,
       "$1[redacted]",
@@ -103,10 +100,11 @@ function importedText(value: string) {
       /\b(?:sk|pk)-(?:live|test)-[a-z0-9_-]{6,}\b|\bgh[pousr]_[a-z0-9]{12,}\b|\bxox[baprs]-[a-z0-9-]{10,}\b/gi,
       "[redacted]",
     )
-    .replace(
-      /\b[A-Z0-9_-]*SECRET[A-Z0-9_-]*\b/g,
-      "[redacted]",
-    );
+    .replace(/\b[A-Z0-9_-]*SECRET[A-Z0-9_-]*\b/g, "[redacted]");
+}
+
+export function redactCustomHttpDocumentation(value: string) {
+  return importedText(value);
 }
 
 function validateOperationContracts(
@@ -213,10 +211,7 @@ function firstDescription(block: string) {
     .split(/\n\s*\n/)
     .map(stripMarkdown)
     .find((part) => part && !part.startsWith("|"));
-  return importedText(cleaned ?? "Read data from this endpoint.").slice(
-    0,
-    240,
-  );
+  return importedText(cleaned ?? "Read data from this endpoint.").slice(0, 240);
 }
 
 function inferCommonParameters(markdown: string) {
@@ -396,9 +391,7 @@ function inferManifestDraft(source: string): CustomHttpIntegrationDraft {
     parsed.authentication.type === "api_key_header" &&
     !parsed.authentication.headerName?.trim()
   ) {
-    throw new Error(
-      "API-key authentication requires an explicit headerName.",
-    );
+    throw new Error("API-key authentication requires an explicit headerName.");
   }
   const operations = parsed.operations.map((operation) => {
     const key = importedText(operation.key);

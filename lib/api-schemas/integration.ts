@@ -31,6 +31,28 @@ export const integrationOperationSchema = z.object({
     .default([]),
 });
 
+export const customHttpEditableDefinitionSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    name: z.string().trim().min(1).max(160),
+    baseUrl: z.string().url().max(2_048),
+    authType: z.enum(["none", "bearer", "api_key_header"]),
+    authHeaderName: z.string().trim().max(80).optional(),
+    timeoutMs: z.coerce.number().int().min(1_000).max(120_000),
+    operations: z
+      .array(
+        integrationOperationSchema
+          .omit({ id: true, timeoutMs: true })
+          .extend({
+            maxResponseBytes: z.number().int().min(1_024).max(1_048_576),
+            maxItems: z.number().int().min(1).max(500).nullable(),
+          })
+          .strict(),
+      )
+      .max(50),
+  })
+  .strict();
+
 const baseSchema = {
   permissions: integrationPermissionsSchema.default({}),
   enabled: z.boolean().optional(),
@@ -68,10 +90,11 @@ export const posthogIntegrationUpdateSchema = posthogIntegrationSchema.extend({
   expectedVersion: expectedVersionSchema,
 });
 export const customHttpIntegrationUpdateSchema =
-  customHttpIntegrationSchema.extend({ expectedVersion: expectedVersionSchema });
-export const customMcpIntegrationUpdateSchema = customMcpIntegrationSchema.extend(
-  { expectedVersion: expectedVersionSchema },
-);
+  customHttpIntegrationSchema.extend({
+    expectedVersion: expectedVersionSchema,
+  });
+export const customMcpIntegrationUpdateSchema =
+  customMcpIntegrationSchema.extend({ expectedVersion: expectedVersionSchema });
 
 export const integrationCreateSchema = z.discriminatedUnion("provider", [
   posthogIntegrationSchema.extend({ provider: z.literal("posthog") }),

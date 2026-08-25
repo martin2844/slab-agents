@@ -429,8 +429,26 @@ export type CustomHttpIntegrationDraft = {
     maxResponseBytes: number;
     maxItems: number | null;
   }>;
-  sourceFormat: "manifest_json" | "markdown";
+  sourceFormat: "manifest_json" | "markdown" | "ai";
   warnings: string[];
+};
+export type CustomHttpEditableDefinition = Omit<
+  CustomHttpIntegrationDraft,
+  "sourceFormat" | "warnings"
+>;
+export type CustomHttpAiChange = {
+  kind: "added" | "removed" | "changed";
+  operationKey: string;
+  field: string | null;
+  before: string | null;
+  after: string | null;
+};
+export type CustomHttpAiProposal = {
+  draft: CustomHttpIntegrationDraft;
+  summary: string;
+  changes: CustomHttpAiChange[];
+  runtime: { id: string; model: string | null };
+  usage: { totalTokens: number | null };
 };
 export type IntegrationHttpOperation = {
   id: string;
