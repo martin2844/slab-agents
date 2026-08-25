@@ -6,6 +6,10 @@ import {
   measureJson,
   type McpServerDefinitionMetric,
 } from "@/lib/run-context-profile";
+import {
+  redactIntegrationText,
+  sanitizeIntegrationValue,
+} from "@/lib/integrations/redaction";
 
 export type McpConnection = {
   url: string;
@@ -34,7 +38,10 @@ export class McpToolError extends Error {
   }
 }
 
-function parseTextResult(rawResult: Awaited<ReturnType<Client["callTool"]>>) {
+function parseTextResult(
+  rawResult: Awaited<ReturnType<Client["callTool"]>>,
+  secrets: string[] = [],
+) {
   const result = rawResult as {
     isError?: boolean;
     structuredContent?: unknown;
@@ -43,22 +50,29 @@ function parseTextResult(rawResult: Awaited<ReturnType<Client["callTool"]>>) {
 
   if (result.isError) {
     const text = result.content.find((item) => item.type === "text");
-    const message = text?.text ?? "The MCP tool returned an error.";
+    const message = redactIntegrationText(
+      text?.text ?? "The MCP tool returned an error.",
+      secrets,
+    );
     try {
       const parsed = JSON.parse(message) as {
         error?: Record<string, unknown>;
       };
       if (parsed.error && typeof parsed.error === "object") {
-        throw new McpToolError(
-          String(parsed.error.code ?? "MCP_TOOL_ERROR"),
-          String(parsed.error.message ?? "The MCP tool returned an error."),
+        const safeError = sanitizeIntegrationValue(
           parsed.error,
+          secrets,
+        ) as Record<string, unknown>;
+        throw new McpToolError(
+          String(safeError.code ?? "MCP_TOOL_ERROR"),
+          String(safeError.message ?? "The MCP tool returned an error."),
+          safeError,
         );
       }
     } catch (error) {
       if (error instanceof McpToolError) throw error;
     }
-    throw new Error(message);
+    throw new McpToolError("MCP_TOOL_ERROR", message, {});
   }
 
   if (result.structuredContent !== undefined) return result.structuredContent;
@@ -111,7 +125,10 @@ export async function callMcpTool<T>(
   try {
     await client.connect(transport);
     const result = await client.callTool({ name, arguments: args });
-    return parseTextResult(result) as T;
+    const headerSecrets = Object.values(connection.headers ?? {}).flatMap(
+      (value) => [value, value.replace(/^Bearer\s+/i, "")],
+    );
+    return parseTextResult(result, [connection.apiKey ?? "", ...headerSecrets]) as T;
   } finally {
     clearTimeout(timeout);
     await client.close().catch(() => undefined);

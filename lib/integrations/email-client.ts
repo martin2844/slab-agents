@@ -1,5 +1,8 @@
 import "server-only";
 
+import { OperationalError } from "@/lib/operational-error";
+import { redactIntegrationText } from "@/lib/integrations/redaction";
+
 import { readSecret } from "@/lib/server-config";
 import type {
   EmailAccount,
@@ -51,8 +54,10 @@ export type RemoteConnectorToken = {
 function adminKey() {
   const value = readSecret("SLAB_EMAIL_ADMIN_KEY", "SLAB_EMAIL_ADMIN_KEY_FILE");
   if (!value) {
-    throw new Error(
+    throw new OperationalError(
       "SLAB_EMAIL_ADMIN_KEY is not configured in the slab-agents server environment.",
+      "EMAIL_ADMIN_NOT_CONFIGURED",
+      500,
     );
   }
   return value;
@@ -61,10 +66,10 @@ function adminKey() {
 export function normalizeEmailServiceUrl(value: string) {
   const parsed = new URL(value.trim());
   if (!(["http:", "https:"] as string[]).includes(parsed.protocol)) {
-    throw new Error("Email service URL must use HTTP or HTTPS.");
+    throw new OperationalError("Email service URL must use HTTP or HTTPS.");
   }
   if (parsed.username || parsed.password || parsed.search || parsed.hash) {
-    throw new Error(
+    throw new OperationalError(
       "Email service URL cannot contain credentials or query data.",
     );
   }
@@ -108,13 +113,14 @@ export class EmailAdminClient {
   }
 
   private async request<T>(path: string, options: RequestOptions = {}) {
+    const credential = options.admin === false ? "" : adminKey();
     const response = await fetch(`${this.serviceUrl}${path}`, {
       method: options.method ?? "GET",
       headers: {
         Accept: "application/json",
         ...(options.admin === false
           ? {}
-          : { Authorization: `Bearer ${adminKey()}` }),
+          : { Authorization: `Bearer ${credential}` }),
         ...(options.body === undefined
           ? {}
           : { "Content-Type": "application/json" }),
@@ -131,8 +137,10 @@ export class EmailAdminClient {
       const message =
         payload?.error?.message ||
         `Email service returned ${response.status} ${response.statusText}.`;
-      throw new Error(
-        payload?.error?.code ? `${payload.error.code}: ${message}` : message,
+      throw new OperationalError(
+        redactIntegrationText(message, credential ? [credential] : []),
+        payload?.error?.code ?? "EMAIL_SERVICE_ERROR",
+        502,
       );
     }
     if (response.status === 204) return undefined as T;

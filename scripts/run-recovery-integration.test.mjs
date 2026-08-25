@@ -28,11 +28,13 @@ test("executeRun resumes durable cursors and persists runtime identity", async (
     { repository },
     { createRunExecution, executeRun },
     { startRunnerRun },
+    { settingsStore },
   ] = await Promise.all([
     import("../lib/db.ts"),
     import("../lib/repository.ts"),
     import("../lib/run-service.ts"),
     import("../lib/runner.ts"),
+    import("../lib/repositories/settings-store.ts"),
   ]);
   const agent = repository.createAgent({
     name: "Recovery Agent",
@@ -56,7 +58,7 @@ test("executeRun resumes durable cursors and persists runtime identity", async (
     "UPDATE runs SET runner_run_id=?,runner_event_id=? WHERE id=?",
   ).run("runner-run", 7, run.id);
 
-  repository.setSetting("runner_url", "http://runner.test");
+  settingsStore.set("runner_url", "http://runner.test");
   const calls = [];
   const replay = [
     {

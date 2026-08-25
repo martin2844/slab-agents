@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError } from "@/lib/api";
+import { apiError, notFound } from "@/lib/api";
 import { repository } from "@/lib/repository";
 const schema = z.object({
   agentId: z.string().uuid(),
@@ -8,7 +8,7 @@ const schema = z.object({
 export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
-    if (!repository.getAgent(input.agentId)) throw new Error("Agent not found");
+    if (!repository.getAgent(input.agentId)) throw notFound("Agent not found");
     return Response.json(
       { data: repository.createThread(input.agentId, input.title) },
       { status: 201 },

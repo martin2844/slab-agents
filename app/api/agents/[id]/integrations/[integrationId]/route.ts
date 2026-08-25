@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError } from "@/lib/api";
+import { apiError, notFound } from "@/lib/api";
 import { repository } from "@/lib/repository";
 
 export const runtime = "nodejs";
@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 const schema = z.object({
   enabled: z.boolean(),
+  expectedVersion: z.number().int().positive(),
 });
 
 export async function PATCH(
@@ -21,16 +22,14 @@ export async function PATCH(
     const agent = repository.getAgent(agentId);
     const integration = repository.getIntegration(integrationId);
     if (!agent || !integration) {
-      return Response.json(
-        { error: "Agent or integration not found." },
-        { status: 404 },
-      );
+      throw notFound("Agent or integration not found.");
     }
 
     const data = repository.setAgentIntegrationTools(
       integrationId,
       agentId,
       input.enabled ? integration.tools.map((tool) => tool.key) : [],
+      input.expectedVersion,
     );
     return Response.json({ data });
   } catch (error) {

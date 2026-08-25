@@ -30,6 +30,11 @@ import { repository, type IntegrationRecord } from "@/lib/repository";
 import { decryptLocalSecret, encryptLocalSecret } from "@/lib/secrets";
 import { internalRoute } from "@/lib/server-config";
 import type { CalendarProvider, Integration } from "@/lib/types";
+import {
+  IntegrationConfigurationError,
+  IntegrationVersionConflictError,
+} from "@/lib/integrations/errors";
+import { OperationalError } from "@/lib/operational-error";
 
 const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/calendar",
@@ -39,7 +44,7 @@ const MICROSOFT_SCOPES = ["offline_access", "User.Read", "Calendars.ReadWrite"];
 
 function normalizeName(value: string) {
   const name = value.trim().slice(0, 120);
-  if (!name) throw new Error("Calendar integration name is required.");
+  if (!name) throw new OperationalError("Calendar integration name is required.");
   return name;
 }
 
@@ -50,10 +55,10 @@ function normalizeBaseUrl(
 ) {
   const url = new URL((value || fallback || "").trim());
   if (!new Set(["http:", "https:"]).has(url.protocol)) {
-    throw new Error("Calendar service URL must use HTTP or HTTPS.");
+    throw new OperationalError("Calendar service URL must use HTTP or HTTPS.");
   }
   if (url.username || url.password || url.search || url.hash) {
-    throw new Error(
+    throw new OperationalError(
       "Calendar service URL must not contain credentials, query parameters, or a fragment.",
     );
   }
@@ -67,7 +72,7 @@ function parseCredentials(record: IntegrationRecord): CalendarCredentials {
       decryptLocalSecret(record.credentialsCiphertext),
     ) as CalendarCredentials;
   } catch {
-    throw new Error("Stored calendar credentials could not be read.");
+    throw new OperationalError("Stored calendar credentials could not be read.");
   }
 }
 
@@ -116,7 +121,7 @@ function createAdapter(
       credentialsCiphertext: encryptLocalSecret(JSON.stringify(next)),
     });
     if (!updated) {
-      throw new Error(
+      throw new OperationalError(
         "Calendar configuration changed while credentials were refreshing. Retry with the current integration.",
       );
     }
@@ -137,7 +142,7 @@ function createAdapter(
     case "calendar_ics":
       return createIcsAdapter(record, credentials);
     default:
-      throw new Error("Unsupported calendar provider.");
+      throw new OperationalError("Unsupported calendar provider.");
   }
 }
 
@@ -163,7 +168,7 @@ function assertCredentialReuseSafe(
 ) {
   if (!current) return;
   if (current.provider !== input.provider) {
-    throw new Error("Calendar provider cannot be changed after creation.");
+    throw new OperationalError("Calendar provider cannot be changed after creation.");
   }
   if (
     (input.provider === "calendar_caldav" ||
@@ -175,7 +180,7 @@ function assertCredentialReuseSafe(
     const replacement =
       input.provider === "calendar_caldav" ? input.password : input.apiKey;
     if (!replacement) {
-      throw new Error(
+      throw new OperationalError(
         "A fresh credential is required when the calendar service origin changes.",
       );
     }
@@ -186,7 +191,7 @@ function assertCredentialReuseSafe(
     parseCredentials(current).username !== input.username.trim() &&
     !input.password
   ) {
-    throw new Error(
+    throw new OperationalError(
       "A fresh password is required when the CalDAV username changes.",
     );
   }
@@ -197,7 +202,7 @@ function assertCredentialReuseSafe(
     parseCredentials(current).clientId !== input.clientId.trim() &&
     !input.clientSecret
   ) {
-    throw new Error(
+    throw new OperationalError(
       "A fresh OAuth client secret is required when the client ID changes.",
     );
   }
@@ -208,7 +213,7 @@ function assertCredentialReuseSafe(
       input.tenant.trim() &&
     !input.clientSecret
   ) {
-    throw new Error(
+    throw new OperationalError(
       "A fresh OAuth client secret is required when the Microsoft tenant changes.",
     );
   }
@@ -224,9 +229,20 @@ export async function saveCalendarIntegration(
   input: CalendarConnectionInput,
 ): Promise<Integration> {
   if (!isCalendarProvider(input.provider)) {
-    throw new Error("Unsupported calendar provider.");
+    throw new OperationalError("Unsupported calendar provider.");
   }
   const current = input.id ? repository.getIntegrationRecord(input.id) : null;
+  if (input.id && input.expectedVersion === undefined) {
+    throw new IntegrationConfigurationError(
+      "expectedVersion is required when updating a calendar integration.",
+    );
+  }
+  if (
+    input.expectedVersion !== undefined &&
+    (!current || current.version !== input.expectedVersion)
+  ) {
+    throw new IntegrationVersionConflictError();
+  }
   const currentCredentials = current ? parseCredentials(current) : null;
   const name = normalizeName(input.name);
   const baseUrl =
@@ -257,22 +273,22 @@ export async function saveCalendarIntegration(
       input.provider === "calendar_microsoft") &&
     (!credentials.clientId || !credentials.clientSecret)
   ) {
-    throw new Error("OAuth client ID and client secret are required.");
+    throw new OperationalError("OAuth client ID and client secret are required.");
   }
   if (
     input.provider === "calendar_caldav" &&
     (!credentials.username || !credentials.password)
   ) {
-    throw new Error("CalDAV username and password are required.");
+    throw new OperationalError("CalDAV username and password are required.");
   }
   if (input.provider === "calendar_calcom" && !credentials.apiKey) {
-    throw new Error("Cal.com API key is required.");
+    throw new OperationalError("Cal.com API key is required.");
   }
   if (input.provider === "calendar_ics") {
-    if (!credentials.feedUrl) throw new Error("Shared ICS URL is required.");
+    if (!credentials.feedUrl) throw new OperationalError("Shared ICS URL is required.");
     const feed = new URL(credentials.feedUrl);
     if (!new Set(["http:", "https:"]).has(feed.protocol)) {
-      throw new Error("Shared ICS URL must use HTTP or HTTPS.");
+      throw new OperationalError("Shared ICS URL must use HTTP or HTTPS.");
     }
   }
 
@@ -331,7 +347,7 @@ export async function saveCalendarIntegration(
       ? Object.fromEntries(
           [...new Set(input.agentIds)].map((agentId) => {
             if (!repository.getAgent(agentId)) {
-              throw new Error(`Agent ${agentId} was not found.`);
+              throw new OperationalError(`Agent ${agentId} was not found.`);
             }
             return [agentId, providerTools];
           }),
@@ -382,14 +398,14 @@ export async function saveCalendarIntegration(
     lastError,
     enabled: input.enabled ?? current?.enabled ?? true,
     permissions,
-    expectedVersion: current?.version,
+    expectedVersion: input.expectedVersion,
   });
 }
 
 export async function testCalendarIntegration(id: string) {
   const record = repository.getIntegrationRecord(id);
   if (!record || !isCalendarProvider(record.provider)) {
-    throw new Error("Calendar integration not found.");
+    throw new OperationalError("Calendar integration not found.");
   }
   const testedAt = new Date().toISOString();
   try {
@@ -404,7 +420,7 @@ export async function testCalendarIntegration(id: string) {
       accountName: account.accountName,
     });
     if (!completed) {
-      throw new Error(
+      throw new OperationalError(
         "Calendar configuration changed while the connection test was running. Test the current configuration again.",
       );
     }
@@ -438,11 +454,11 @@ export function startCalendarOAuth(integrationId: string, redirectUri: string) {
     (record.provider !== "calendar_google" &&
       record.provider !== "calendar_microsoft")
   ) {
-    throw new Error("OAuth calendar integration not found.");
+    throw new OperationalError("OAuth calendar integration not found.");
   }
   const credentials = parseCredentials(record);
   if (!credentials.clientId || !credentials.clientSecret) {
-    throw new Error("OAuth credentials are not configured.");
+    throw new OperationalError("OAuth credentials are not configured.");
   }
   const state = randomBytes(32).toString("base64url");
   const verifier = randomBytes(48).toString("base64url");
@@ -495,21 +511,21 @@ async function exchangeOAuthCode(input: {
 }) {
   const pending = repository.consumeIntegrationOAuthState(input.state);
   if (!pending || pending.provider !== input.provider) {
-    throw new Error("OAuth state is invalid or expired.");
+    throw new OperationalError("OAuth state is invalid or expired.");
   }
   const record = repository.getIntegrationRecord(pending.integrationId);
   if (!record || record.provider !== input.provider) {
-    throw new Error("Calendar integration no longer exists.");
+    throw new OperationalError("Calendar integration no longer exists.");
   }
   if (record.version !== pending.integrationVersion) {
-    throw new Error(
+    throw new OperationalError(
       "Calendar configuration changed while authorization was in progress. Start authorization again.",
     );
   }
   try {
     const credentials = parseCredentials(record);
     if (!credentials.clientId || !credentials.clientSecret) {
-      throw new Error("OAuth credentials are incomplete.");
+      throw new OperationalError("OAuth credentials are incomplete.");
     }
     const verifier = decryptLocalSecret(pending.verifierCiphertext);
     const endpoint =
@@ -540,7 +556,7 @@ async function exchangeOAuthCode(input: {
       expires_in?: number;
     } | null;
     if (!response.ok || !body?.access_token || !body.refresh_token) {
-      throw new Error(
+      throw new OperationalError(
         `OAuth provider returned HTTP ${response.status}. Verify the client configuration and try again.`,
       );
     }
@@ -570,7 +586,7 @@ async function exchangeOAuthCode(input: {
       testedAt,
     });
     if (!completed) {
-      throw new Error(
+      throw new OperationalError(
         "Calendar configuration changed while authorization was in progress. Start authorization again from the current configuration.",
       );
     }
@@ -744,18 +760,22 @@ export function getAgentCalendarIntegrationsMcp(
   });
 }
 
-export function deleteCalendarIntegration(id: string) {
+export function deleteCalendarIntegration(id: string, expectedVersion: number) {
   const record = repository.getIntegrationRecord(id);
   if (!record || !isCalendarProvider(record.provider)) {
-    throw new Error("Calendar integration not found.");
+    throw new OperationalError("Calendar integration not found.");
   }
-  return repository.deleteIntegration(id);
+  return repository.deleteIntegration(id, expectedVersion);
 }
 
-export function setCalendarIntegrationEnabled(id: string, enabled: boolean) {
+export function setCalendarIntegrationEnabled(
+  id: string,
+  enabled: boolean,
+  expectedVersion: number,
+) {
   const record = repository.getIntegrationRecord(id);
   if (!record || !isCalendarProvider(record.provider)) {
-    throw new Error("Calendar integration not found.");
+    throw new OperationalError("Calendar integration not found.");
   }
   return repository.saveIntegration({
     id: record.id,
@@ -772,5 +792,6 @@ export function setCalendarIntegrationEnabled(id: string, enabled: boolean) {
     lastError: record.lastError,
     enabled,
     permissions: repository.listIntegrationPermissions(record.id),
+    expectedVersion,
   });
 }

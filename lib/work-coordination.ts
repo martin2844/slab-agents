@@ -5,6 +5,9 @@ import { createRunExecution, executeRunInBackground } from "@/lib/run-service";
 import { WorkClient } from "@/lib/mcp/work-client";
 import type { Agent, Comment, Issue } from "@/lib/types";
 import { mentionHandles, sameAgentIdentity } from "@/lib/work-status";
+import { mapWithConcurrency } from "@/lib/async";
+import { getSetting } from "@/lib/settings";
+import { workCoordinationStore } from "@/lib/repositories/work-coordination-store";
 
 type TriggerType =
   "assignment" | "resumed" | "review_requested" | "blocked" | "mention";
@@ -90,7 +93,7 @@ export function coordinationInstructions(input: {
       "Leé el issue completo, sus relaciones, comentarios y documentación relevante.",
       "Determiná si el bloqueo puede resolverse con información o criterio ya disponible.",
       'Si podés resolverlo, comentá la decisión, remové "status:blocked" y devolvé el item a in_progress para el agente asignado.',
-      "Si requiere una decisión de Martin o información externa, dejá una solicitud breve y precisa en el issue y mantenelo blocked.",
+      `Si requiere una decisión de ${getSetting("operator_display_name")} o información externa, dejá una solicitud breve y precisa en el issue y mantenelo blocked.`,
       "No inventes una decisión ni ejecutes el trabajo comercial que corresponde al agente asignado.",
       statusConvention,
     ].join("\n\n");
@@ -149,63 +152,76 @@ export function coordinationInput(input: {
   ].join("\n");
 }
 
-async function triggerAgent(input: {
-  type: TriggerType;
-  issue: Issue;
-  agent: Agent;
-  dedupeKey: string;
-  comment?: Comment;
-}) {
-  const thread = repository.getOrCreateWorkAgentThread(
-    input.issue.key,
-    input.agent.id,
-    `${input.issue.key} · ${input.issue.title}`,
-  );
-  if (repository.getActiveRunForThread(thread.id)) return "deferred" as const;
-
-  const eventId = repository.claimWorkCoordinationEvent({
-    dedupeKey: input.dedupeKey,
-    issueKey: input.issue.key,
-    type: input.type,
-    agentId: input.agent.id,
-    commentId: input.comment?.id,
-  });
-  if (!eventId) return "handled" as const;
-
+export async function triggerAgent(
+  input: {
+    type: TriggerType;
+    issue: Issue;
+    agent: Agent;
+    dedupeKey: string;
+    comment?: Comment;
+  },
+  execute: (runId: string) => Promise<void> = executeRunInBackground,
+) {
   try {
-    const prompt = coordinationInput(input);
-    const mode =
-      input.type === "assignment" || input.type === "resumed"
-        ? "assignment"
-        : "work_item";
-    const run = createRunExecution({
-      agentId: input.agent.id,
-      threadId: thread.id,
-      trigger: input.type,
-      mode,
-      issueKey: input.issue.key,
-      prompt,
-      eventInstructions: coordinationInstructions(input),
+    const run = repository.transaction(() => {
+      const eventId = workCoordinationStore.claimEvent({
+        dedupeKey: input.dedupeKey,
+        issueKey: input.issue.key,
+        type: input.type,
+        agentId: input.agent.id,
+        commentId: input.comment?.id,
+      });
+      if (!eventId) return null;
+
+      const thread = repository.getOrCreateWorkAgentThread(
+        input.issue.key,
+        input.agent.id,
+        `${input.issue.key} · ${input.issue.title}`,
+      );
+      const mode =
+        input.type === "assignment" || input.type === "resumed"
+          ? "assignment"
+          : "work_item";
+      const created = createRunExecution({
+        agentId: input.agent.id,
+        threadId: thread.id,
+        trigger: input.type,
+        mode,
+        issueKey: input.issue.key,
+        prompt: coordinationInput(input),
+        eventInstructions: coordinationInstructions(input),
+      });
+      repository.addRunEvent(created.id, "work_coordination_triggered", {
+        issueKey: input.issue.key,
+        issueVersion: input.issue.version,
+        trigger: input.type,
+        commentId: input.comment?.id ?? null,
+      });
+      workCoordinationStore.completeEvent(eventId, created.id);
+      return created;
     });
-    repository.addRunEvent(run.id, "work_coordination_triggered", {
-      issueKey: input.issue.key,
-      issueVersion: input.issue.version,
-      trigger: input.type,
-      commentId: input.comment?.id ?? null,
-    });
-    repository.completeWorkCoordinationEvent(eventId, { runId: run.id });
-    void executeRunInBackground(run.id);
-    return "handled" as const;
+    if (!run) return;
+    void execute(run.id);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    repository.completeWorkCoordinationEvent(eventId, { error: message });
     console.error(`[work-coordination] ${input.issue.key}:`, error);
-    return "handled" as const;
+    throw error;
   }
 }
 
-async function inspectIssue(projectKey: string, issue: Issue, agents: Agent[]) {
-  const previous = repository.getWorkCoordinationItem(issue.key);
+type InspectIssueDependencies = {
+  dispatch?: typeof triggerAgent;
+  listComments?: typeof WorkClient.listComments;
+};
+
+export async function inspectIssue(
+  projectKey: string,
+  issue: Issue,
+  agents: Agent[],
+  dependencies: InspectIssueDependencies = {},
+) {
+  const dispatch = dependencies.dispatch ?? triggerAgent;
+  const listComments = dependencies.listComments ?? WorkClient.listComments;
+  const previous = workCoordinationStore.getItem(issue.key);
   const assignedAgent = resolveAgent(agents, issue.assignee);
   const assigneeChanged =
     !previous ||
@@ -217,7 +233,7 @@ async function inspectIssue(projectKey: string, issue: Issue, agents: Agent[]) {
     assigneeChanged &&
     (issue.status === "new" || issue.status === "in_progress")
   ) {
-    await triggerAgent({
+    await dispatch({
       type: "assignment",
       issue,
       agent: assignedAgent,
@@ -231,7 +247,7 @@ async function inspectIssue(projectKey: string, issue: Issue, agents: Agent[]) {
     (String(previous?.semantic_status) === "blocked" ||
       String(previous?.semantic_status) === "review");
   if (resumed && assignedAgent) {
-    await triggerAgent({
+    await dispatch({
       type: "resumed",
       issue,
       agent: assignedAgent,
@@ -239,13 +255,13 @@ async function inspectIssue(projectKey: string, issue: Issue, agents: Agent[]) {
     });
   }
 
-  const reviewer = resolveAgent(agents, "coo");
+  const reviewer = resolveAgent(agents, getSetting("coordination_reviewer"));
   if (
     reviewer?.enabled &&
     issue.status === "review" &&
     reviewer.id !== assignedAgent?.id
   ) {
-    await triggerAgent({
+    await dispatch({
       type: "review_requested",
       issue,
       agent: reviewer,
@@ -258,7 +274,7 @@ async function inspectIssue(projectKey: string, issue: Issue, agents: Agent[]) {
     issue.status === "blocked" &&
     reviewer.id !== assignedAgent?.id
   ) {
-    await triggerAgent({
+    await dispatch({
       type: "blocked",
       issue,
       agent: reviewer,
@@ -268,37 +284,35 @@ async function inspectIssue(projectKey: string, issue: Issue, agents: Agent[]) {
 
   let comments: Comment[] = [];
   try {
-    comments = await WorkClient.listComments(issue.key);
+    comments = await listComments(issue.key);
   } catch (error) {
     console.error(`[work-coordination] comments ${issue.key}:`, error);
   }
 
   for (const comment of comments) {
-    if (repository.hasSeenWorkComment(comment.id)) continue;
+    if (workCoordinationStore.hasSeenComment(comment.id)) continue;
     if (!previous) {
-      repository.rememberWorkComment(issue.key, comment.id);
+      workCoordinationStore.rememberComment(issue.key, comment.id);
       continue;
     }
     const targets = mentionedAgents(agents, comment);
-    let deferred = false;
     for (const target of targets) {
       const coveredByStateEvent =
         target.id === reviewer?.id &&
         (issue.status === "blocked" || issue.status === "review");
       if (coveredByStateEvent) continue;
-      const result = await triggerAgent({
+      await dispatch({
         type: "mention",
         issue,
         agent: target,
         comment,
         dedupeKey: `mention:${comment.id}:${target.id}`,
       });
-      deferred ||= result === "deferred";
     }
-    if (!deferred) repository.rememberWorkComment(issue.key, comment.id);
+    workCoordinationStore.rememberComment(issue.key, comment.id);
   }
 
-  repository.upsertWorkCoordinationItem({
+  workCoordinationStore.observeItem({
     issueKey: issue.key,
     projectKey,
     assignee: issue.assignee ?? null,
@@ -319,8 +333,8 @@ export function tickWorkCoordination() {
       const projects = await WorkClient.listProjects();
       for (const project of projects) {
         const issues = await WorkClient.listIssues(project.key);
-        await Promise.all(
-          issues.map((issue) => inspectIssue(project.key, issue, agents)),
+        await mapWithConcurrency(issues, 6, (issue) =>
+          inspectIssue(project.key, issue, agents),
         );
       }
     } catch (error) {

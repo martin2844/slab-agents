@@ -14,7 +14,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { api } from "@/lib/client-api";
+import { api, apiClientError } from "@/lib/client-api";
 import { buildReplyDurations } from "@/lib/chat-metrics";
 import { buildRunProgress } from "@/lib/run-progress";
 import type {
@@ -162,8 +162,7 @@ export function ThreadChat({
         body: JSON.stringify({ threadId, message }),
       });
       if (!response.ok) {
-        const body = await response.json();
-        throw new Error(body.error ?? "Run failed");
+        throw await apiClientError(response);
       }
       const reader = response.body!.getReader(),
         decoder = new TextDecoder();

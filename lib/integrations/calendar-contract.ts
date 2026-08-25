@@ -34,6 +34,7 @@ export type CalendarCredentials = {
 
 export type CalendarConnectionInput = {
   id?: string;
+  expectedVersion?: number;
   provider: CalendarProvider;
   name: string;
   baseUrl?: string;

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError } from "@/lib/api";
+import { apiError, notFound } from "@/lib/api";
 import { isRuntimeId } from "@/lib/runtime-config";
 import { updateRuntime } from "@/lib/runtime-service";
 
@@ -20,7 +20,7 @@ export async function PATCH(
   try {
     const { id } = await context.params;
     if (!isRuntimeId(id)) {
-      return Response.json({ error: "Runtime not found" }, { status: 404 });
+      throw notFound("Runtime not found");
     }
     return Response.json({
       data: await updateRuntime({

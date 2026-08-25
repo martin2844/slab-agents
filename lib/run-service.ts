@@ -1,8 +1,11 @@
 import "server-only";
 
+import { OperationalError } from "@/lib/operational-error";
+
 import { durableRunQueue } from "@/lib/durable-run-state";
 import type { RunLease } from "@/lib/durable-run-queue";
 import { repository } from "@/lib/repository";
+import { approvalStore } from "@/lib/repositories/approval-store";
 import {
   defineRunExecution,
   planRuntimeThread,
@@ -76,26 +79,28 @@ export function createRunExecution(input: {
   assertRuntimeSelectable(agent.runtime, agent.model);
   const model = resolveRuntimeModel(agent.runtime, agent.model);
   const execution = defineRunExecution(input);
-  const run = repository.createRun({
-    id: input.runId,
-    agentId: agent.id,
-    threadId: thread.id,
-    automationId: input.automationId,
-    runtime: agent.runtime,
-    model,
-    trigger: execution.trigger,
-    mode: execution.mode,
-    issueKey: execution.issueKey,
-    runInstructions: execution.policy,
+  return repository.transaction(() => {
+    const run = repository.createRun({
+      id: input.runId,
+      agentId: agent.id,
+      threadId: thread.id,
+      automationId: input.automationId,
+      runtime: agent.runtime,
+      model,
+      trigger: execution.trigger,
+      mode: execution.mode,
+      issueKey: execution.issueKey,
+      runInstructions: execution.policy,
+    });
+    repository.addMessage(thread.id, run.id, "user", input.prompt);
+    repository.addRunEvent(run.id, "run_execution_created", {
+      trigger: execution.trigger,
+      mode: execution.mode,
+      issueKey: execution.issueKey,
+      automationId: input.automationId ?? null,
+    });
+    return run;
   });
-  repository.addMessage(thread.id, run.id, "user", input.prompt);
-  repository.addRunEvent(run.id, "run_execution_created", {
-    trigger: execution.trigger,
-    mode: execution.mode,
-    issueKey: execution.issueKey,
-    automationId: input.automationId ?? null,
-  });
-  return run;
 }
 
 type RunExecutionDependencies = {
@@ -519,7 +524,7 @@ export async function* executeRun(
                   data.description ??
                   "Runtime action",
               );
-              const approval = repository.createApproval(
+              const approval = approvalStore.create(
                 run.id,
                 runnerApprovalId,
                 command,
@@ -640,7 +645,7 @@ export async function* executeRun(
                   runnerRunId: event.runId,
                 });
               }
-              const closedApprovals = repository.closePendingApprovals(run.id);
+              const closedApprovals = approvalStore.closePending(run.id);
               repository.updateRun(run.id, "failed", {
                 error: failure.message,
               });
@@ -659,7 +664,7 @@ export async function* executeRun(
               });
             }
             if (event.type === "run.cancelled") {
-              repository.closePendingApprovals(run.id);
+              approvalStore.closePending(run.id);
               repository.updateRun(run.id, "cancelled");
               repository.addRunEvent(run.id, "run_cancelled", data);
               settleBudget(run.id, "cancelled");
@@ -754,7 +759,7 @@ export async function* executeRun(
       if (error instanceof RunnerBudgetCompatibilityError) {
         const persisted = repository.transaction(() => {
           if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
-          const closedApprovals = repository.closePendingApprovals(run.id);
+          const closedApprovals = approvalStore.closePending(run.id);
           repository.updateRun(run.id, "failed", { error: message });
           repository.addRunEvent(run.id, "run_failed", {
             error: message,
@@ -798,7 +803,7 @@ export async function* executeRun(
       }
       const persisted = repository.transaction(() => {
         if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
-        const closedApprovals = repository.closePendingApprovals(run.id);
+        const closedApprovals = approvalStore.closePending(run.id);
         repository.updateRun(run.id, "failed", { error: message });
         repository.addRunEvent(run.id, "run_failed", {
           error: message,
@@ -829,10 +834,10 @@ export function startAutomationRun(
   scheduledFor: Date | null = null,
 ) {
   const automation = repository.getAutomation(automationId);
-  if (!automation) throw new Error("Automation not found");
+  if (!automation) throw new OperationalError("Automation not found", "NOT_FOUND", 404);
   const agent = repository.getAgent(automation.agentId);
-  if (!agent) throw new Error("Agent not found");
-  if (!agent.enabled) throw new Error("This agent is disabled.");
+  if (!agent) throw new OperationalError("Agent not found", "NOT_FOUND", 404);
+  if (!agent.enabled) throw new OperationalError("This agent is disabled.");
 
   if (scheduledFor) {
     const scheduledForIso = scheduledFor.toISOString();

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { register } from "node:module";
 import test from "node:test";
 
-import { canReuseHttpCredential } from "../lib/integrations/http-contract.ts";
+register("./test-alias-loader.mjs", import.meta.url);
+const { canReuseHttpCredential } = await import(
+  "../lib/integrations/http-contract.ts"
+);
 
 test("stored credentials are reusable only for the same authentication identity", () => {
   const previous = {

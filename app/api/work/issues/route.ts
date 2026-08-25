@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError } from "@/lib/api";
+import { apiError, badRequest } from "@/lib/api";
 import { WorkClient } from "@/lib/mcp/work-client";
 import { tickWorkCoordination } from "@/lib/work-coordination";
 export const runtime = "nodejs";
@@ -16,7 +16,7 @@ const createSchema = z.object({
 export async function GET(request: Request) {
   try {
     const projectKey = new URL(request.url).searchParams.get("project");
-    if (!projectKey) throw new Error("Project is required");
+    if (!projectKey) throw badRequest("Project is required");
     return Response.json({ data: await WorkClient.listIssues(projectKey) });
   } catch (error) {
     return apiError(error);

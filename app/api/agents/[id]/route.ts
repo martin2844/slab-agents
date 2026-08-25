@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError } from "@/lib/api";
+import { apiError, notFound } from "@/lib/api";
 import { repository } from "@/lib/repository";
 import { assertRuntimeSelectable } from "@/lib/runtime-config";
 
@@ -19,8 +19,7 @@ export async function GET(
 ) {
   const { id } = await ctx.params;
   const agent = repository.getAgent(id);
-  if (!agent)
-    return Response.json({ error: "Agent not found" }, { status: 404 });
+  if (!agent) return apiError(notFound("Agent not found"));
   return Response.json({
     data: {
       agent,
@@ -43,14 +42,14 @@ export async function PATCH(
   try {
     const { id } = await ctx.params;
     const current = repository.getAgent(id);
-    if (!current) throw new Error("Agent not found");
+    if (!current) throw notFound("Agent not found");
     const input = schema.parse(await request.json());
     assertRuntimeSelectable(
       input.runtime ?? current.runtime,
       input.model ?? current.model,
     );
     const agent = repository.updateAgent(id, input);
-    if (!agent) throw new Error("Agent not found");
+    if (!agent) throw notFound("Agent not found");
     return Response.json({ data: agent });
   } catch (error) {
     return apiError(error);

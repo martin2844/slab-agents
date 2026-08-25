@@ -15,47 +15,21 @@ import {
   getPostHogRuntimeAccess,
 } from "@/lib/integrations/service";
 import type { IntegrationHttpOperation } from "@/lib/types";
+import { compileMcpInputSchema } from "@/lib/integrations/json-schema";
+import {
+  normalizeIntegrationSlug,
+  normalizeIntegrationToolKey,
+} from "@/lib/integrations/naming";
+import {
+  redactIntegrationText,
+  sanitizeIntegrationValue,
+} from "@/lib/integrations/redaction";
 
-const SENSITIVE_KEY =
-  /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[-_]?key|access[-_]?token|refresh[-_]?token|secret|password)$/i;
 const connectorCalls = new Map<string, number>();
 const MAX_CONCURRENT_CONNECTOR_CALLS = 4;
 
-function redactText(value: string, secrets: string[]) {
-  let redacted = value;
-  for (const secret of secrets.filter(Boolean)) {
-    redacted = redacted.split(secret).join("[REDACTED]");
-  }
-  return redacted.replace(
-    /("(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[-_]?key|access[-_]?token|refresh[-_]?token|secret|password)"\s*:\s*")[^"]*/gi,
-    "$1[REDACTED]",
-  );
-}
-
-function sanitizeConnectorValue(
-  value: unknown,
-  secrets: string[],
-  seen = new WeakSet<object>(),
-): unknown {
-  if (typeof value === "string") return redactText(value, secrets);
-  if (!value || typeof value !== "object") return value;
-  if (seen.has(value)) return "[Circular]";
-  seen.add(value);
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeConnectorValue(item, secrets, seen));
-  }
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-      key,
-      SENSITIVE_KEY.test(key)
-        ? "[REDACTED]"
-        : sanitizeConnectorValue(item, secrets, seen),
-    ]),
-  );
-}
-
 function sanitizeJsonResult(value: unknown, secrets: string[] = []) {
-  const safeValue = sanitizeConnectorValue(value, secrets);
+  const safeValue = sanitizeIntegrationValue(value, secrets);
   const serialized = JSON.stringify(safeValue, null, 2) ?? "null";
   if (serialized.length <= 100_000) {
     return serialized;
@@ -132,44 +106,6 @@ function limitItems(value: unknown, maxItems?: number | null) {
   if (!maxItems || maxItems <= 0) return value;
   if (!Array.isArray(value)) return value;
   return value.slice(0, maxItems);
-}
-
-function buildInputSchemaFromJsonSchema(raw: unknown) {
-  if (raw && typeof raw === "object" && "type" in raw) {
-    const schema = raw as Record<string, unknown>;
-    if (schema.type === "object") {
-      const properties = (schema.properties as Record<string, unknown>) ?? {};
-      const required = new Set(
-        Array.isArray(schema.required) ? schema.required.map(String) : [],
-      );
-      const shape: Record<string, z.ZodTypeAny> = {};
-      for (const [key, property] of Object.entries(properties)) {
-        const typed = property as Record<string, unknown>;
-        let valueSchema: z.ZodTypeAny = z.unknown();
-        if (typed.type === "string") {
-          valueSchema = z.string();
-        } else if (typed.type === "number" || typed.type === "integer") {
-          valueSchema = z.number();
-        } else if (typed.type === "boolean") {
-          valueSchema = z.boolean();
-        } else if (typed.type === "array") {
-          valueSchema = z.array(z.unknown());
-        } else if (typed.type === "object") {
-          valueSchema = z.record(z.string(), z.unknown());
-        }
-        if (typeof typed.description === "string") {
-          valueSchema = valueSchema.describe(typed.description);
-        }
-        if (required.has(key)) {
-          shape[key] = valueSchema;
-        } else {
-          shape[key] = valueSchema.optional();
-        }
-      }
-      return shape;
-    }
-  }
-  return {};
 }
 
 function connectorError(code: string, message: string, status?: number) {
@@ -308,7 +244,7 @@ async function executeCustomHttpOperation(
   const bytes = await readLimitedBody(response, maxResponseBytes);
 
   if (!response.ok) {
-    const body = redactText(
+    const body = redactIntegrationText(
       new TextDecoder().decode(bytes).slice(0, 4096),
       secrets,
     );
@@ -342,7 +278,7 @@ async function executeCustomHttpOperation(
     );
   }
 
-  const safeParsed = sanitizeConnectorValue(parsed, secrets);
+  const safeParsed = sanitizeIntegrationValue(parsed, secrets);
   const shaped = applyResponsePath(safeParsed, operation.responsePath);
   if (operation.responsePath && shaped === undefined) {
     throw connectorError(
@@ -651,11 +587,7 @@ export async function handleCustomMcpRequest(
   });
 
   for (const tool of tools) {
-    const fullName = `${record.slug}__${tool.name}`
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(0, 128);
+    const fullName = `${normalizeIntegrationSlug(record.slug)}__${normalizeIntegrationToolKey(tool.name)}`;
     if (!allowed.has(fullName) && !allowed.has(tool.name)) continue;
 
     server.registerTool(
@@ -663,7 +595,7 @@ export async function handleCustomMcpRequest(
       {
         title: tool.name,
         description: readString(tool.description) || `Proxy for ${tool.name}`,
-        inputSchema: buildInputSchemaFromJsonSchema(tool.inputSchema),
+        inputSchema: compileMcpInputSchema(tool.inputSchema),
         annotations: {
           readOnlyHint: tool.readOnlyHint,
           destructiveHint: tool.destructiveHint,
@@ -675,17 +607,21 @@ export async function handleCustomMcpRequest(
             : { openWorldHint: tool.openWorldHint }),
         },
       },
-      async (arguments_: Record<string, unknown>) => {
+      async (arguments_: unknown) => {
+        const toolArguments =
+          arguments_ && typeof arguments_ === "object"
+            ? (arguments_ as Record<string, unknown>)
+            : {};
         const secrets = access.credentials.authSecret
           ? [access.credentials.authSecret]
           : [];
         try {
           const delegated = await withConnectorSlot(record.id, () =>
-            callMcpTool(remoteConnection, tool.name, arguments_ || {}),
+            callMcpTool(remoteConnection, tool.name, toolArguments),
           );
           return toolResult(delegated, secrets);
         } catch (error) {
-          const message = redactText(
+          const message = redactIntegrationText(
             error instanceof Error ? error.message : "Remote MCP tool failed.",
             secrets,
           );

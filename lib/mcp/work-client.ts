@@ -4,6 +4,7 @@ import { callMcpTool, testMcp } from "@/lib/mcp/client";
 import { getSetting } from "@/lib/settings";
 import type { Comment, Issue, Project } from "@/lib/types";
 import { normalizeIssue, remoteStatusUpdate } from "@/lib/work-status";
+import { collectOffsetPages } from "@/lib/pagination";
 
 type RemoteIssue = Omit<Issue, "status"> & {
   status: "new" | "in_progress" | "done";
@@ -17,6 +18,16 @@ type IssueMutationResult = Pick<RemoteIssue, "id" | "key" | "status"> & {
 
 type CommentMutationResult = Omit<Comment, "body">;
 
+const PAGE_SIZE = 100;
+const MAX_ISSUES_PER_PROJECT = 10_000;
+
+type IssuePage = {
+  issues?: RemoteIssue[];
+  data?: RemoteIssue[];
+  total?: number;
+  has_more?: boolean;
+};
+
 function connection() {
   return {
     url: getSetting("work_mcp_url"),
@@ -26,22 +37,31 @@ function connection() {
 
 export const WorkClient = {
   listProjects: () => callMcpTool<Project[]>(connection(), "list_projects"),
-  createProject: (input: {
-    key: string;
-    name: string;
-    description?: string;
-  }) => callMcpTool<Project>(connection(), "create_project", input),
+  createProject: (input: { key: string; name: string; description?: string }) =>
+    callMcpTool<Project>(connection(), "create_project", input),
   listIssues: async (projectKey: string) => {
-    const result = await callMcpTool<
-      { issues?: RemoteIssue[]; data?: RemoteIssue[] } | RemoteIssue[]
-    >(connection(), "list_issues", {
-      project_key: projectKey,
-      limit: 100,
-      offset: 0,
+    const issues = await collectOffsetPages({
+      pageSize: PAGE_SIZE,
+      maxItems: MAX_ISSUES_PER_PROJECT,
+      label: `Work project ${projectKey}`,
+      fetchPage: async (limit, offset) => {
+        const result = await callMcpTool<IssuePage | RemoteIssue[]>(
+          connection(),
+          "list_issues",
+          { project_key: projectKey, limit, offset },
+        );
+        return {
+          items: Array.isArray(result)
+            ? result
+            : (result.issues ?? result.data ?? []),
+          total:
+            !Array.isArray(result) && typeof result.total === "number"
+              ? result.total
+              : null,
+          hasMore: Array.isArray(result) ? undefined : result.has_more,
+        };
+      },
     });
-    const issues = Array.isArray(result)
-      ? result
-      : (result.issues ?? result.data ?? []);
     return issues.map(normalizeIssue);
   },
   getIssue: async (key: string) =>
@@ -89,9 +109,9 @@ export const WorkClient = {
       connection(),
       "add_comment",
       {
-      issue_key: key,
-      author,
-      body,
+        issue_key: key,
+        author,
+        body,
       },
     );
     return { ...comment, body };

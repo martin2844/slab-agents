@@ -1,5 +1,7 @@
 import "server-only";
 
+import { OperationalError } from "@/lib/operational-error";
+
 import {
   EmailAdminClient,
   normalizeEmailServiceUrl,
@@ -174,12 +176,12 @@ export async function deleteEmailAccount(accountId: string) {
       .listAgentEmailAccess()
       .some(({ accountIds }) => accountIds.includes(accountId))
   ) {
-    throw new Error(
+    throw new OperationalError(
       "Remove this account from every agent profile before deleting it.",
     );
   }
   const account = (await client().listAccounts()).find(({ id }) => id === accountId);
-  if (!account) throw new Error("Email account not found.");
+  if (!account) throw new OperationalError("Email account not found.");
   if (account.managed) await client().deleteManagedProtonBridgeAccount(accountId);
   else await client().deleteAccount(accountId);
   return getEmailIntegrationState();
@@ -249,20 +251,20 @@ function validateAccess(input: {
   sendPolicy: EmailSendPolicy;
 }) {
   const agent = repository.getAgent(input.agentId);
-  if (!agent) throw new Error("Agent not found.");
+  if (!agent) throw new OperationalError("Agent not found.");
   if (input.accountIds.length === 0) {
-    throw new Error("Select at least one Email account.");
+    throw new OperationalError("Select at least one Email account.");
   }
   if (!input.readEnabled && !input.draftEnabled && !input.sendEnabled) {
-    throw new Error("Enable at least one Email capability.");
+    throw new OperationalError("Enable at least one Email capability.");
   }
   if (input.sendPolicy === "disabled" && input.sendEnabled) {
-    throw new Error(
+    throw new OperationalError(
       "Send permission must be off when the send policy is disabled.",
     );
   }
   if (input.sendPolicy !== "disabled" && !input.sendEnabled) {
-    throw new Error(
+    throw new OperationalError(
       "Enable send permission or choose the disabled send policy.",
     );
   }
@@ -280,7 +282,7 @@ export async function saveAgentEmailAccess(input: {
   const remoteAccounts = await client().listAccounts();
   const remoteIds = new Set(remoteAccounts.map(({ id }) => id));
   if (input.accountIds.some((id) => !remoteIds.has(id))) {
-    throw new Error("One or more selected Email accounts no longer exist.");
+    throw new OperationalError("One or more selected Email accounts no longer exist.");
   }
   const selectedAccounts = remoteAccounts.filter(({ id }) =>
     input.accountIds.includes(id),
@@ -293,7 +295,7 @@ export async function saveAgentEmailAccess(input: {
     (input.sendEnabled &&
       !selectedAccounts.some(({ capabilities }) => capabilities.send))
   ) {
-    throw new Error(
+    throw new OperationalError(
       "One or more enabled Email permissions are unsupported by the selected accounts.",
     );
   }
@@ -376,7 +378,7 @@ export async function saveAgentEmailAccess(input: {
 
 export async function revokeAgentEmailAccess(agentId: string) {
   const current = repository.getAgentEmailAccess(agentId);
-  if (!current) throw new Error("Agent Email access was not found.");
+  if (!current) throw new OperationalError("Agent Email access was not found.");
   await client().revokeToken(current.profileId, current.tokenId);
   repository.deleteAgentEmailAccess(agentId);
   deleteEmailConnectorToken(current.tokenId);

@@ -338,7 +338,7 @@ function IssueDialog({
         `/api/work/issues/${issueKey}/comments`,
         {
           method: "POST",
-          body: JSON.stringify({ author: "Martin", body: fd.get("body") }),
+          body: JSON.stringify({ body: fd.get("body") }),
         },
       );
       setDetail({ ...detail, comments: [...detail.comments, comment] });
@@ -681,19 +681,33 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
     [testing, setTesting] = useState(false),
     [refreshingProjects, setRefreshingProjects] = useState(false),
     [refreshTick, setRefreshTick] = useState(0),
-    skipInitialIssueLoad = useRef(true);
+    skipInitialIssueLoad = useRef(true),
+    projectKeyRef = useRef(projectKey);
+  useEffect(() => {
+    projectKeyRef.current = projectKey;
+  }, [projectKey]);
   useEffect(() => {
     if (skipInitialIssueLoad.current) {
       skipInitialIssueLoad.current = false;
       return;
     }
     if (!projectKey) return;
+    const controller = new AbortController();
     setLoadingIssues(true);
     setError("");
-    api<Issue[]>(`/api/work/issues?project=${encodeURIComponent(projectKey)}`)
-      .then(setIssues)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoadingIssues(false));
+    api<Issue[]>(`/api/work/issues?project=${encodeURIComponent(projectKey)}`, {
+      signal: controller.signal,
+    })
+      .then((next) => {
+        if (!controller.signal.aborted) setIssues(next);
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(e.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingIssues(false);
+      });
+    return () => controller.abort();
   }, [projectKey, refreshTick]);
   const grouped = useMemo(
     () =>
@@ -706,6 +720,7 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
     [issues],
   );
   async function move(key: string, status: IssueStatus) {
+    const operationProjectKey = projectKey;
     const before = issues ?? [];
     const currentIssue = before.find((issue) => issue.key === key);
     if (!currentIssue) return;
@@ -718,26 +733,32 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
           expected_version: currentIssue.version,
         }),
       });
-      setIssues(
-        (current) => current?.map((i) => (i.key === key ? updated : i)) ?? null,
-      );
+      if (projectKeyRef.current === operationProjectKey) {
+        setIssues(
+          (current) =>
+            current?.map((i) => (i.key === key ? updated : i)) ?? null,
+        );
+      }
     } catch (e) {
+      if (projectKeyRef.current !== operationProjectKey) return;
       if (e instanceof ApiClientError && e.code === "VERSION_CONFLICT") {
         const latest = await api<Detail>(`/api/work/issues/${key}`).catch(
           () => null,
         );
-        setIssues(
-          latest
-            ? before.map((issue) =>
-                issue.key === latest.issue.key ? latest.issue : issue,
-              )
-            : before,
+        setIssues((current) =>
+          current?.map((issue) =>
+            issue.key === key ? (latest?.issue ?? currentIssue) : issue,
+          ) ?? null,
         );
         toast.error(
           "Issue changed before this move. Latest state loaded; please retry.",
         );
       } else {
-        setIssues(before);
+        setIssues((current) =>
+          current?.map((issue) =>
+            issue.key === key ? currentIssue : issue,
+          ) ?? null,
+        );
         toast.error(e instanceof Error ? e.message : "Could not move issue");
       }
     }

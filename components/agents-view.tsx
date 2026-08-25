@@ -16,6 +16,8 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useOperationalPolling } from "@/components/use-operational-polling";
+import { api } from "@/lib/client-api";
 import type {
   Agent,
   AgentEmailAccess,
@@ -76,14 +78,18 @@ export function AgentsView({
   runtimes: RuntimeCatalogItem[];
 }) {
   const [agents, setAgents] = useState<Agent[] | null>(initialAgents);
+  const [runs, setRuns] = useState(initialRuns);
   const [error] = useState("");
+  useOperationalPolling(async () => {
+    setRuns(await api<Run[]>("/api/agents/activity"));
+  });
   const enabled = agents?.filter((agent) => agent.enabled).length ?? 0;
   const running =
     agents?.filter((agent) =>
       ["running", "waiting_approval"].includes(
         agentState(
           agent,
-          initialRuns.filter((run) => run.agentId === agent.id),
+          runs.filter((run) => run.agentId === agent.id),
         ),
       ),
     ).length ?? 0;
@@ -92,7 +98,7 @@ export function AgentsView({
     <>
       <PageHeader
         title="Agents"
-        description={`${enabled} enabled · ${running} active · ${initialRuns.filter((run) => run.status === "queued").length} queued`}
+        description={`${enabled} enabled · ${running} active · ${runs.filter((run) => run.status === "queued").length} queued`}
         actions={
           <AgentCreateDialog
             runtimes={runtimes}
@@ -143,12 +149,12 @@ export function AgentsView({
               </thead>
               <tbody>
                 {agents.map((agent) => {
-                  const runs = initialRuns.filter(
+                  const agentRuns = runs.filter(
                     (run) => run.agentId === agent.id,
                   );
-                  const state = agentState(agent, runs);
-                  const work = currentWork(runs);
-                  const queue = runs.filter(
+                  const state = agentState(agent, agentRuns);
+                  const work = currentWork(agentRuns);
+                  const queue = agentRuns.filter(
                     (run) => run.status === "queued",
                   ).length;
                   const capabilities = capabilityNames(
@@ -248,11 +254,9 @@ export function AgentsView({
 
           <div className="divide-y rounded-lg border bg-card lg:hidden">
             {agents.map((agent) => {
-              const runs = initialRuns.filter(
-                (run) => run.agentId === agent.id,
-              );
-              const state = agentState(agent, runs);
-              const work = currentWork(runs);
+              const agentRuns = runs.filter((run) => run.agentId === agent.id);
+              const state = agentState(agent, agentRuns);
+              const work = currentWork(agentRuns);
               const capabilities = capabilityNames(
                 agent,
                 integrations,

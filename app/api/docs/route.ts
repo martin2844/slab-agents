@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { DocsClient } from "@/lib/mcp/docs-client";
+import { getSetting } from "@/lib/settings";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const schema = z.object({
@@ -8,7 +9,6 @@ const schema = z.object({
   body: z.string().default(""),
   parent_id: z.string().uuid().nullable().optional(),
   tags: z.array(z.string()).default([]),
-  author: z.string().min(1).default("Martin"),
 });
 export async function GET(request: Request) {
   try {
@@ -23,7 +23,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     return Response.json(
-      { data: await DocsClient.create(schema.parse(await request.json())) },
+      {
+        data: await DocsClient.create({
+          ...schema.parse(await request.json()),
+          author: getSetting("operator_display_name"),
+        }),
+      },
       { status: 201 },
     );
   } catch (error) {

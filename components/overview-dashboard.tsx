@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -17,6 +20,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import type { OverviewData, Run } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
+import { api } from "@/lib/client-api";
+import { useOperationalPolling } from "@/components/use-operational-polling";
 
 function runLabel(run: Run) {
   if (run.issueKey) return run.issueKey;
@@ -37,7 +42,15 @@ function elapsed(run: Run) {
   return `since ${formatDateTime(run.startedAt)}`;
 }
 
-export function OverviewDashboard({ data }: { data: OverviewData }) {
+export function OverviewDashboard({
+  data: initialData,
+}: {
+  data: OverviewData;
+}) {
+  const [data, setData] = useState(initialData);
+  useOperationalPolling(async () => {
+    setData(await api<OverviewData>("/api/overview"));
+  }, 5_000);
   const agentName = (id: string) =>
     data.agentsList.find((agent) => agent.id === id)?.name ?? id.slice(0, 8);
   const attentionTotal =

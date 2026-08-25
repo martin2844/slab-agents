@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const calendarInputSchema = z.object({
   id: z.string().uuid().optional(),
+  expectedVersion: z.number().int().positive().optional(),
   provider: z.enum([
     "calendar_google",
     "calendar_microsoft",

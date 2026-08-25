@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { register } from "node:module";
 import test from "node:test";
 
-import { buildCustomHttpIntegrationDraft } from "../lib/integrations/http-manifest.ts";
+register("./test-alias-loader.mjs", import.meta.url);
+const { buildCustomHttpIntegrationDraft } = await import(
+  "../lib/integrations/http-manifest.ts"
+);
 
 const metricsDocumentation = `# Agent metrics API
 

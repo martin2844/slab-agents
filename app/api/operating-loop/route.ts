@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError } from "@/lib/api";
+import { apiError, conflict, notFound } from "@/lib/api";
 import { repository } from "@/lib/repository";
 import { getRuntimeConfig, runtimeIds } from "@/lib/runtime-config";
 import { listRuntimeCatalog } from "@/lib/runtime-service";
@@ -45,8 +45,9 @@ export async function POST(request: Request) {
     const agent = input.agentId
       ? repository.getAgent(input.agentId)
       : await ensureCoo();
-    if (!agent) throw new Error("Agent not found");
-    if (!agent.enabled) throw new Error("This agent is disabled.");
+    if (!agent) throw notFound("Agent not found");
+    if (!agent.enabled)
+      throw conflict("This agent is disabled.", "AGENT_DISABLED");
 
     const thread = repository.createThread(agent.id, input.title);
     const run = createRunExecution({

@@ -1,4 +1,4 @@
-import { apiError } from "@/lib/api";
+import { apiError, notFound } from "@/lib/api";
 import { isRuntimeId } from "@/lib/runtime-config";
 import { testRuntime } from "@/lib/runtime-service";
 
@@ -11,7 +11,7 @@ export async function POST(
   try {
     const { id } = await context.params;
     if (!isRuntimeId(id)) {
-      return Response.json({ error: "Runtime not found" }, { status: 404 });
+      throw notFound("Runtime not found");
     }
     return Response.json({ data: await testRuntime(id) });
   } catch (error) {

@@ -1,12 +1,12 @@
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { DocsClient } from "@/lib/mcp/docs-client";
+import { getSetting } from "@/lib/settings";
 const schema = z.object({
   title: z.string().min(1).optional(),
   body: z.string().optional(),
   parent_id: z.string().uuid().nullable().optional(),
   tags: z.array(z.string()).optional(),
-  author: z.string().min(1).optional(),
 });
 export async function GET(
   _request: Request,
@@ -30,7 +30,10 @@ export async function PATCH(
   try {
     const { id } = await ctx.params;
     return Response.json({
-      data: await DocsClient.update(id, schema.parse(await request.json())),
+      data: await DocsClient.update(id, {
+        ...schema.parse(await request.json()),
+        author: getSetting("operator_display_name"),
+      }),
     });
   } catch (error) {
     return apiError(error);

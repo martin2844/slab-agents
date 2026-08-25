@@ -3,6 +3,7 @@ import "server-only";
 import { DocsClient } from "@/lib/mcp/docs-client";
 import { WorkClient } from "@/lib/mcp/work-client";
 import { repository } from "@/lib/repository";
+import { approvalStore } from "@/lib/repositories/approval-store";
 import { getPublicSettings } from "@/lib/settings";
 import { INTEGRATION_CATALOG } from "@/lib/integrations/catalog";
 import { externalServiceUrl, getSetupStatus } from "@/lib/setup";
@@ -24,53 +25,79 @@ import {
   getOperatorPackSummaries,
   operatorPackMetrics,
 } from "@/lib/packs/service";
+import { mapWithConcurrency } from "@/lib/async";
 
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Request failed";
+
+type WorkOverview = OverviewData["work"];
+const OVERVIEW_WORK_TTL_MS = 15_000;
+let workOverviewCache:
+  | { expiresAt: number; value: WorkOverview }
+  | undefined;
+let workOverviewInFlight: Promise<WorkOverview> | undefined;
+
+async function loadWorkOverview(): Promise<WorkOverview> {
+  if (workOverviewCache && workOverviewCache.expiresAt > Date.now()) {
+    return workOverviewCache.value;
+  }
+  if (workOverviewInFlight) return workOverviewInFlight;
+  workOverviewInFlight = (async () => {
+    try {
+      const projects = await WorkClient.listProjects();
+      const issues = (
+        await mapWithConcurrency(projects, 4, (project) =>
+          WorkClient.listIssues(project.key),
+        )
+      ).flat();
+      const relationshipBlocked = await WorkClient.getBlockedIssues();
+      const blockedKeys = new Set([
+        ...relationshipBlocked.map((issue) => issue.key),
+        ...issues
+          .filter((issue) => issue.status === "blocked")
+          .map((issue) => issue.key),
+      ]);
+      return {
+        open: issues.filter((issue) => issue.status !== "done").length,
+        inProgress: issues.filter(
+          (issue) => issue.status === "in_progress" || issue.status === "review",
+        ).length,
+        blocked: blockedKeys.size,
+        review: issues.filter((issue) => issue.status === "review").length,
+        connected: true,
+      };
+    } catch {
+      return {
+        open: 0,
+        inProgress: 0,
+        blocked: 0,
+        review: 0,
+        connected: false,
+      };
+    }
+  })();
+  try {
+    const value = await workOverviewInFlight;
+    workOverviewCache = {
+      value,
+      expiresAt: Date.now() + OVERVIEW_WORK_TTL_MS,
+    };
+    return value;
+  } finally {
+    workOverviewInFlight = undefined;
+  }
+}
 
 export async function getOverviewPageData(): Promise<OverviewData> {
   const agents = repository.listAgents(),
     runs = repository.listRuns(),
     automations = repository.listAutomations(),
     integrations = repository.listIntegrations(),
-    approvals = repository.listApprovals("pending"),
+    approvals = approvalStore.list("pending"),
     runningAgentIds = new Set(
       runs.filter((run) => run.status === "running").map((run) => run.agentId),
     );
-  let work = {
-    open: 0,
-    inProgress: 0,
-    blocked: 0,
-    review: 0,
-    connected: true,
-  };
-
-  try {
-    const projects = await WorkClient.listProjects();
-    const issues = (
-      await Promise.all(
-        projects.map((project) => WorkClient.listIssues(project.key)),
-      )
-    ).flat();
-    const relationshipBlocked = await WorkClient.getBlockedIssues();
-    const blockedKeys = new Set([
-      ...relationshipBlocked.map((issue) => issue.key),
-      ...issues
-        .filter((issue) => issue.status === "blocked")
-        .map((issue) => issue.key),
-    ]);
-    work = {
-      open: issues.filter((issue) => issue.status !== "done").length,
-      inProgress: issues.filter(
-        (issue) => issue.status === "in_progress" || issue.status === "review",
-      ).length,
-      blocked: blockedKeys.size,
-      review: issues.filter((issue) => issue.status === "review").length,
-      connected: true,
-    };
-  } catch {
-    work.connected = false;
-  }
+  const work = await loadWorkOverview();
 
   return {
     agents: {
@@ -141,10 +168,23 @@ export function getThreadPageData(id: string): ThreadData | null {
 }
 
 export function getRunsPageData(): RunsData {
+  const approvals = [
+    ...approvalStore.list("pending"),
+    ...approvalStore.listRecent(),
+  ];
   return {
     runs: repository.listRuns(),
-    approvals: repository.listApprovals(),
+    approvals: [
+      ...new Map(approvals.map((approval) => [approval.id, approval])).values(),
+    ],
     agents: repository.listAgents(),
+  };
+}
+
+export function getRunsActivityData(): Partial<RunsData> {
+  return {
+    runs: repository.listRuns(20),
+    approvals: approvalStore.list("pending"),
   };
 }
 
@@ -155,9 +195,7 @@ export function getRunDetailPageData(id: string): RunDetailData | null {
   return {
     run,
     events,
-    approvals: repository
-      .listApprovals()
-      .filter((approval) => approval.runId === id),
+    approvals: approvalStore.listForRun(id),
     contextProfile: buildRunContextProfile(run, events),
     budget: getRunBudget(id),
   };

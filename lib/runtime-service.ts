@@ -1,5 +1,7 @@
 import "server-only";
 
+import { OperationalError } from "@/lib/operational-error";
+
 import { decryptLocalSecret } from "@/lib/secrets";
 import {
   getRuntimeConfig,
@@ -75,7 +77,7 @@ async function readJsonLimited(
       bytes += next.value.byteLength;
       if (bytes > maxBytes) {
         await reader.cancel();
-        throw new Error("Runtime model discovery response is too large.");
+        throw new OperationalError("Runtime model discovery response is too large.");
       }
       chunks.push(next.value);
     }
@@ -205,7 +207,7 @@ export async function testRuntime(
         throw new RuntimeConfigurationChangedError();
     } else if (runtimeId === "claude") {
       if (!config.credentialCiphertext) {
-        throw new Error("Configure an Anthropic API key first.");
+        throw new OperationalError("Configure an Anthropic API key first.");
       }
       const response = await fetcher(
         "https://api.anthropic.com/v1/models?limit=100",
@@ -220,7 +222,7 @@ export async function testRuntime(
         },
       );
       if (!response.ok) {
-        throw new Error(
+        throw new OperationalError(
           response.status === 401 || response.status === 403
             ? "Anthropic rejected the configured API key."
             : `Anthropic model discovery returned ${response.status}.`,
@@ -250,7 +252,7 @@ export async function testRuntime(
         throw new RuntimeConfigurationChangedError();
     } else {
       if (!config.credentialCiphertext || !config.baseUrl) {
-        throw new Error("Configure a Direct API endpoint and API key first.");
+        throw new OperationalError("Configure a Direct API endpoint and API key first.");
       }
       const response = await fetcher(
         `${config.baseUrl.replace(/\/$/, "")}/models`,
@@ -265,10 +267,10 @@ export async function testRuntime(
         },
       );
       if (response.status >= 300 && response.status < 400) {
-        throw new Error("Direct API model discovery refused a redirect.");
+        throw new OperationalError("Direct API model discovery refused a redirect.");
       }
       if (!response.ok) {
-        throw new Error(
+        throw new OperationalError(
           response.status === 401 || response.status === 403
             ? "The provider rejected the configured API key."
             : `Direct API model discovery returned ${response.status}.`,
@@ -282,7 +284,7 @@ export async function testRuntime(
         .filter((id) => id.length > 0 && id.length <= 200)
         .slice(0, 200);
       if (discovered.length === 0) {
-        throw new Error("Direct API did not report any usable models.");
+        throw new OperationalError("Direct API did not report any usable models.");
       }
       const models = [...new Set(discovered)];
       if (

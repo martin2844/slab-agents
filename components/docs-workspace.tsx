@@ -89,7 +89,6 @@ function CreateDocument({
             .split(",")
             .map((v) => v.trim())
             .filter(Boolean),
-          author: "Martin",
         }),
       });
       onCreated(doc);
@@ -226,7 +225,11 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
     ),
     [searching, setSearching] = useState(false),
     [testing, setTesting] = useState(false),
-    skipInitialDetailLoad = useRef(true);
+    skipInitialDetailLoad = useRef(true),
+    selectedRef = useRef(selected);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
   useEffect(() => {
     if (skipInitialDetailLoad.current) {
       skipInitialDetailLoad.current = false;
@@ -236,14 +239,19 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
       setDetail(null);
       return;
     }
-    api<Detail>(`/api/docs/${selected}`)
+    const controller = new AbortController();
+    api<Detail>(`/api/docs/${selected}`, { signal: controller.signal })
       .then((data) => {
+        if (controller.signal.aborted) return;
         setDetail(data);
         setBody(data.document.body);
         setTitle(data.document.title);
         setRevision(null);
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(e.message);
+      });
+    return () => controller.abort();
   }, [selected]);
   useEffect(() => {
     const q = query.trim();
@@ -253,28 +261,47 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
       return;
     }
     setSearching(true);
+    const controller = new AbortController();
     const timeout = window.setTimeout(() => {
-      api<DocumentSearchResult[]>(`/api/docs?q=${encodeURIComponent(q)}`)
-        .then(setSearchResults)
-        .catch((e) => setError(e.message))
-        .finally(() => setSearching(false));
+      api<DocumentSearchResult[]>(`/api/docs?q=${encodeURIComponent(q)}`, {
+        signal: controller.signal,
+      })
+        .then((results) => {
+          if (!controller.signal.aborted) setSearchResults(results);
+        })
+        .catch((e) => {
+          if (!controller.signal.aborted) setError(e.message);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearching(false);
+        });
     }, 250);
-    return () => window.clearTimeout(timeout);
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
   }, [query]);
   const visibleDocuments = searchResults ?? documents ?? [];
   async function save() {
     if (!detail) return;
+    const documentId = detail.document.id;
     try {
-      const updated = await api<Document>(`/api/docs/${detail.document.id}`, {
+      const updated = await api<Document>(`/api/docs/${documentId}`, {
         method: "PATCH",
-        body: JSON.stringify({ title, body, author: "Martin" }),
+        body: JSON.stringify({ title, body }),
       });
       setDocuments(
         (items) =>
           items?.map((d) => (d.id === updated.id ? updated : d)) ?? null,
       );
-      setDetail({ ...detail, document: updated });
-      setEditing(false);
+      if (selectedRef.current === documentId) {
+        setDetail((current) =>
+          current?.document.id === documentId
+            ? { ...current, document: updated }
+            : current,
+        );
+        setEditing(false);
+      }
       toast.success("Document saved");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Save failed");
@@ -282,13 +309,16 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
   }
   async function archive() {
     if (!detail) return;
+    const documentId = detail.document.id;
     try {
-      await api(`/api/docs/${detail.document.id}`, { method: "DELETE" });
-      const remaining = (documents ?? []).filter(
-        (d) => d.id !== detail.document.id,
+      await api(`/api/docs/${documentId}`, { method: "DELETE" });
+      const remaining = (documents ?? []).filter((d) => d.id !== documentId);
+      setDocuments((current) =>
+        (current ?? []).filter((d) => d.id !== documentId),
       );
-      setDocuments(remaining);
-      setSelected(remaining[0]?.id ?? null);
+      setSelected((current) =>
+        current === documentId ? (remaining[0]?.id ?? null) : current,
+      );
       toast.success("Document archived");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Archive failed");
@@ -296,16 +326,16 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
   }
   async function showRevision(value: string) {
     if (!detail) return;
+    const documentId = detail.document.id;
     if (value === "current") {
       setRevision(null);
       return;
     }
     try {
-      setRevision(
-        await api<DocumentRevision>(
-          `/api/docs/${detail.document.id}/revisions/${value}`,
-        ),
+      const loaded = await api<DocumentRevision>(
+        `/api/docs/${documentId}/revisions/${value}`,
       );
+      if (selectedRef.current === documentId) setRevision(loaded);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not load revision");
     }

@@ -310,6 +310,8 @@ export type WorkspaceSettings = {
   docsMcpUrl: string;
   docsApiKeyConfigured: boolean;
   runnerUrl: string;
+  operatorDisplayName: string;
+  coordinationReviewer: string;
 };
 
 export type RuntimeCatalogItem = {

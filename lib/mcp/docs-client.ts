@@ -9,6 +9,7 @@ import type {
   DocumentSearchResult,
   DocumentSummary,
 } from "@/lib/types";
+import { collectOffsetPages } from "@/lib/pagination";
 
 function connection() {
   return {
@@ -22,24 +23,55 @@ function unwrap<T>(value: { data?: T } | T): T {
     : (value as T);
 }
 
+const PAGE_SIZE = 100;
+const MAX_DOCUMENTS = 10_000;
+
+type DocumentPage = {
+  data?: DocumentSummary[];
+  documents?: DocumentSummary[];
+  total?: number;
+  has_more?: boolean;
+};
+
 export const DocsClient = {
-  list: async (input: Record<string, unknown> = {}) =>
-    unwrap(
-      await callMcpTool<{ data: DocumentSummary[] } | DocumentSummary[]>(
-        connection(),
-        "list_docs",
-        { archived: false, limit: 100, offset: 0, ...input },
-      ),
-    ),
+  list: async (input: Record<string, unknown> = {}) => {
+    if (input.limit !== undefined || input.offset !== undefined) {
+      return unwrap(
+        await callMcpTool<{ data: DocumentSummary[] } | DocumentSummary[]>(
+          connection(),
+          "list_docs",
+          { archived: false, ...input },
+        ),
+      );
+    }
+    return collectOffsetPages({
+      pageSize: PAGE_SIZE,
+      maxItems: MAX_DOCUMENTS,
+      label: "Docs",
+      fetchPage: async (limit, offset) => {
+        const result = await callMcpTool<DocumentPage | DocumentSummary[]>(
+          connection(),
+          "list_docs",
+          { archived: false, ...input, limit, offset },
+        );
+        return {
+          items: Array.isArray(result)
+            ? result
+            : (result.documents ?? result.data ?? []),
+          total:
+            !Array.isArray(result) && typeof result.total === "number"
+              ? result.total
+              : null,
+          hasMore: Array.isArray(result) ? undefined : result.has_more,
+        };
+      },
+    });
+  },
   search: async (q: string) =>
     unwrap(
       await callMcpTool<
         { data: DocumentSearchResult[] } | DocumentSearchResult[]
-      >(
-        connection(),
-        "search_docs",
-        { query: q, limit: 50 },
-      ),
+      >(connection(), "search_docs", { query: q, limit: 50 }),
     ),
   get: async (id: string) =>
     unwrap(
@@ -53,11 +85,7 @@ export const DocsClient = {
     const created = unwrap(
       await callMcpTool<
         { data: DocumentMutationResult } | DocumentMutationResult
-      >(
-        connection(),
-        "create_doc",
-        input,
-      ),
+      >(connection(), "create_doc", input),
     );
     return DocsClient.get(created.id);
   },
@@ -65,11 +93,7 @@ export const DocsClient = {
     const updated = unwrap(
       await callMcpTool<
         { data: DocumentMutationResult } | DocumentMutationResult
-      >(
-        connection(),
-        "update_doc",
-        { id, ...input },
-      ),
+      >(connection(), "update_doc", { id, ...input }),
     );
     return DocsClient.get(updated.id);
   },
@@ -77,11 +101,7 @@ export const DocsClient = {
     unwrap(
       await callMcpTool<
         { data: DocumentMutationResult } | DocumentMutationResult
-      >(
-        connection(),
-        "archive_doc",
-        { id },
-      ),
+      >(connection(), "archive_doc", { id }),
     ),
   revisions: async (id: string) =>
     unwrap(

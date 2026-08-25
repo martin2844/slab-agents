@@ -1,4 +1,4 @@
-import { apiError } from "@/lib/api";
+import { apiError, conflict, notFound } from "@/lib/api";
 import {
   retestCustomHttpIntegration,
   retestCustomMcpIntegration,
@@ -17,7 +17,7 @@ export async function POST(
     const { id } = await params;
     const integration = repository.getIntegrationRecord(id);
     if (!integration) {
-      return Response.json({ error: "Integration not found." }, { status: 404 });
+      throw notFound("Integration not found.");
     }
 
     if (integration.provider === "posthog") {
@@ -29,7 +29,7 @@ export async function POST(
     if (integration.provider === "custom_mcp") {
       return Response.json({ data: await retestCustomMcpIntegration(id) });
     }
-    throw new Error("Integration type mismatch.");
+    throw conflict("Integration type does not support testing.");
   } catch (error) {
     return apiError(error);
   }

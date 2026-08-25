@@ -1,10 +1,11 @@
-import { apiError } from "@/lib/api";
+import { apiError, notFound } from "@/lib/api";
 import {
   deleteCalendarIntegration,
   saveCalendarIntegration,
 } from "@/lib/integrations/calendar-service";
 import { calendarInputSchema } from "@/lib/integrations/calendar-schema";
 import { repository } from "@/lib/repository";
+import { z } from "zod";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,10 +18,7 @@ export async function PATCH(
     const { id } = await params;
     const current = repository.getIntegration(id);
     if (!current) {
-      return Response.json(
-        { error: "Calendar integration not found." },
-        { status: 404 },
-      );
+      throw notFound("Calendar integration not found.");
     }
     const body = await request.json();
     const input = calendarInputSchema.parse({
@@ -36,16 +34,20 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    if (!deleteCalendarIntegration(id)) {
-      return Response.json(
-        { error: "Calendar integration not found." },
-        { status: 404 },
-      );
+    const [{ id }, input] = await Promise.all([
+      params,
+      request
+        .json()
+        .then((body) =>
+          z.object({ expectedVersion: z.number().int().positive() }).parse(body),
+        ),
+    ]);
+    if (!deleteCalendarIntegration(id, input.expectedVersion)) {
+      throw notFound("Calendar integration not found.");
     }
     return Response.json({ data: { deleted: true } });
   } catch (error) {

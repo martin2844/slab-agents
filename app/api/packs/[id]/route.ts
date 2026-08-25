@@ -1,4 +1,4 @@
-import { apiError } from "@/lib/api";
+import { apiError, notFound } from "@/lib/api";
 import {
   previewOperatorPack,
   removeLocalOperatorPackDefinition,
@@ -26,10 +26,7 @@ export async function DELETE(
   try {
     const { id } = await ctx.params;
     if (!(await removeLocalOperatorPackDefinition(id))) {
-      return Response.json(
-        { error: "Operator Pack not found." },
-        { status: 404 },
-      );
+      throw notFound("Operator Pack not found.");
     }
     return new Response(null, { status: 204 });
   } catch (error) {

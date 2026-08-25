@@ -15,10 +15,21 @@ export async function PATCH(
       params,
       request
         .json()
-        .then((body) => z.object({ enabled: z.boolean() }).parse(body)),
+        .then((body) =>
+          z
+            .object({
+              enabled: z.boolean(),
+              expectedVersion: z.number().int().positive(),
+            })
+            .parse(body),
+        ),
     ]);
     return Response.json({
-      data: setCalendarIntegrationEnabled(id, input.enabled),
+      data: setCalendarIntegrationEnabled(
+        id,
+        input.enabled,
+        input.expectedVersion,
+      ),
     });
   } catch (error) {
     return apiError(error);

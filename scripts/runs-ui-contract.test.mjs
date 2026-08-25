@@ -4,14 +4,15 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("Runs refresh keeps the complete page-data contract", async () => {
+test("Runs refresh uses the bounded activity contract without losing stable data", async () => {
   const [route, view] = await Promise.all([
     read("app/api/runs/route.ts"),
     read("components/runs-view.tsx"),
   ]);
 
-  assert.match(route, /data: getRunsPageData\(\)/);
-  assert.match(view, /api<Partial<RunsData>>\("\/api\/runs"\)/);
+  assert.match(route, /activity \? getRunsActivityData\(\) : getRunsPageData\(\)/);
+  assert.match(view, /api<Partial<RunsData>>\("\/api\/runs\?activity=1"\)/);
+  assert.match(view, /previous\.runs\.filter/);
   assert.match(view, /agents: next\.agents \?\? previous\.agents/);
   assert.match(view, /const runs = data\?\.runs \?\? \[\]/);
   assert.match(view, /const approvals = data\?\.approvals \?\? \[\]/);
@@ -50,4 +51,6 @@ test("Background chat polling observes terminal run state before reloading messa
     chat,
     /Promise\.all\(\[\s*api<ThreadData>[\s\S]*api<RunDetailData>/,
   );
+  assert.match(chat, /throw await apiClientError\(response\)/);
+  assert.doesNotMatch(chat, /new Error\(body\.error/);
 });

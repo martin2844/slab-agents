@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError } from "@/lib/api";
+import { apiError, notFound } from "@/lib/api";
 import { repository } from "@/lib/repository";
 
 export const runtime = "nodejs";
@@ -15,8 +15,7 @@ export async function GET(
 ) {
   const { id } = await ctx.params;
   const agent = repository.getAgent(id);
-  if (!agent)
-    return Response.json({ error: "Agent not found" }, { status: 404 });
+  if (!agent) return apiError(notFound("Agent not found"));
   return Response.json({ data: repository.listAgentQuickActions(agent.id) });
 }
 
@@ -27,7 +26,7 @@ export async function POST(
   try {
     const { id } = await ctx.params;
     const agent = repository.getAgent(id);
-    if (!agent) throw new Error("Agent not found");
+    if (!agent) throw notFound("Agent not found");
     const input = schema.parse(await request.json());
     return Response.json(
       { data: repository.createAgentQuickAction(agent.id, input) },

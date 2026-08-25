@@ -117,6 +117,8 @@ export function SettingsView({
         docsMcpUrl: settings.docsMcpUrl,
         docsApiKey: docsKey || undefined,
         runnerUrl: settings.runnerUrl,
+        operatorDisplayName: settings.operatorDisplayName,
+        coordinationReviewer: settings.coordinationReviewer,
       }),
     });
     setSettings(updated);
@@ -216,6 +218,33 @@ export function SettingsView({
         </TabsList>
 
         <TabsContent value="sources" className="space-y-4">
+          <section className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 sm:p-5">
+            <label className="grid gap-1.5 text-xs font-semibold">
+              Operator display name
+              <Input
+                value={settings.operatorDisplayName}
+                onChange={(event) =>
+                  setSettings({
+                    ...settings,
+                    operatorDisplayName: event.target.value,
+                  })
+                }
+              />
+            </label>
+            <label className="grid gap-1.5 text-xs font-semibold">
+              Coordination reviewer
+              <Input
+                value={settings.coordinationReviewer}
+                onChange={(event) =>
+                  setSettings({
+                    ...settings,
+                    coordinationReviewer: event.target.value,
+                  })
+                }
+                placeholder="Agent slug, name, or ID"
+              />
+            </label>
+          </section>
           <ConnectionPanel
             title="Work · Slab"
             description="Operational work via remote MCP"

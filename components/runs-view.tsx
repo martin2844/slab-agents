@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -24,6 +24,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { api } from "@/lib/client-api";
 import type { Approval, Run, RunsData } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
+import { useOperationalPolling } from "@/components/use-operational-polling";
 
 function duration(run: Run) {
   if (!run.startedAt) return "—";
@@ -40,19 +41,35 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
   const [data, setData] = useState<RunsData | null>(initialData);
   const [error, setError] = useState("");
   const [resolvingId, setResolvingId] = useState<string | null>(null);
-  const load = () =>
-    api<Partial<RunsData>>("/api/runs")
-      .then((next) =>
-        setData((current) => {
-          const previous = current ?? initialData;
-          return {
-            runs: next.runs ?? previous.runs,
-            approvals: next.approvals ?? previous.approvals,
-            agents: next.agents ?? previous.agents,
-          };
-        }),
-      )
-      .catch((cause) => setError(cause.message));
+  const loadGeneration = useRef(0);
+  const load = async () => {
+    const generation = ++loadGeneration.current;
+    try {
+      const next = await api<Partial<RunsData>>("/api/runs?activity=1");
+      if (generation !== loadGeneration.current) return;
+      setData((current) => {
+        const previous = current ?? initialData;
+        return {
+          runs: next.runs
+            ? [
+                ...next.runs,
+                ...previous.runs.filter(
+                  (run) => !next.runs?.some((fresh) => fresh.id === run.id),
+                ),
+              ].slice(0, 100)
+            : previous.runs,
+          approvals: next.approvals ?? previous.approvals,
+          agents: next.agents ?? previous.agents,
+        };
+      });
+      setError("");
+    } catch (cause) {
+      if (generation === loadGeneration.current) {
+        setError(cause instanceof Error ? cause.message : "Could not load runs");
+      }
+    }
+  };
+  useOperationalPolling(load);
 
   async function decide(id: string, decision: "approve" | "deny") {
     if (resolvingId) return;

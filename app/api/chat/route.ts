@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { repository } from "@/lib/repository";
 import { createRunExecution, executeRun } from "@/lib/run-service";
-import { apiError } from "@/lib/api";
+import { apiError, conflict, notFound } from "@/lib/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,10 +13,11 @@ export async function POST(request: Request) {
   try {
     const { threadId, message } = schema.parse(await request.json());
     const thread = repository.getThread(threadId);
-    if (!thread) throw new Error("Thread not found");
+    if (!thread) throw notFound("Thread not found");
     const agent = repository.getAgent(thread.agentId);
-    if (!agent) throw new Error("Agent not found");
-    if (!agent.enabled) throw new Error("This agent is disabled.");
+    if (!agent) throw notFound("Agent not found");
+    if (!agent.enabled)
+      throw conflict("This agent is disabled.", "AGENT_DISABLED");
     const run = createRunExecution({
       agentId: agent.id,
       threadId,

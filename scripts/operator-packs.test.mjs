@@ -345,6 +345,7 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     import { DocsClient } from "./lib/mcp/docs-client.ts";
     import { WorkClient } from "./lib/mcp/work-client.ts";
     import { repository } from "./lib/repository.ts";
+    import { settingsStore } from "./lib/repositories/settings-store.ts";
     import {
       capabilityStates,
       disableOperatorPack,
@@ -530,9 +531,9 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     });
     assert.equal(capabilityStates(scoped).find((item) => item.category === "product_analytics").available, true);
 
-    repository.setSetting("docs_mcp_url", "http://docs.test/mcp");
-    repository.setSetting("docs_api_key", "test-key");
-    repository.setSetting("setup_status_docs", JSON.stringify({
+    settingsStore.set("docs_mcp_url", "http://docs.test/mcp");
+    settingsStore.set("docs_api_key", "test-key");
+    settingsStore.set("setup_status_docs", JSON.stringify({
       state: "connected",
       detail: "Connected for test.",
       checkedAt: new Date().toISOString(),
@@ -693,9 +694,9 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
       "A concurrent user edit made after the install preview.",
     );
 
-    repository.setSetting("work_mcp_url", "http://work.test/mcp");
-    repository.setSetting("work_api_key", "test-key");
-    repository.setSetting("setup_status_work", JSON.stringify({
+    settingsStore.set("work_mcp_url", "http://work.test/mcp");
+    settingsStore.set("work_api_key", "test-key");
+    settingsStore.set("setup_status_work", JSON.stringify({
       state: "connected",
       detail: "Connected for test.",
       checkedAt: new Date().toISOString(),

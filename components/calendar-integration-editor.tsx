@@ -201,6 +201,7 @@ export function CalendarIntegrationEditor({
             writePolicy: form.writePolicy,
             enabled: form.enabled,
             agentIds: form.agentIds,
+            ...(current ? { expectedVersion: current.version } : {}),
           }),
         },
       );
@@ -277,7 +278,10 @@ export function CalendarIntegrationEditor({
           `/api/integrations/calendar/${integration.id}/status`,
           {
             method: "PATCH",
-            body: JSON.stringify({ enabled: !integration.enabled }),
+            body: JSON.stringify({
+              enabled: !integration.enabled,
+              expectedVersion: integration.version,
+            }),
           },
         ),
       );
@@ -298,7 +302,10 @@ export function CalendarIntegrationEditor({
     try {
       await api<{ deleted: boolean }>(
         `/api/integrations/calendar/${deleteTarget.id}`,
-        { method: "DELETE" },
+        {
+          method: "DELETE",
+          body: JSON.stringify({ expectedVersion: deleteTarget.version }),
+        },
       );
       onUpdated(integrations.filter(({ id }) => id !== deleteTarget.id));
       if (form?.id === deleteTarget.id) setForm(null);

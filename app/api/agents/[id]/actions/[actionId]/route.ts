@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError } from "@/lib/api";
+import { apiError, notFound } from "@/lib/api";
 import { repository } from "@/lib/repository";
 
 export const runtime = "nodejs";
@@ -13,7 +13,7 @@ async function ownedAction(agentId: string, actionId: string) {
   const agent = repository.getAgent(agentId);
   const action = repository.getAgentQuickAction(actionId);
   if (!agent || !action || action.agentId !== agent.id) {
-    throw new Error("Quick task not found");
+    throw notFound("Quick task not found");
   }
   return action;
 }

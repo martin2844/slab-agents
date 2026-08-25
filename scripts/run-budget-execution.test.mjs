@@ -30,11 +30,13 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
     budget,
     { createRunExecution, executeRun },
     { startRunnerRun },
+    { settingsStore },
   ] = await Promise.all([
     import("../lib/repository.ts"),
     import("../lib/budget-control.ts"),
     import("../lib/run-service.ts"),
     import("../lib/runner.ts"),
+    import("../lib/repositories/settings-store.ts"),
   ]);
   const agent = repository.createAgent({
     name: "Execution Budget Agent",
@@ -237,7 +239,7 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
   assert.equal(repository.getRun(retryRun.id)?.status, "cancelled");
   assert.equal(budget.getRunBudget(retryRun.id)?.terminalStatus, "cancelled");
 
-  repository.setSetting("runner_url", "http://runner.test");
+  settingsStore.set("runner_url", "http://runner.test");
   const compatibilityCalls = [];
   const oldRunnerFetcher = async (url) => {
     compatibilityCalls.push(String(url));
@@ -404,8 +406,8 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
   assert.equal(repository.getRun(catalogFailureRun.id)?.status, "failed");
   assert.equal(budget.getRunBudget(catalogFailureRun.id)?.actualCostUsd, 0);
   assert.deepEqual(catalogFailureCalls, [
-    `${repository.getSetting("runner_url")}/runs/${catalogFailureRun.id}/attach`,
-    `${repository.getSetting("runner_url")}/runtimes`,
+    `${settingsStore.get("runner_url")}/runs/${catalogFailureRun.id}/attach`,
+    `${settingsStore.get("runner_url")}/runtimes`,
   ]);
 
   const afterCatalogFailure = createRunExecution({

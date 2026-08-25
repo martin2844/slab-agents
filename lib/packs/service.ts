@@ -1,5 +1,7 @@
 import "server-only";
 
+import { OperationalError } from "@/lib/operational-error";
+
 import { CronExpressionParser } from "cron-parser";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -246,7 +248,7 @@ function assertPreviewStillCurrent(
   current?: Record<string, unknown>,
 ) {
   if (samePackSnapshot(change.current, current)) return;
-  throw new Error(
+  throw new OperationalError(
     `${change.label} changed after preview. Review the latest values and try again.`,
   );
 }
@@ -258,7 +260,7 @@ function assertManifestRuntimeCompatibility(manifest: OperatorPackManifest) {
       manifest.compatibility.minimumSlabVersion,
     ) < 0
   ) {
-    throw new Error(
+    throw new OperationalError(
       `${manifest.name} requires Slab ${manifest.compatibility.minimumSlabVersion} or newer.`,
     );
   }
@@ -279,7 +281,7 @@ function resolvePackAgent(
   if (tracked) {
     const slugOwner = repository.getAgent(template.slug);
     if (slugOwner && slugOwner.id !== tracked.id) {
-      throw new Error(
+      throw new OperationalError(
         `Agent slug ${template.slug} is already used by another Agent.`,
       );
     }
@@ -300,7 +302,7 @@ function resolvePackQuickAction(
   if (tracked) {
     const labelOwner = repository.getAgentQuickActionByLabel(agent.id, label);
     if (labelOwner && labelOwner.id !== tracked.id) {
-      throw new Error(
+      throw new OperationalError(
         `Quick action label ${label} is already used by another action on ${agent.name}.`,
       );
     }
@@ -381,7 +383,7 @@ export async function previewOperatorPack(
   packId: string,
 ): Promise<OperatorPackPreview> {
   const entry = getOperatorPackCatalogEntry(packId);
-  if (!entry) throw new Error("Operator Pack not found.");
+  if (!entry) throw new OperationalError("Operator Pack not found.");
   const { manifest, source } = entry;
   assertManifestRuntimeCompatibility(manifest);
   const installation = repository.getOperatorPackInstallation(packId);
@@ -899,7 +901,7 @@ export async function installOperatorPack(
         manifest: preview.pack,
         lastError: message,
       });
-      throw new Error(
+      throw new OperationalError(
         `Local resources were installed, but a remote resource failed: ${message}. Retry the installation to resume.`,
       );
     }
@@ -909,7 +911,7 @@ export async function installOperatorPack(
 export function disableOperatorPack(packId: string) {
   return withPackInstallLock(packId, async () => {
     const installation = repository.getOperatorPackInstallation(packId);
-    if (!installation) throw new Error("Operator Pack is not installed.");
+    if (!installation) throw new OperationalError("Operator Pack is not installed.");
     return repository.transaction(() => {
       for (const resource of repository.listOperatorPackResources(packId)) {
         if (
@@ -937,7 +939,7 @@ export function disableOperatorPack(packId: string) {
 export function importOperatorPack(input: unknown) {
   const manifest = parseOperatorPackManifest(input);
   if (getOfficialOperatorPack(manifest.id)) {
-    throw new Error("Official Operator Pack IDs cannot be replaced.");
+    throw new OperationalError("Official Operator Pack IDs cannot be replaced.");
   }
   assertManifestRuntimeCompatibility(manifest);
   const existing = repository.getOperatorPackDefinition(manifest.id);
@@ -945,7 +947,7 @@ export function importOperatorPack(input: unknown) {
     existing &&
     comparePackVersions(manifest.version, existing.version) <= 0
   ) {
-    throw new Error(
+    throw new OperationalError(
       "Imported pack version must be newer than the local version.",
     );
   }
@@ -955,11 +957,11 @@ export function importOperatorPack(input: unknown) {
 export function removeLocalOperatorPackDefinition(packId: string) {
   return withPackInstallLock(packId, async () => {
     if (getOfficialOperatorPack(packId)) {
-      throw new Error("Official Operator Packs cannot be deleted.");
+      throw new OperationalError("Official Operator Packs cannot be deleted.");
     }
     const installation = repository.getOperatorPackInstallation(packId);
     if (installation && installation.status !== "disabled") {
-      throw new Error(
+      throw new OperationalError(
         "Disable the installed pack before deleting its definition.",
       );
     }
@@ -1077,10 +1079,10 @@ export async function startOperatorPackAcceptance(
   const entry = getOperatorPackCatalogEntry(packId);
   const installation = repository.getOperatorPackInstallation(packId);
   if (!entry || !installation || installation.status !== "installed") {
-    throw new Error("Install the Operator Pack before running acceptance QA.");
+    throw new OperationalError("Install the Operator Pack before running acceptance QA.");
   }
   if (installation.packVersion !== entry.manifest.version) {
-    throw new Error(
+    throw new OperationalError(
       "Apply the available Operator Pack update before running acceptance QA.",
     );
   }
@@ -1089,7 +1091,7 @@ export async function startOperatorPackAcceptance(
     (capability) => capability.required && !capability.available,
   );
   if (missing.length) {
-    throw new Error(
+    throw new OperationalError(
       `Connect required capabilities first: ${missing
         .map((capability) => capability.category)
         .join(", ")}.`,
@@ -1098,7 +1100,7 @@ export async function startOperatorPackAcceptance(
   const scenario = scenarioId
     ? entry.manifest.acceptanceScenarios.find((item) => item.id === scenarioId)
     : entry.manifest.acceptanceScenarios[0];
-  if (!scenario) throw new Error("Acceptance scenario not found.");
+  if (!scenario) throw new OperationalError("Acceptance scenario not found.");
   const agentTemplate = entry.manifest.agents.find(
     (item) => item.key === scenario.agentKey,
   )!;
@@ -1109,7 +1111,7 @@ export async function startOperatorPackAcceptance(
   );
   const agent = resolvePackAgent(agentTemplate, agentResource ?? undefined);
   if (!agent || !agent.enabled) {
-    throw new Error("The pack Agent is missing or disabled.");
+    throw new OperationalError("The pack Agent is missing or disabled.");
   }
   const acceptance = repository.createOperatorPackAcceptance({
     packId,
@@ -1161,7 +1163,7 @@ export async function startOperatorPackAcceptance(
         find: findAssignmentRun,
       });
       if (!run) {
-        throw new Error("Work assignment did not create an Agent Run.");
+        throw new OperationalError("Work assignment did not create an Agent Run.");
       }
     }
     return repository.updateOperatorPackAcceptance(acceptance.id, {
@@ -1337,6 +1339,6 @@ export function operatorPackMetrics(): OperatorPackMetrics {
 
 export function exportOperatorPack(packId: string) {
   const entry = getOperatorPackCatalogEntry(packId);
-  if (!entry) throw new Error("Operator Pack not found.");
+  if (!entry) throw new OperationalError("Operator Pack not found.");
   return entry.manifest;
 }

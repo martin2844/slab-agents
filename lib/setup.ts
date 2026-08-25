@@ -2,7 +2,7 @@ import "server-only";
 
 import { DocsClient } from "@/lib/mcp/docs-client";
 import { WorkClient } from "@/lib/mcp/work-client";
-import { repository } from "@/lib/repository";
+import { settingsStore } from "@/lib/repositories/settings-store";
 import { getRuntimeConfig, runtimeIds } from "@/lib/runtime-config";
 import { listRuntimeCatalog } from "@/lib/runtime-service";
 import { testRunner } from "@/lib/runner";
@@ -76,7 +76,7 @@ export function getSetupStatus(): SetupStatus {
       } satisfies SetupCheck;
     }
 
-    const stored = repository.getSetting(statusKey(service));
+    const stored = settingsStore.get(statusKey(service));
     if (stored) {
       try {
         const value = JSON.parse(stored) as StoredCheck;
@@ -102,16 +102,23 @@ export function getSetupStatus(): SetupStatus {
       checkedAt: null,
     } satisfies SetupCheck;
   });
-  const connected = checks.filter((check) => check.state === "connected").length;
-  return { checks, connected, total: checks.length, ready: connected === checks.length };
+  const connected = checks.filter(
+    (check) => check.state === "connected",
+  ).length;
+  return {
+    checks,
+    connected,
+    total: checks.length,
+    ready: connected === checks.length,
+  };
 }
 
 async function performCheck(service: SetupService) {
   if (missingConfig(service)) return;
   const checkedAt = new Date().toISOString();
   try {
-    let availableRuntime: Awaited<ReturnType<typeof listRuntimeCatalog>>[number] | null =
-      null;
+    let availableRuntime:
+      Awaited<ReturnType<typeof listRuntimeCatalog>>[number] | null = null;
     if (service === "work") await WorkClient.test();
     else if (service === "docs") await DocsClient.test();
     else if (service === "runner") await testRunner();
@@ -128,7 +135,7 @@ async function performCheck(service: SetupService) {
       service === "codex"
         ? `${availableRuntime?.displayName ?? "Agent runtime"} is available through the local Runner.`
         : `${labels[service]} connected successfully.`;
-    repository.setSetting(
+    settingsStore.set(
       statusKey(service),
       JSON.stringify({
         state: "connected",
@@ -138,7 +145,7 @@ async function performCheck(service: SetupService) {
       } satisfies StoredCheck),
     );
   } catch (error) {
-    repository.setSetting(
+    settingsStore.set(
       statusKey(service),
       JSON.stringify({
         state: "failed",

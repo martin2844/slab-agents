@@ -60,6 +60,10 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/client-api";
+import {
+  normalizeIntegrationSlug,
+  normalizeIntegrationToolKey,
+} from "@/lib/integrations/naming";
 import type {
   Agent,
   CustomHttpIntegrationDraft,
@@ -465,6 +469,7 @@ function PostHogEditor({
           method: integration ? "PATCH" : "POST",
           body: JSON.stringify({
             ...(integration ? {} : { provider: "posthog" }),
+            expectedVersion: integration?.version,
             apiKey: apiKey || undefined,
             datacenter,
             enabled,
@@ -667,24 +672,6 @@ function PostHogEditor({
       </DialogContent>
     </Dialog>
   );
-}
-
-function normalizeIntegrationSlug(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 48);
-}
-
-function normalizeIntegrationToolKey(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 64);
 }
 
 function CustomHttpEditor({
@@ -950,6 +937,7 @@ function CustomHttpEditor({
           method: integration ? "PATCH" : "POST",
           body: JSON.stringify({
             ...(integration ? {} : { provider: "custom_http" }),
+            expectedVersion: integration?.version,
             name,
             baseUrl,
             authType,
@@ -1622,6 +1610,7 @@ function CustomMcpEditor({
           method: integration ? "PATCH" : "POST",
           body: JSON.stringify({
             ...(integration ? {} : { provider: "custom_mcp" }),
+            expectedVersion: integration?.version,
             name,
             baseUrl,
             authType,
@@ -1880,6 +1869,7 @@ function DeleteIntegrationButton({
     try {
       await api<{ id: string }>(`/api/integrations/${integration.id}`, {
         method: "DELETE",
+        body: JSON.stringify({ expectedVersion: integration.version }),
       });
       onDeleted(integration.id);
       toast.success(`${integration.name} deleted`);

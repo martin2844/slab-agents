@@ -1,4 +1,4 @@
-import { apiError } from "@/lib/api";
+import { apiError, notFound } from "@/lib/api";
 import { refreshOperatorPackAcceptance } from "@/lib/packs/service";
 import { repository } from "@/lib/repository";
 
@@ -13,10 +13,7 @@ export async function GET(
     const { id, acceptanceId } = await ctx.params;
     const acceptance = repository.getOperatorPackAcceptance(acceptanceId);
     if (!acceptance || acceptance.packId !== id) {
-      return Response.json(
-        { error: "Acceptance Run not found." },
-        { status: 404 },
-      );
+      throw notFound("Acceptance Run not found.");
     }
     return Response.json({
       data: await refreshOperatorPackAcceptance(acceptanceId),

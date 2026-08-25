@@ -6,7 +6,6 @@ import type {
   Agent,
   AgentQuickAction,
   AgentEmailAccess,
-  Approval,
   Automation,
   IntegrationHttpOperation,
   IntegrationMcpTool,
@@ -31,13 +30,27 @@ import type {
 } from "@/lib/types";
 import type { OperatorPackManifest } from "@/lib/packs/manifest";
 import { POSTHOG_TOOLS } from "@/lib/integrations/catalog";
+import {
+  normalizeIntegrationSlug,
+  normalizeIntegrationToolKey,
+} from "@/lib/integrations/naming";
+import { IntegrationVersionConflictError } from "@/lib/integrations/errors";
 
 type Row = Record<string, unknown>;
 const bool = (value: unknown) => Boolean(value);
 const json = <T>(value: unknown, fallback: T): T => {
+  if (value == null || value === "") return fallback;
   try {
-    return value ? (JSON.parse(String(value)) as T) : fallback;
-  } catch {
+    return JSON.parse(String(value)) as T;
+  } catch (error) {
+    throw new Error("Stored JSON is corrupt.", { cause: error });
+  }
+};
+const telemetryJson = <T>(value: unknown, fallback: T): T => {
+  try {
+    return json(value, fallback);
+  } catch (error) {
+    console.error("[repository] corrupt telemetry JSON", error);
     return fallback;
   }
 };
@@ -107,7 +120,7 @@ function mapRun(row: Row): Run {
     startedAt: row.started_at ? String(row.started_at) : null,
     completedAt: row.completed_at ? String(row.completed_at) : null,
     error: row.error ? String(row.error) : null,
-    usage: json(row.usage_json, null),
+    usage: telemetryJson(row.usage_json, null),
     createdAt: String(row.created_at ?? row.started_at ?? ""),
     queuedAt: String(row.queued_at ?? row.created_at ?? row.started_at ?? ""),
     attemptCount: Number(row.attempt_count ?? 0),
@@ -181,19 +194,6 @@ function mapAutomation(row: Row): Automation {
     updatedAt: String(row.updated_at),
   };
 }
-function mapApproval(row: Row): Approval {
-  return {
-    id: String(row.id),
-    runId: String(row.run_id),
-    runnerApprovalId: String(row.runner_approval_id),
-    command: String(row.command),
-    details: json(row.details_json, {}),
-    status: row.status as Approval["status"],
-    createdAt: String(row.created_at),
-    resolvedAt: row.resolved_at ? String(row.resolved_at) : null,
-  };
-}
-
 export type IntegrationRecord = {
   id: string;
   provider: IntegrationProvider;
@@ -282,7 +282,7 @@ function mapIntegration(
   operations: IntegrationHttpOperation[] = [],
   mcpTools: IntegrationMcpTool[] = [],
 ): Integration {
-  const normalizedSlug = normalizeSlug(record.slug);
+  const normalizedSlug = normalizeIntegrationSlug(record.slug);
   const calendarTools: IntegrationTool[] = [
     {
       key: "calendar_list_calendars",
@@ -343,7 +343,7 @@ function mapIntegration(
             }))
         : record.provider === "custom_mcp"
           ? mcpTools.map((tool) => ({
-              key: `${normalizedSlug}__${normalizeToolKey(tool.name)}`,
+              key: `${normalizedSlug}__${normalizeIntegrationToolKey(tool.name)}`,
               name: tool.name,
               description: tool.description ?? "Custom MCP tool",
               readOnly: tool.readOnlyHint,
@@ -393,24 +393,6 @@ function mapIntegration(
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
-}
-
-function normalizeSlug(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 48);
-}
-
-function normalizeToolKey(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 64);
 }
 
 function mapCustomHttpOperation(row: Row): IntegrationHttpOperation {
@@ -526,15 +508,6 @@ export const repository = {
   transaction<T>(callback: () => T) {
     return db.transaction(callback).immediate();
   },
-  getSetting(key: string) {
-    return (
-      (
-        db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
-          { value: string } | undefined
-      )?.value ?? null
-    );
-  },
-
   createIntegrationOAuthState(input: {
     id: string;
     integrationId: string;
@@ -579,12 +552,6 @@ export const repository = {
       integrationVersion: Number(row.integration_version ?? 1),
     };
   },
-  setSetting(key: string, value: string) {
-    db.prepare(
-      "INSERT INTO settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
-    ).run(key, value, now());
-  },
-
   listOperatorPackDefinitions() {
     return (
       db
@@ -1027,9 +994,16 @@ export const repository = {
     integrationId: string,
     agentId: string,
     toolKeys: string[],
+    expectedVersion: number,
   ) {
     const timestamp = now();
     const transaction = db.transaction(() => {
+      const revision = db
+        .prepare(
+          "UPDATE integrations SET version=version+1,updated_at=? WHERE id=? AND version=?",
+        )
+        .run(timestamp, integrationId, expectedVersion);
+      if (revision.changes !== 1) throw new IntegrationVersionConflictError();
       db.prepare(
         "DELETE FROM agent_integration_tools WHERE integration_id=? AND agent_id=?",
       ).run(integrationId, agentId);
@@ -1062,16 +1036,49 @@ export const repository = {
     ).map(mapCustomMcpTool);
   },
   listIntegrations() {
-    return this.listIntegrationRecords().map((record) =>
+    const records = this.listIntegrationRecords();
+    const permissions = (
+      db
+        .prepare(
+          "SELECT integration_id,agent_id,tool_key FROM agent_integration_tools ORDER BY integration_id,agent_id,tool_key",
+        )
+        .all() as Array<{
+        integration_id: string;
+        agent_id: string;
+        tool_key: string;
+      }>
+    ).reduce<Record<string, Record<string, string[]>>>((result, row) => {
+      const integration = (result[row.integration_id] ??= {});
+      (integration[row.agent_id] ??= []).push(row.tool_key);
+      return result;
+    }, {});
+    const operations = (
+      db
+        .prepare(
+          "SELECT * FROM custom_http_operations ORDER BY integration_id,key",
+        )
+        .all() as Row[]
+    ).reduce<Record<string, IntegrationHttpOperation[]>>((result, row) => {
+      (result[String(row.integration_id)] ??= []).push(
+        mapCustomHttpOperation(row),
+      );
+      return result;
+    }, {});
+    const mcpTools = (
+      db
+        .prepare("SELECT * FROM custom_mcp_tools ORDER BY integration_id,name")
+        .all() as Row[]
+    ).reduce<Record<string, IntegrationMcpTool[]>>((result, row) => {
+      (result[String(row.integration_id)] ??= []).push(mapCustomMcpTool(row));
+      return result;
+    }, {});
+
+    return records.map((record) =>
       mapIntegration(
         record,
-        this.listIntegrationPermissions(record.id),
-        record.provider === "custom_http"
-          ? this.listCustomHttpOperations(record.id)
-          : [],
-        record.provider === "custom_mcp"
-          ? this.listCustomMcpTools(record.id)
-          : [],
+        permissions[record.id] ?? {},
+        operations[record.id] ?? [],
+        mcpTools[record.id] ?? [],
       ),
     );
   },
@@ -1110,6 +1117,7 @@ export const repository = {
     operations?: IntegrationHttpOperation[];
     mcpTools?: IntegrationMcpTool[];
     expectedVersion?: number;
+    expectedAbsent?: boolean;
   }) {
     const current = input.id
       ? this.getIntegrationRecord(input.id)
@@ -1128,12 +1136,18 @@ export const repository = {
       input.mcpTools ??
       (input.provider === "custom_mcp" ? this.listCustomMcpTools(id) : []);
     const transaction = db.transaction(() => {
+      if (
+        input.expectedAbsent &&
+        this.getIntegrationRecordByProvider(input.provider)
+      ) {
+        throw new IntegrationVersionConflictError(
+          "Integration was created by another request. Reload and try again.",
+        );
+      }
       if (input.expectedVersion !== undefined) {
         const live = this.getIntegrationRecord(id);
         if (!live || live.version !== input.expectedVersion) {
-          throw new Error(
-            "Integration changed while it was being saved. Reload the current configuration and try again.",
-          );
+          throw new IntegrationVersionConflictError();
         }
       }
       db.prepare(
@@ -1155,7 +1169,7 @@ export const repository = {
         id,
         input.provider,
         input.name,
-        current?.slug ?? normalizeSlug(input.name),
+        current?.slug ?? normalizeIntegrationSlug(input.name),
         JSON.stringify(input.config),
         input.credentialsCiphertext,
         Number(enabled),
@@ -1232,19 +1246,6 @@ export const repository = {
       return saved.id;
     });
     return this.getIntegration(transaction())!;
-  },
-  updateIntegrationCheck(
-    id: string,
-    input: {
-      status: IntegrationStatus;
-      lastTestedAt: string;
-      lastError: string | null;
-    },
-  ) {
-    db.prepare(
-      "UPDATE integrations SET status=?,last_tested_at=?,last_error=?,updated_at=? WHERE id=?",
-    ).run(input.status, input.lastTestedAt, input.lastError, now(), id);
-    return this.getIntegration(id);
   },
   updateIntegrationCheckIfVersion(
     id: string,
@@ -1380,10 +1381,11 @@ export const repository = {
     });
     return transaction();
   },
-  deleteIntegration(id: string) {
-    const existing = this.getIntegrationRecord(id);
-    if (!existing) return false;
-    db.prepare("DELETE FROM integrations WHERE id=?").run(id);
+  deleteIntegration(id: string, expectedVersion: number) {
+    const result = db
+      .prepare("DELETE FROM integrations WHERE id=? AND version=?")
+      .run(id, expectedVersion);
+    if (result.changes !== 1) throw new IntegrationVersionConflictError();
     return true;
   },
   getRunIntegrationCapability(runId: string, integrationId: string) {
@@ -1724,95 +1726,6 @@ export const repository = {
     return this.getAgent(current.id);
   },
 
-  getWorkCoordinationItem(issueKey: string) {
-    return db
-      .prepare("SELECT * FROM work_coordination_items WHERE issue_key=?")
-      .get(issueKey) as Row | undefined;
-  },
-  upsertWorkCoordinationItem(input: {
-    issueKey: string;
-    projectKey: string;
-    assignee: string | null;
-    semanticStatus: string;
-    remoteUpdatedAt: string | null;
-    labels: string[];
-  }) {
-    const timestamp = now();
-    db.prepare(
-      `INSERT INTO work_coordination_items
-        (issue_key,project_key,assignee,semantic_status,remote_updated_at,labels_json,first_seen_at,last_seen_at)
-       VALUES (?,?,?,?,?,?,?,?)
-       ON CONFLICT(issue_key) DO UPDATE SET
-        project_key=excluded.project_key,
-        assignee=excluded.assignee,
-        semantic_status=excluded.semantic_status,
-        remote_updated_at=excluded.remote_updated_at,
-        labels_json=excluded.labels_json,
-        last_seen_at=excluded.last_seen_at`,
-    ).run(
-      input.issueKey,
-      input.projectKey,
-      input.assignee,
-      input.semanticStatus,
-      input.remoteUpdatedAt,
-      JSON.stringify(input.labels),
-      timestamp,
-      timestamp,
-    );
-  },
-  claimWorkCoordinationEvent(input: {
-    dedupeKey: string;
-    issueKey: string;
-    type: "assignment" | "resumed" | "review_requested" | "blocked" | "mention";
-    agentId: string;
-    commentId?: string | null;
-  }) {
-    const id = randomUUID();
-    const timestamp = now();
-    const result = db
-      .prepare(
-        `INSERT OR IGNORE INTO work_coordination_events
-          (id,dedupe_key,issue_key,type,agent_id,comment_id,created_at,updated_at)
-         VALUES (?,?,?,?,?,?,?,?)`,
-      )
-      .run(
-        id,
-        input.dedupeKey,
-        input.issueKey,
-        input.type,
-        input.agentId,
-        input.commentId ?? null,
-        timestamp,
-        timestamp,
-      );
-    return result.changes > 0 ? id : null;
-  },
-  completeWorkCoordinationEvent(
-    id: string,
-    input: { runId?: string; error?: string },
-  ) {
-    db.prepare(
-      "UPDATE work_coordination_events SET run_id=?,error=?,updated_at=? WHERE id=?",
-    ).run(input.runId ?? null, input.error ?? null, now(), id);
-  },
-  hasSeenWorkComment(commentId: string) {
-    return Boolean(
-      db
-        .prepare(
-          "SELECT comment_id FROM work_coordination_comments WHERE comment_id=?",
-        )
-        .get(commentId),
-    );
-  },
-  rememberWorkComment(issueKey: string, commentId: string) {
-    return (
-      db
-        .prepare(
-          "INSERT OR IGNORE INTO work_coordination_comments (comment_id,issue_key,first_seen_at) VALUES (?,?,?)",
-        )
-        .run(commentId, issueKey, now()).changes > 0
-    );
-  },
   getWorkAgentThread(issueKey: string, agentId: string) {
     const row = db
       .prepare(
@@ -1878,7 +1791,9 @@ export const repository = {
   listMessages(threadId: string) {
     return (
       db
-        .prepare("SELECT * FROM messages WHERE thread_id=? ORDER BY created_at")
+        .prepare(
+          "SELECT * FROM messages WHERE thread_id=? ORDER BY created_at,rowid",
+        )
         .all(threadId) as Row[]
     ).map(mapMessage);
   },
@@ -1972,9 +1887,44 @@ export const repository = {
     return (
       db
         .prepare(
-          "SELECT * FROM runs ORDER BY COALESCE(started_at,'') DESC, rowid DESC LIMIT ?",
+          `SELECT * FROM runs
+           WHERE status IN ('queued','running','waiting_approval')
+              OR id IN (
+                SELECT id FROM runs
+                ORDER BY COALESCE(started_at,'') DESC,rowid DESC
+                LIMIT ?
+              )
+           ORDER BY
+             CASE status
+               WHEN 'running' THEN 0
+               WHEN 'waiting_approval' THEN 1
+               WHEN 'queued' THEN 2
+               ELSE 3
+             END,
+             CASE WHEN status='queued' THEN queued_at END ASC,
+             COALESCE(started_at,created_at) DESC,rowid DESC`,
         )
         .all(limit) as Row[]
+    ).map(mapRun);
+  },
+  listAgentActivityRuns() {
+    return (
+      db
+        .prepare(
+          `SELECT * FROM runs
+           WHERE status IN ('queued','running','waiting_approval')
+              OR rowid IN (SELECT MAX(rowid) FROM runs GROUP BY agent_id)
+           ORDER BY
+             CASE status
+               WHEN 'running' THEN 0
+               WHEN 'waiting_approval' THEN 1
+               WHEN 'queued' THEN 2
+               ELSE 3
+             END,
+             CASE WHEN status='queued' THEN queued_at END ASC,
+             COALESCE(started_at,created_at) DESC,rowid DESC`,
+        )
+        .all() as Row[]
     ).map(mapRun);
   },
   updateRun(
@@ -2073,13 +2023,15 @@ export const repository = {
   listRunEvents(runId: string) {
     return (
       db
-        .prepare("SELECT * FROM run_events WHERE run_id=? ORDER BY created_at")
+        .prepare(
+          "SELECT * FROM run_events WHERE run_id=? ORDER BY created_at,rowid",
+        )
         .all(runId) as Row[]
     ).map((row) => ({
       id: String(row.id),
       runId: String(row.run_id),
       type: String(row.type),
-      payload: json(row.payload, {}),
+      payload: telemetryJson(row.payload, {}),
       createdAt: String(row.created_at),
     }));
   },
@@ -2226,68 +2178,5 @@ export const repository = {
          WHERE automation_id=? AND scheduled_for=? AND run_id=? AND status='pending'`,
       )
       .run(now(), automationId, scheduledFor, runId).changes;
-  },
-
-  createApproval(
-    runId: string,
-    runnerApprovalId: string,
-    command: string,
-    details: Record<string, unknown>,
-  ) {
-    const id = randomUUID();
-    db.prepare(
-      `INSERT OR IGNORE INTO approvals
-       (id,run_id,runner_approval_id,command,details_json,status,created_at)
-       VALUES (?,?,?,?,?,'pending',?)`,
-    ).run(id, runId, runnerApprovalId, command, JSON.stringify(details), now());
-    const row = db
-      .prepare(
-        "SELECT * FROM approvals WHERE run_id=? AND runner_approval_id=?",
-      )
-      .get(runId, runnerApprovalId) as Row;
-    return mapApproval(row);
-  },
-  getApproval(id: string) {
-    const row = db.prepare("SELECT * FROM approvals WHERE id=?").get(id) as
-      Row | undefined;
-    return row ? mapApproval(row) : null;
-  },
-  listApprovals(status?: Approval["status"]) {
-    const rows = status
-      ? db
-          .prepare(
-            "SELECT * FROM approvals WHERE status=? ORDER BY created_at DESC",
-          )
-          .all(status)
-      : db.prepare("SELECT * FROM approvals ORDER BY created_at DESC").all();
-    return (rows as Row[]).map(mapApproval);
-  },
-  claimApproval(id: string) {
-    const result = db
-      .prepare(
-        "UPDATE approvals SET status='resolving' WHERE id=? AND status='pending'",
-      )
-      .run(id);
-    return result.changes === 1 ? this.getApproval(id) : null;
-  },
-  releaseApproval(id: string) {
-    db.prepare(
-      "UPDATE approvals SET status='pending' WHERE id=? AND status='resolving'",
-    ).run(id);
-  },
-  resolveApproval(id: string, status: "approved" | "denied") {
-    const result = db
-      .prepare(
-        "UPDATE approvals SET status=?,resolved_at=? WHERE id=? AND status='resolving'",
-      )
-      .run(status, now(), id);
-    return result.changes === 1 ? this.getApproval(id) : null;
-  },
-  closePendingApprovals(runId: string) {
-    return db
-      .prepare(
-        "UPDATE approvals SET status='denied',resolved_at=? WHERE run_id=? AND status IN ('pending','resolving')",
-      )
-      .run(now(), runId).changes;
   },
 };

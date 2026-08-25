@@ -68,7 +68,10 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
         `/api/agents/${data.agent.id}/integrations/${integration.id}`,
         {
           method: "PATCH",
-          body: JSON.stringify({ enabled }),
+          body: JSON.stringify({
+            enabled,
+            expectedVersion: integration.version,
+          }),
         },
       );
       setIntegrations((current) =>

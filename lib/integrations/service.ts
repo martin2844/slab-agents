@@ -29,6 +29,17 @@ import type {
   IntegrationOperationParameter,
   IntegrationMcpTool,
 } from "@/lib/types";
+import { compileMcpInputSchema } from "@/lib/integrations/json-schema";
+import {
+  normalizeIntegrationSlug,
+  normalizeIntegrationToolKey,
+} from "@/lib/integrations/naming";
+import {
+  IntegrationConfigurationError,
+  IntegrationNotFoundError,
+  IntegrationVersionConflictError,
+} from "@/lib/integrations/errors";
+import { redactIntegrationText } from "@/lib/integrations/redaction";
 
 const DEFAULT_HTTP_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 32 * 1024;
@@ -49,24 +60,22 @@ function randomAuthToken() {
   return randomUUID();
 }
 
-function normalizeSlug(value: string) {
-  return (
-    value
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9_-]+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(0, 48) || "integration"
-  );
-}
-
-function normalizeToolKey(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 64);
+function assertExpectedVersion(
+  current: IntegrationRecord | null,
+  expectedVersion?: number,
+  required = false,
+) {
+  if (required && expectedVersion === undefined) {
+    throw new IntegrationConfigurationError(
+      "expectedVersion is required when updating an integration.",
+    );
+  }
+  if (
+    expectedVersion !== undefined &&
+    (!current || current.version !== expectedVersion)
+  ) {
+    throw new IntegrationVersionConflictError();
+  }
 }
 
 function clampNumber(
@@ -186,17 +195,17 @@ function assertPathParameters(
   for (const placeholder of placeholders) {
     const parameter = lookup.get(placeholder);
     if (!parameter) {
-      throw new Error(
+      throw new IntegrationConfigurationError(
         `Missing declaration for path parameter '{${placeholder}}'.`,
       );
     }
     if (parameter.location !== "path") {
-      throw new Error(
+      throw new IntegrationConfigurationError(
         `Path parameter '${placeholder}' must be declared with location=path.`,
       );
     }
     if (!parameter.required) {
-      throw new Error(
+      throw new IntegrationConfigurationError(
         `Path parameter '${placeholder}' must be marked as required.`,
       );
     }
@@ -207,7 +216,7 @@ function assertPathParameters(
       parameter.location === "path" &&
       !placeholders.includes(parameter.name)
     ) {
-      throw new Error(
+      throw new IntegrationConfigurationError(
         `Path parameter '${parameter.name}' is not used in path '${pathTemplate}'.`,
       );
     }
@@ -215,7 +224,7 @@ function assertPathParameters(
 }
 
 function toFullToolName(slug: string, key: string) {
-  return `${normalizeSlug(slug)}__${normalizeToolKey(key)}`;
+  return `${normalizeIntegrationSlug(slug)}__${normalizeIntegrationToolKey(key)}`;
 }
 
 function normalizePermissionTools(
@@ -234,7 +243,7 @@ function normalizePermissionTools(
     if (!validAgentIds.has(agentId) || !Array.isArray(requestedTools)) continue;
 
     const normalized = requestedTools
-      .map((raw) => normalizeToolKey(String(raw)))
+      .map((raw) => normalizeIntegrationToolKey(String(raw)))
       .filter((toolKey) => toolKey.length > 0)
       .map((toolKey) => {
         if (toolKey.includes("__") || provider === "posthog") return toolKey;
@@ -253,11 +262,12 @@ function normalizePermissionTools(
 
 function normalizePosthogPermissions(permissions: Record<string, string[]>) {
   const validTools = new Set(POSTHOG_TOOLS.map((tool) => tool.key));
+  const validAgentIds = new Set(
+    repository.listAgents().map((agent) => agent.id),
+  );
   return Object.fromEntries(
     Object.entries(permissions)
-      .filter(([agentId]) =>
-        repository.listAgents().some((agent) => agent.id === agentId),
-      )
+      .filter(([agentId]) => validAgentIds.has(agentId))
       .map(([agentId, toolKeys]) => [
         agentId,
         [...new Set(toolKeys)].filter((toolKey) => validTools.has(toolKey)),
@@ -286,7 +296,7 @@ function mapMcpTools(rawTools: Array<Record<string, unknown>>) {
   const exposedNames = new Set<string>();
   return rawTools.map((tool): IntegrationMcpTool => {
     const name = String(tool.name ?? "").trim();
-    const exposedName = normalizeToolKey(name);
+    const exposedName = normalizeIntegrationToolKey(name);
     if (!name || !exposedName) {
       throw new Error("The MCP server returned a tool without a valid name.");
     }
@@ -298,15 +308,17 @@ function mapMcpTools(rawTools: Array<Record<string, unknown>>) {
     exposedNames.add(exposedName);
     const annotations = (tool.annotations ?? {}) as Record<string, unknown>;
 
+    const inputSchema = (tool.inputSchema as Record<string, unknown>) ?? {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    };
+    compileMcpInputSchema(inputSchema);
     return {
       name,
       description:
         typeof tool.description === "string" ? tool.description : null,
-      inputSchema: (tool.inputSchema as Record<string, unknown>) ?? {
-        type: "object",
-        properties: {},
-        additionalProperties: false,
-      },
+      inputSchema,
       readOnlyHint: Boolean(annotations.readOnlyHint),
       destructiveHint: Boolean(annotations.destructiveHint),
       idempotentHint:
@@ -349,7 +361,7 @@ function normalizeCustomHttpOperations(
   integrationName: string,
 ): IntegrationHttpOperation[] {
   if (!Array.isArray(operations) || operations.length === 0) {
-    throw new Error(
+    throw new IntegrationConfigurationError(
       "At least one operation is required for a custom HTTP integration.",
     );
   }
@@ -362,10 +374,12 @@ function normalizeCustomHttpOperations(
     const rawKey = String(raw?.key || operationName).trim();
     const key = normalizeHttpOperationKey(rawKey);
     if (!key) {
-      throw new Error("Each operation needs a key.");
+      throw new IntegrationConfigurationError("Each operation needs a key.");
     }
     if (seen.has(key)) {
-      throw new Error(`Operation key duplicated: ${key}`);
+      throw new IntegrationConfigurationError(
+        `Operation key duplicated: ${key}`,
+      );
     }
     seen.add(key);
 
@@ -409,6 +423,7 @@ function normalizeCustomHttpOperations(
 
 export async function savePostHogIntegration(input: {
   id?: string;
+  expectedVersion?: number;
   apiKey?: string;
   datacenter: PostHogDatacenter;
   permissions: Record<string, string[]>;
@@ -417,6 +432,8 @@ export async function savePostHogIntegration(input: {
   const current = input.id
     ? repository.getIntegrationRecord(input.id)
     : repository.getIntegrationRecordByProvider("posthog");
+  if (!input.id && current) throw new IntegrationVersionConflictError();
+  assertExpectedVersion(current, input.expectedVersion, Boolean(input.id));
 
   let previous: PosthogCredentials | null = null;
   if (current) {
@@ -429,7 +446,9 @@ export async function savePostHogIntegration(input: {
 
   const apiKey = input.apiKey?.trim() || previous?.apiKey;
   if (!apiKey) {
-    throw new Error("A PostHog personal API key is required.");
+    throw new IntegrationConfigurationError(
+      "A PostHog personal API key is required.",
+    );
   }
 
   const credentials: PosthogCredentials = {
@@ -444,8 +463,10 @@ export async function savePostHogIntegration(input: {
     await testPostHogConnection(input.datacenter, apiKey);
   } catch (error) {
     status = "failed";
-    lastError =
-      error instanceof Error ? error.message : "PostHog connection failed.";
+    lastError = redactIntegrationText(
+      error instanceof Error ? error.message : "PostHog connection failed.",
+      [apiKey],
+    );
   }
   if (input.enabled === false) status = "disabled";
 
@@ -463,11 +484,14 @@ export async function savePostHogIntegration(input: {
     lastError,
     permissions: normalizePosthogPermissions(input.permissions),
     enabled: input.enabled ?? current?.enabled ?? true,
+    expectedVersion: input.expectedVersion ?? current?.version,
+    expectedAbsent: !current,
   });
 }
 
 export async function saveCustomHttpIntegration(input: {
   id?: string;
+  expectedVersion?: number;
   name: string;
   baseUrl: string;
   authType: IntegrationAuthType;
@@ -480,17 +504,18 @@ export async function saveCustomHttpIntegration(input: {
 }): Promise<Integration> {
   const name = input.name.trim();
   if (!name) {
-    throw new Error("Integration name is required.");
+    throw new IntegrationConfigurationError("Integration name is required.");
   }
 
   const baseUrl = normalizeHttpIntegrationBaseUrl(input.baseUrl);
   const authType = normalizeAuthType(input.authType);
   const current = input.id ? repository.getIntegrationRecord(input.id) : null;
+  assertExpectedVersion(current, input.expectedVersion, Boolean(input.id));
 
   if (current && current.provider !== "custom_http") {
-    throw new Error("Integration type mismatch.");
+    throw new IntegrationVersionConflictError("Integration type mismatch.");
   }
-  const slug = current?.slug ?? normalizeSlug(name);
+  const slug = current?.slug ?? normalizeIntegrationSlug(name);
 
   const timeout = clampNumber(
     input.timeoutMs,
@@ -515,26 +540,27 @@ export async function saveCustomHttpIntegration(input: {
 
   const canReuseSecret = Boolean(
     current?.config.baseUrl &&
-      previousSecret?.authSecret &&
-      canReuseHttpCredential(
-        {
-          baseUrl: current.config.baseUrl,
-          authType: normalizeAuthType(
-            current.config.authType ?? current.authType,
-          ),
-          authHeaderName:
-            current.config.authHeaderName ?? current.authHeaderName,
-        },
-        { baseUrl, authType, authHeaderName: input.authHeaderName },
-      ),
+    previousSecret?.authSecret &&
+    canReuseHttpCredential(
+      {
+        baseUrl: current.config.baseUrl,
+        authType: normalizeAuthType(
+          current.config.authType ?? current.authType,
+        ),
+        authHeaderName: current.config.authHeaderName ?? current.authHeaderName,
+      },
+      { baseUrl, authType, authHeaderName: input.authHeaderName },
+    ),
   );
   const authSecret =
     authType === "none"
       ? undefined
-      : (input.secret ??
-          (canReuseSecret ? previousSecret?.authSecret : undefined))?.trim();
+      : (
+          input.secret ??
+          (canReuseSecret ? previousSecret?.authSecret : undefined)
+        )?.trim();
   if (authType !== "none" && !authSecret) {
-    throw new Error(
+    throw new IntegrationConfigurationError(
       current && previousSecret?.authSecret
         ? "Replace the authentication secret after changing the connector origin or authentication settings."
         : "Authentication secret is required for this integration.",
@@ -568,10 +594,12 @@ export async function saveCustomHttpIntegration(input: {
     }
   } catch (error) {
     status = "failed";
-    lastError =
+    lastError = redactIntegrationText(
       error instanceof Error
         ? error.message
-        : "Custom HTTP integration connection failed.";
+        : "Custom HTTP integration connection failed.",
+      authSecret ? [authSecret] : [],
+    );
   }
   if (input.enabled === false) status = "disabled";
 
@@ -606,11 +634,13 @@ export async function saveCustomHttpIntegration(input: {
     permissions,
     operations,
     version: (current?.version ?? 0) + 1,
+    expectedVersion: input.expectedVersion ?? current?.version,
   });
 }
 
 export async function saveCustomMcpIntegration(input: {
   id?: string;
+  expectedVersion?: number;
   name: string;
   baseUrl: string;
   authType: IntegrationAuthType;
@@ -622,7 +652,7 @@ export async function saveCustomMcpIntegration(input: {
 }): Promise<Integration> {
   const name = input.name.trim();
   if (!name) {
-    throw new Error("Integration name is required.");
+    throw new IntegrationConfigurationError("Integration name is required.");
   }
 
   const baseUrl = normalizeHttpIntegrationBaseUrl(input.baseUrl);
@@ -634,11 +664,12 @@ export async function saveCustomMcpIntegration(input: {
     120_000,
   );
   const current = input.id ? repository.getIntegrationRecord(input.id) : null;
+  assertExpectedVersion(current, input.expectedVersion, Boolean(input.id));
 
   if (current && current.provider !== "custom_mcp") {
-    throw new Error("Integration type mismatch.");
+    throw new IntegrationVersionConflictError("Integration type mismatch.");
   }
-  const slug = current?.slug ?? normalizeSlug(name);
+  const slug = current?.slug ?? normalizeIntegrationSlug(name);
 
   let previousSecret: CustomCredentials | null = null;
   if (current) {
@@ -651,26 +682,27 @@ export async function saveCustomMcpIntegration(input: {
 
   const canReuseSecret = Boolean(
     current?.config.baseUrl &&
-      previousSecret?.authSecret &&
-      canReuseHttpCredential(
-        {
-          baseUrl: current.config.baseUrl,
-          authType: normalizeAuthType(
-            current.config.authType ?? current.authType,
-          ),
-          authHeaderName:
-            current.config.authHeaderName ?? current.authHeaderName,
-        },
-        { baseUrl, authType, authHeaderName: input.authHeaderName },
-      ),
+    previousSecret?.authSecret &&
+    canReuseHttpCredential(
+      {
+        baseUrl: current.config.baseUrl,
+        authType: normalizeAuthType(
+          current.config.authType ?? current.authType,
+        ),
+        authHeaderName: current.config.authHeaderName ?? current.authHeaderName,
+      },
+      { baseUrl, authType, authHeaderName: input.authHeaderName },
+    ),
   );
   const authSecret =
     authType === "none"
       ? undefined
-      : (input.secret ??
-          (canReuseSecret ? previousSecret?.authSecret : undefined))?.trim();
+      : (
+          input.secret ??
+          (canReuseSecret ? previousSecret?.authSecret : undefined)
+        )?.trim();
   if (authType !== "none" && !authSecret) {
-    throw new Error(
+    throw new IntegrationConfigurationError(
       current && previousSecret?.authSecret
         ? "Replace the authentication secret after changing the connector origin or authentication settings."
         : "Authentication secret is required for this integration.",
@@ -698,10 +730,12 @@ export async function saveCustomMcpIntegration(input: {
     mcpTools = mapMcpTools(result as Array<Record<string, unknown>>);
   } catch (error) {
     status = "failed";
-    lastError =
+    lastError = redactIntegrationText(
       error instanceof Error
         ? error.message
-        : "Custom MCP integration connection failed.";
+        : "Custom MCP integration connection failed.",
+      authSecret ? [authSecret] : [],
+    );
   }
   if (input.enabled === false) status = "disabled";
 
@@ -733,40 +767,74 @@ export async function saveCustomMcpIntegration(input: {
     permissions,
     mcpTools,
     version: (current?.version ?? 0) + 1,
+    expectedVersion: input.expectedVersion ?? current?.version,
   });
 }
 
 export async function retestPostHogIntegration(id: string) {
   const record = repository.getIntegrationRecord(id);
   if (!record || record.provider !== "posthog") {
-    throw new Error("PostHog integration not found.");
+    throw new IntegrationNotFoundError("PostHog integration not found.");
   }
 
   const testedAt = new Date().toISOString();
+  let credentials: PosthogCredentials;
   try {
-    await testPostHogConnection(
-      record.config.datacenter ?? "us",
-      readPosthogCredentials(record).apiKey,
+    credentials = readPosthogCredentials(record);
+  } catch {
+    const updated = repository.updateIntegrationCheckIfVersion(
+      id,
+      record.version,
+      {
+        status: "failed",
+        lastTestedAt: testedAt,
+        lastError: "Stored PostHog credentials could not be read.",
+      },
     );
-    return repository.updateIntegrationCheck(id, {
-      status: record.enabled ? "connected" : "disabled",
-      lastTestedAt: testedAt,
-      lastError: null,
-    })!;
+    if (!updated) throw new IntegrationVersionConflictError();
+    return updated;
+  }
+  try {
+    await testPostHogConnection(record.config.datacenter ?? "us", credentials.apiKey);
+    const updated = repository.updateIntegrationCheckIfVersion(
+      id,
+      record.version,
+      {
+        status: record.enabled ? "connected" : "disabled",
+        lastTestedAt: testedAt,
+        lastError: null,
+      },
+    );
+    if (!updated)
+      throw new IntegrationVersionConflictError(
+        "Integration changed while the connection test was running. Test the current configuration again.",
+      );
+    return updated;
   } catch (error) {
-    return repository.updateIntegrationCheck(id, {
-      status: "failed",
-      lastTestedAt: testedAt,
-      lastError:
-        error instanceof Error ? error.message : "PostHog connection failed.",
-    })!;
+    const updated = repository.updateIntegrationCheckIfVersion(
+      id,
+      record.version,
+      {
+        status: "failed",
+        lastTestedAt: testedAt,
+        lastError: redactIntegrationText(
+          error instanceof Error ? error.message : "PostHog connection failed.",
+          [credentials.apiKey],
+        ),
+      },
+    );
+    if (!updated)
+      throw new IntegrationVersionConflictError(
+        "Integration changed while the connection test was running. Test the current configuration again.",
+      );
+    return updated;
   }
 }
 
 export async function retestCustomHttpIntegration(id: string) {
   const record = repository.getIntegrationRecord(id);
   if (!record || record.provider !== "custom_http") {
-    throw new Error("Custom HTTP integration not found.");
+    throw new IntegrationNotFoundError("Custom HTTP integration not found.");
   }
 
   const credentials = readCustomCredentials(record);
@@ -789,27 +857,47 @@ export async function retestCustomHttpIntegration(id: string) {
       );
     }
 
-    return repository.updateIntegrationCheck(id, {
-      status: record.enabled ? "connected" : "disabled",
-      lastTestedAt: testedAt,
-      lastError: null,
-    })!;
+    const updated = repository.updateIntegrationCheckIfVersion(
+      id,
+      record.version,
+      {
+        status: record.enabled ? "connected" : "disabled",
+        lastTestedAt: testedAt,
+        lastError: null,
+      },
+    );
+    if (!updated)
+      throw new IntegrationVersionConflictError(
+        "Integration changed while the connection test was running. Test the current configuration again.",
+      );
+    return updated;
   } catch (error) {
-    return repository.updateIntegrationCheck(id, {
-      status: "failed",
-      lastTestedAt: testedAt,
-      lastError:
-        error instanceof Error
-          ? error.message
-          : "Custom HTTP integration connection failed.",
-    })!;
+    const updated = repository.updateIntegrationCheckIfVersion(
+      id,
+      record.version,
+      {
+        status: "failed",
+        lastTestedAt: testedAt,
+        lastError: redactIntegrationText(
+          error instanceof Error
+            ? error.message
+            : "Custom HTTP integration connection failed.",
+          credentials.authSecret ? [credentials.authSecret] : [],
+        ),
+      },
+    );
+    if (!updated)
+      throw new IntegrationVersionConflictError(
+        "Integration changed while the connection test was running. Test the current configuration again.",
+      );
+    return updated;
   }
 }
 
 export async function retestCustomMcpIntegration(id: string) {
   const record = repository.getIntegrationRecord(id);
   if (!record || record.provider !== "custom_mcp") {
-    throw new Error("Custom MCP integration not found.");
+    throw new IntegrationNotFoundError("Custom MCP integration not found.");
   }
 
   const credentials = readCustomCredentials(record);
@@ -843,16 +931,29 @@ export async function retestCustomMcpIntegration(id: string) {
       permissions,
       mcpTools,
       enabled: record.enabled,
+      version: record.version + 1,
+      expectedVersion: record.version,
     });
   } catch (error) {
-    return repository.updateIntegrationCheck(id, {
-      status: "failed",
-      lastTestedAt: testedAt,
-      lastError:
-        error instanceof Error
-          ? error.message
-          : "Custom MCP integration connection failed.",
-    })!;
+    const updated = repository.updateIntegrationCheckIfVersion(
+      id,
+      record.version,
+      {
+        status: "failed",
+        lastTestedAt: testedAt,
+        lastError: redactIntegrationText(
+          error instanceof Error
+            ? error.message
+            : "Custom MCP integration connection failed.",
+          credentials.authSecret ? [credentials.authSecret] : [],
+        ),
+      },
+    );
+    if (!updated)
+      throw new IntegrationVersionConflictError(
+        "Integration changed while the connection test was running. Test the current configuration again.",
+      );
+    return updated;
   }
 }
 
@@ -971,67 +1072,85 @@ export function getRunCustomIntegrationRuntimeAccess(
 }
 
 export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
-  const existing = repository.listRunIntegrationCapabilities(runId);
-  const candidates = existing.length
-    ? existing
-        .filter((capability) => capability.agentId === agentId)
-        .map((capability) => ({
-          integration: repository.getIntegration(capability.integrationId),
-          allowedTools: capability.allowedTools,
-          version: capability.integrationVersion,
-        }))
-    : repository
-        .listIntegrations()
-        .filter(
-          (integration) =>
-            integration.enabled &&
-            integration.status === "connected" &&
-            (integration.provider === "custom_http" ||
-              integration.provider === "custom_mcp"),
-        )
-        .map((integration) => ({
-          integration,
-          allowedTools:
-            repository.listIntegrationPermissions(integration.id)[agentId] ??
-            [],
-          version: integration.version ?? 1,
-        }));
-
-  return candidates.flatMap(({ integration, allowedTools, version }) => {
-    if (
-      !integration ||
-      allowedTools.length === 0 ||
-      (integration.provider !== "custom_http" &&
-        integration.provider !== "custom_mcp")
-    ) {
-      return [];
-    }
-    const token = randomBytes(32).toString("base64url");
-    const capability = repository.saveRunIntegrationCapability({
-      runId,
-      integrationId: integration.id,
-      agentId,
-      integrationVersion: version,
-      tokenHash: hashCapabilityToken(token),
-      allowedTools,
-    });
-    return [
-      {
-        server: {
-          name: `${integration.provider}_${integration.slug}`,
-          url: internalRoute(
-            `/api/integrations/${encodeURIComponent(integration.id)}/mcp?run=${encodeURIComponent(runId)}`,
-          ),
-          credentials: { bearerToken: token },
-        },
-        snapshot: {
-          integrationId: integration.id,
-          provider: integration.provider,
-          name: integration.name,
-          version: capability.integrationVersion,
-          tools: capability.allowedTools,
-        },
+  return repository.transaction(() => {
+    const existing = repository.listRunIntegrationCapabilities(runId).filter(
+      (capability) => {
+        const integration = repository.getIntegrationRecord(
+          capability.integrationId,
+        );
+        return (
+          integration?.provider === "custom_http" ||
+          integration?.provider === "custom_mcp"
+        );
       },
-    ];
+    );
+    const alreadyCaptured = repository.hasRunIntegrationSnapshot(
+      runId,
+      "custom",
+    );
+    const captureFromLive = !alreadyCaptured && existing.length === 0;
+    if (!alreadyCaptured) repository.markRunIntegrationSnapshot(runId, "custom");
+    const candidates = captureFromLive
+      ? repository
+          .listIntegrations()
+          .filter(
+            (integration) =>
+              integration.enabled &&
+              integration.status === "connected" &&
+              (integration.provider === "custom_http" ||
+                integration.provider === "custom_mcp"),
+          )
+          .map((integration) => ({
+            integration,
+            allowedTools:
+              repository.listIntegrationPermissions(integration.id)[agentId] ??
+              [],
+            version: integration.version ?? 1,
+          }))
+      : existing
+          .filter((capability) => capability.agentId === agentId)
+          .map((capability) => ({
+            integration: repository.getIntegration(capability.integrationId),
+            allowedTools: capability.allowedTools,
+            version: capability.integrationVersion,
+          }));
+
+    return candidates.flatMap(({ integration, allowedTools, version }) => {
+      if (
+        !integration ||
+        allowedTools.length === 0 ||
+        (integration.provider !== "custom_http" &&
+          integration.provider !== "custom_mcp")
+      ) {
+        return [];
+      }
+      const token = randomBytes(32).toString("base64url");
+      const capability = repository.saveRunIntegrationCapability({
+        runId,
+        integrationId: integration.id,
+        agentId,
+        integrationVersion: version,
+        tokenHash: hashCapabilityToken(token),
+        allowedTools,
+      });
+      return [
+        {
+          server: {
+            name: `${integration.provider}_${integration.slug}`,
+            url: internalRoute(
+              `/api/integrations/${encodeURIComponent(integration.id)}/mcp?run=${encodeURIComponent(runId)}`,
+            ),
+            credentials: { bearerToken: token },
+          },
+          snapshot: {
+            integrationId: integration.id,
+            provider: integration.provider,
+            name: integration.name,
+            version: capability.integrationVersion,
+            tools: capability.allowedTools,
+          },
+        },
+      ];
+    });
   });
 }

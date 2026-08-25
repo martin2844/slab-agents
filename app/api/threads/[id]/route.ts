@@ -1,4 +1,5 @@
 import { repository } from "@/lib/repository";
+import { apiError, notFound } from "@/lib/api";
 export const dynamic = "force-dynamic";
 export async function GET(
   _request: Request,
@@ -6,8 +7,7 @@ export async function GET(
 ) {
   const { id } = await ctx.params;
   const thread = repository.getThread(id);
-  if (!thread)
-    return Response.json({ error: "Thread not found" }, { status: 404 });
+  if (!thread) return apiError(notFound("Thread not found"));
   const agent = repository.getAgent(thread.agentId);
   return Response.json({
     data: { thread, agent, messages: repository.listMessages(id) },
