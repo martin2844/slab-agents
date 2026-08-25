@@ -1158,6 +1158,14 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
               `/api/integrations/${encodeURIComponent(integration.id)}/mcp?run=${encodeURIComponent(runId)}`,
             ),
             credentials: { bearerToken: token },
+            ...(integration.provider === "custom_http"
+              ? {
+                  approval: {
+                    defaultMode: "approve" as const,
+                    tools: {},
+                  },
+                }
+              : {}),
           },
           snapshot: {
             integrationId: integration.id,

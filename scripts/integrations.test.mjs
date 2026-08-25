@@ -59,6 +59,10 @@ test("Integrations stays focused on external tools while Email is an optional Se
   assert.match(source, /custom HTTP integration/);
   assert.match(source, /custom MCP integration/);
   assert.match(source, /Draft tools from documentation/);
+  assert.match(source, /key=\{operation\.editorKey\}/);
+  assert.match(source, /key=\{parameter\.editorKey\}/);
+  assert.doesNotMatch(source, /key=\{`\$\{operation\.key\}/);
+  assert.doesNotMatch(source, /key=\{`\$\{parameter\.name\}/);
   assert.match(source, /h-full gap-0/);
   assert.match(source, /mt-auto border-t/);
   const importRoute = await read("app/api/integrations/import/route.ts");

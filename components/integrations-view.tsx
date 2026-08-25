@@ -78,6 +78,33 @@ type EditorTarget = {
   integration?: Integration;
 };
 
+type EditableHttpParameter = {
+  editorKey: string;
+  name: string;
+  location: "path" | "query";
+  type: "string" | "number" | "integer" | "boolean";
+  required: boolean;
+  description: string;
+};
+
+type EditableHttpOperation = {
+  editorKey: string;
+  id?: string;
+  key: string;
+  name: string;
+  description: string;
+  method: "GET" | "HEAD";
+  path: string;
+  responsePath: string;
+  maxResponseBytes: string;
+  maxItems: string;
+  parameters: EditableHttpParameter[];
+};
+
+function newEditorKey(prefix: string) {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
 export function IntegrationsView({
   initialData,
 }: {
@@ -711,28 +738,10 @@ function CustomHttpEditor({
   const [permissions, setPermissions] = useState<Record<string, string[]>>(
     integration?.permissions ?? {},
   );
-  const [operations, setOperations] = useState<
-    Array<{
-      id?: string;
-      key: string;
-      name: string;
-      description: string;
-      method: "GET" | "HEAD";
-      path: string;
-      responsePath: string;
-      maxResponseBytes: string;
-      maxItems: string;
-      parameters: Array<{
-        name: string;
-        location: "path" | "query";
-        type: "string" | "number" | "integer" | "boolean";
-        required: boolean;
-        description: string;
-      }>;
-    }>
-  >(
+  const [operations, setOperations] = useState<EditableHttpOperation[]>(
     integration?.operations && integration.operations.length
-      ? integration.operations.map((operation) => ({
+      ? integration.operations.map((operation, operationIndex) => ({
+          editorKey: operation.id || `saved-operation-${operationIndex}`,
           id: operation.id,
           key: operation.key,
           name: operation.name,
@@ -742,13 +751,15 @@ function CustomHttpEditor({
           responsePath: operation.responsePath ?? "",
           maxResponseBytes: String(operation.maxResponseBytes ?? 32768),
           maxItems: String(operation.maxItems ?? 50),
-          parameters: operation.parameters.map((parameter) => ({
+          parameters: operation.parameters.map((parameter, parameterIndex) => ({
+            editorKey: `${operation.id || `saved-operation-${operationIndex}`}-parameter-${parameterIndex}`,
             ...parameter,
             description: parameter.description ?? "",
           })),
         }))
       : [
           {
+            editorKey: "new-operation-0",
             key: "",
             name: "",
             description: "",
@@ -782,10 +793,7 @@ function CustomHttpEditor({
     [operations, slug],
   );
 
-  function setOperation(
-    index: number,
-    patch: Partial<(typeof operations)[number]>,
-  ) {
+  function setOperation(index: number, patch: Partial<EditableHttpOperation>) {
     setOperations((current) => {
       const next = [...current];
       next[index] = { ...next[index]!, ...patch };
@@ -824,6 +832,7 @@ function CustomHttpEditor({
         parameters: [
           ...next[operationIndex]!.parameters,
           {
+            editorKey: newEditorKey("parameter"),
             name: "",
             location: "query",
             type: "string",
@@ -839,7 +848,7 @@ function CustomHttpEditor({
   function setParameter(
     operationIndex: number,
     parameterIndex: number,
-    patch: Partial<(typeof operations)[number]["parameters"][number]>,
+    patch: Partial<EditableHttpParameter>,
   ) {
     setOperations((current) => {
       const next = [...current];
@@ -869,6 +878,7 @@ function CustomHttpEditor({
     setOperations((current) => [
       ...current,
       {
+        editorKey: newEditorKey("operation"),
         key: "",
         name: "",
         description: "",
@@ -898,7 +908,8 @@ function CustomHttpEditor({
       setAuthHeaderName(draft.authHeaderName ?? "X-API-Key");
       setTimeoutMs(String(draft.timeoutMs));
       setOperations(
-        draft.operations.map((operation) => ({
+        draft.operations.map((operation, operationIndex) => ({
+          editorKey: `imported-operation-${operationIndex}-${operation.key}`,
           key: operation.key,
           name: operation.name,
           description: operation.description,
@@ -908,7 +919,8 @@ function CustomHttpEditor({
           maxResponseBytes: String(operation.maxResponseBytes),
           maxItems:
             operation.maxItems == null ? "" : String(operation.maxItems),
-          parameters: operation.parameters.map((parameter) => ({
+          parameters: operation.parameters.map((parameter, parameterIndex) => ({
+            editorKey: `imported-operation-${operationIndex}-parameter-${parameterIndex}`,
             ...parameter,
             description: parameter.description ?? "",
           })),
@@ -960,7 +972,13 @@ function CustomHttpEditor({
                 description: operation.description,
                 method: operation.method,
                 path: operation.path,
-                parameters: operation.parameters,
+                parameters: operation.parameters.map((parameter) => ({
+                  name: parameter.name,
+                  location: parameter.location,
+                  type: parameter.type,
+                  required: parameter.required,
+                  description: parameter.description,
+                })),
                 responsePath: operation.responsePath || undefined,
                 maxResponseBytes:
                   Number(operation.maxResponseBytes) || undefined,
@@ -1161,7 +1179,7 @@ function CustomHttpEditor({
             <div className="space-y-4">
               {operations.map((operation, operationIndex) => (
                 <div
-                  key={`${operation.key}-${operationIndex}`}
+                  key={operation.editorKey}
                   className="rounded-lg border p-3"
                 >
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -1254,7 +1272,7 @@ function CustomHttpEditor({
                     <div className="mt-3 space-y-3">
                       {operation.parameters.map((parameter, parameterIndex) => (
                         <div
-                          key={`${parameter.name}-${parameterIndex}`}
+                          key={parameter.editorKey}
                           className="grid gap-2 rounded-lg bg-muted/45 p-3 sm:grid-cols-2"
                         >
                           <label className="grid gap-1 text-xs">

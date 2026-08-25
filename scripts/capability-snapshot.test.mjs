@@ -94,6 +94,10 @@ test("custom capabilities remain a per-run snapshot, including an empty snapshot
   const snapshotB = service.getAgentCustomIntegrationsMcp(agent.id, runB.id);
   assert.equal(snapshotB.length, 1);
   assert.equal(snapshotB[0].snapshot.tools.length, 1);
+  assert.deepEqual(snapshotB[0].server.approval, {
+    defaultMode: "approve",
+    tools: {},
+  });
 
   // Runs created before snapshot markers were introduced already have rows.
   // Their first retry must adopt those rows instead of recapturing live config.
