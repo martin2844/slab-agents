@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHmac, randomBytes } from "node:crypto";
-import { db } from "@/lib/db";
+import { authRepository } from "@/lib/repositories/auth-repository";
 import { readSecret } from "@/lib/server-config";
 import { hashPassword, verifyPassword } from "@/lib/auth/password.mjs";
 
@@ -11,8 +11,6 @@ export const AUTH_SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 const loginWindowMs = 15 * 60 * 1000;
 const loginBlockMs = 60 * 1000;
 const maximumAttempts = 5;
-
-type Row = Record<string, unknown>;
 
 function sessionSecret() {
   const secret = readSecret("SLAB_SESSION_SECRET", "SLAB_SESSION_SECRET_FILE");
@@ -38,10 +36,7 @@ export function authenticationRequired() {
 }
 
 export function adminIsConfigured() {
-  const row = db
-    .prepare("SELECT 1 AS configured FROM auth_credentials WHERE id = 'admin'")
-    .get() as Row | undefined;
-  return Boolean(row?.configured);
+  return authRepository.adminIsConfigured();
 }
 
 export function loginClientIdentifier(request: Request) {
@@ -56,14 +51,10 @@ export function loginClientIdentifier(request: Request) {
 }
 
 function throttleState(clientKey: string, currentTime: Date) {
-  const row = db
-    .prepare("SELECT * FROM auth_login_attempts WHERE client_key = ?")
-    .get(clientKey) as Row | undefined;
+  const row = authRepository.getLoginAttempt(clientKey);
   if (!row) return { blocked: false, retryAfterSeconds: 0 };
 
-  const blockedUntil = row.blocked_until
-    ? new Date(String(row.blocked_until))
-    : null;
+  const blockedUntil = row.blockedUntil ? new Date(row.blockedUntil) : null;
   if (blockedUntil && blockedUntil > currentTime) {
     return {
       blocked: true,
@@ -77,37 +68,13 @@ function throttleState(clientKey: string, currentTime: Date) {
 }
 
 function recordFailedAttempt(clientKey: string, currentTime: Date) {
-  const currentIso = currentTime.toISOString();
-  const row = db
-    .prepare("SELECT * FROM auth_login_attempts WHERE client_key = ?")
-    .get(clientKey) as Row | undefined;
-  const windowStartedAt = row?.window_started_at
-    ? new Date(String(row.window_started_at))
-    : currentTime;
-  const withinWindow =
-    currentTime.getTime() - windowStartedAt.getTime() <= loginWindowMs;
-  const attempts = withinWindow ? Number(row?.attempts ?? 0) + 1 : 1;
-  const blockedUntil =
-    attempts >= maximumAttempts
-      ? new Date(currentTime.getTime() + loginBlockMs).toISOString()
-      : null;
-
-  db.prepare(
-    `INSERT INTO auth_login_attempts
-      (client_key, attempts, window_started_at, blocked_until, updated_at)
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(client_key) DO UPDATE SET
-       attempts = excluded.attempts,
-       window_started_at = excluded.window_started_at,
-       blocked_until = excluded.blocked_until,
-       updated_at = excluded.updated_at`,
-  ).run(
+  authRepository.recordFailedLoginAttempt({
     clientKey,
-    attempts,
-    withinWindow ? windowStartedAt.toISOString() : currentIso,
-    blockedUntil,
-    currentIso,
-  );
+    currentTime,
+    windowMs: loginWindowMs,
+    maximumAttempts,
+    blockMs: loginBlockMs,
+  });
 }
 
 export async function authenticateAdmin(
@@ -125,19 +92,12 @@ export async function authenticateAdmin(
     };
   }
 
-  const credential = db
-    .prepare(
-      "SELECT password_hash, session_generation FROM auth_credentials WHERE id = 'admin'",
-    )
-    .get() as Row | undefined;
+  const credential = authRepository.getAdminCredential();
   if (!credential) {
     return { ok: false as const, code: "SETUP_REQUIRED" as const };
   }
 
-  const valid = await verifyPassword(
-    password,
-    String(credential.password_hash),
-  );
+  const valid = await verifyPassword(password, credential.passwordHash);
   if (!valid) {
     recordFailedAttempt(clientKey, currentTime);
     return { ok: false as const, code: "INVALID_CREDENTIALS" as const };
@@ -148,26 +108,13 @@ export async function authenticateAdmin(
   const expiresAt = new Date(
     currentTime.getTime() + AUTH_SESSION_MAX_AGE_SECONDS * 1000,
   ).toISOString();
-  const transaction = db.transaction(() => {
-    db.prepare("DELETE FROM auth_login_attempts WHERE client_key = ?").run(
-      clientKey,
-    );
-    db.prepare("DELETE FROM auth_sessions WHERE expires_at <= ?").run(
-      timestamp,
-    );
-    db.prepare(
-      `INSERT INTO auth_sessions
-        (token_hash, generation, created_at, last_seen_at, expires_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(
-      keyedHash("session", token),
-      Number(credential.session_generation),
-      timestamp,
-      timestamp,
-      expiresAt,
-    );
+  authRepository.createSession({
+    clientKey,
+    tokenHash: keyedHash("session", token),
+    generation: credential.sessionGeneration,
+    createdAt: timestamp,
+    expiresAt,
   });
-  transaction();
   return { ok: true as const, token, expiresAt };
 }
 
@@ -176,68 +123,46 @@ export function validateSession(token: string | undefined) {
   if (!token) return false;
 
   const tokenHash = keyedHash("session", token);
-  const row = db
-    .prepare(
-      `SELECT sessions.generation, sessions.expires_at, sessions.last_seen_at,
-              credentials.session_generation
-       FROM auth_sessions AS sessions
-       JOIN auth_credentials AS credentials ON credentials.id = 'admin'
-       WHERE sessions.token_hash = ?`,
-    )
-    .get(tokenHash) as Row | undefined;
+  const row = authRepository.getSession(tokenHash);
   if (!row) return false;
 
   const currentTime = new Date();
-  const expired = new Date(String(row.expires_at)) <= currentTime;
-  const staleGeneration =
-    Number(row.generation) !== Number(row.session_generation);
+  const expired = new Date(row.expiresAt) <= currentTime;
+  const staleGeneration = row.generation !== row.sessionGeneration;
   if (expired || staleGeneration) {
-    db.prepare("DELETE FROM auth_sessions WHERE token_hash = ?").run(tokenHash);
+    authRepository.deleteSession(tokenHash);
     return false;
   }
 
-  const lastSeen = new Date(String(row.last_seen_at));
+  const lastSeen = new Date(row.lastSeenAt);
   if (currentTime.getTime() - lastSeen.getTime() > 5 * 60 * 1000) {
-    db.prepare(
-      "UPDATE auth_sessions SET last_seen_at = ? WHERE token_hash = ?",
-    ).run(currentTime.toISOString(), tokenHash);
+    authRepository.touchSession(tokenHash, currentTime.toISOString());
   }
   return true;
 }
 
 export function revokeSession(token: string | undefined) {
   if (!token) return;
-  db.prepare("DELETE FROM auth_sessions WHERE token_hash = ?").run(
-    keyedHash("session", token),
-  );
+  authRepository.deleteSession(keyedHash("session", token));
 }
 
 export async function rotateAdminPassword(
   currentPassword: string,
   nextPassword: string,
 ) {
-  const credential = db
-    .prepare("SELECT password_hash FROM auth_credentials WHERE id = 'admin'")
-    .get() as Row | undefined;
+  const credential = authRepository.getAdminCredential();
   if (
     !credential ||
-    !(await verifyPassword(currentPassword, String(credential.password_hash)))
+    !(await verifyPassword(currentPassword, credential.passwordHash))
   ) {
     return false;
   }
 
   const passwordHash = await hashPassword(nextPassword);
-  const transaction = db.transaction(() => {
-    db.prepare(
-      `UPDATE auth_credentials
-       SET password_hash = ?, session_generation = session_generation + 1,
-           updated_at = ?
-       WHERE id = 'admin'`,
-    ).run(passwordHash, new Date().toISOString());
-    db.prepare("DELETE FROM auth_sessions").run();
-  });
-  transaction();
-  return true;
+  return authRepository.rotateAdminCredential(
+    passwordHash,
+    new Date().toISOString(),
+  );
 }
 
 export function sameOriginRequest(request: Request) {

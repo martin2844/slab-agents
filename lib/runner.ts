@@ -1,7 +1,7 @@
+import { agentRepository } from "@/lib/repositories/agent-repository";
 import "server-only";
 
 import { getSetting } from "@/lib/settings";
-import { repository } from "@/lib/repository";
 import type { Agent, Message, Thread } from "@/lib/types";
 import {
   EMAIL_AGENT_PROMPT,
@@ -116,7 +116,7 @@ export type RunnerRuntimeSummary = {
 };
 
 function workCoordinationContext() {
-  const agents = repository
+  const agents = agentRepository
     .listAgents()
     .filter((agent) => agent.enabled)
     .map((agent) => `- ${agent.name}: assignee slug \`${agent.slug}\``)
@@ -444,7 +444,8 @@ export async function testRunnerRuntime(runtimeId: string) {
   const runtime = (await listRunnerRuntimes()).find(
     (candidate) => candidate.id === runtimeId,
   );
-  if (!runtime) throw new Error(`Runner did not report the ${runtimeId} runtime.`);
+  if (!runtime)
+    throw new Error(`Runner did not report the ${runtimeId} runtime.`);
   if (!runtime.available)
     throw new Error(
       `${runtimeId} is not authenticated or unavailable. On a self-hosted server, run sudo slabctl ${runtimeId} login.`,

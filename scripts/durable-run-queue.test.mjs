@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import test from "node:test";
 
-import { DurableRunQueue } from "../lib/durable-run-queue.ts";
+import { RunQueueRepository } from "../lib/repositories/run-queue-repository.ts";
 
 function fixture() {
   const database = new Database(":memory:");
@@ -58,7 +58,7 @@ test("durable admission preserves FIFO for one agent", async (t) => {
   t.after(() => database.close());
   addRun({ id: "run-1", createdAt: "2026-08-23T12:00:00.000Z" });
   addRun({ id: "run-2", createdAt: "2026-08-23T12:00:01.000Z" });
-  const queue = new DurableRunQueue(database, {
+  const queue = new RunQueueRepository(database, {
     ownerId: "process-a",
     pollMs: 5,
     heartbeatMs: 1_000,
@@ -91,7 +91,7 @@ test("different agents acquire independent leases", async (t) => {
   t.after(() => database.close());
   addRun({ id: "sales-run", agentId: "sales" });
   addRun({ id: "coo-run", agentId: "coo" });
-  const queue = new DurableRunQueue(database, { ownerId: "process-a" });
+  const queue = new RunQueueRepository(database, { ownerId: "process-a" });
   const [sales, coo] = await Promise.all([
     queue.acquire("sales-run").ready,
     queue.acquire("coo-run").ready,
@@ -134,7 +134,7 @@ test("startup recovery requeues abandoned work and fails abandoned approvals", (
     leaseOwner: "dead-process",
     leaseExpiresAt: expired,
   });
-  const queue = new DurableRunQueue(database, {
+  const queue = new RunQueueRepository(database, {
     ownerId: "new-process",
     now: () => new Date("2026-08-23T12:00:00.000Z"),
   });
@@ -163,7 +163,7 @@ test("maintenance persists queued intent until dispatch resumes", async (t) => {
   database
     .prepare("INSERT INTO settings (key,value,updated_at) VALUES (?,?,?)")
     .run("system_maintenance_mode", "on", "2026-08-23T12:00:00.000Z");
-  const queue = new DurableRunQueue(database, {
+  const queue = new RunQueueRepository(database, {
     ownerId: "process-a",
     pollMs: 5,
   });
@@ -184,7 +184,7 @@ test("maintenance atomically defers an admitted run before runtime starts", asyn
   const { database, addRun } = fixture();
   t.after(() => database.close());
   addRun({ id: "preflight-run" });
-  const queue = new DurableRunQueue(database, { ownerId: "process-a" });
+  const queue = new RunQueueRepository(database, { ownerId: "process-a" });
   const lease = await queue.acquire("preflight-run").ready;
   assert.ok(lease);
   database
@@ -215,7 +215,7 @@ test("runner reconnect backoff delays dispatch and clears its transient error on
     runnerRetryAt: "2026-08-23T12:00:30.000Z",
     error: "Runner event stream was interrupted.",
   });
-  const queue = new DurableRunQueue(database, {
+  const queue = new RunQueueRepository(database, {
     ownerId: "process-a",
     now: () => current,
   });
@@ -239,7 +239,7 @@ test("an expired owner is fenced before a recovered owner continues", async (t) 
   t.after(() => database.close());
   addRun({ id: "fenced-run" });
   let current = new Date("2026-08-23T12:00:00.000Z");
-  const ownerA = new DurableRunQueue(database, {
+  const ownerA = new RunQueueRepository(database, {
     ownerId: "process-a",
     leaseMs: 1_000,
     heartbeatMs: 60_000,
@@ -252,7 +252,7 @@ test("an expired owner is fenced before a recovered owner continues", async (t) 
     .run();
 
   current = new Date("2026-08-23T12:00:02.000Z");
-  const ownerB = new DurableRunQueue(database, {
+  const ownerB = new RunQueueRepository(database, {
     ownerId: "process-b",
     leaseMs: 1_000,
     heartbeatMs: 60_000,

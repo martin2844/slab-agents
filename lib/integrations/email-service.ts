@@ -1,5 +1,8 @@
 import "server-only";
 
+import { agentRepository } from "@/lib/repositories/agent-repository";
+import { emailAccessRepository } from "@/lib/repositories/email-access-repository";
+
 import { OperationalError } from "@/lib/operational-error";
 
 import {
@@ -11,7 +14,6 @@ import {
   readEmailConnectorToken,
   storeEmailConnectorToken,
 } from "@/lib/integrations/email-token-vault";
-import { repository } from "@/lib/repository";
 import { readSecret } from "@/lib/server-config";
 import type {
   AgentEmailAccess,
@@ -26,7 +28,7 @@ import type {
 const DEFAULT_EMAIL_URL = "http://127.0.0.1:6981";
 
 function currentConfig() {
-  return repository.getEmailIntegrationRecord();
+  return emailAccessRepository.getEmailIntegrationRecord();
 }
 
 function configuredServiceUrl() {
@@ -109,7 +111,7 @@ export async function getEmailIntegrationState(): Promise<EmailIntegrationState>
     microsoftOAuth,
     protonBridge,
     accounts,
-    assignments: repository.listAgentEmailAccess(),
+    assignments: emailAccessRepository.listAgentEmailAccess(),
   };
 }
 
@@ -118,14 +120,14 @@ export async function saveAndTestEmailIntegration(serviceUrl: string) {
   const testedAt = new Date().toISOString();
   try {
     await new EmailAdminClient(normalized).health();
-    repository.saveEmailIntegration({
+    emailAccessRepository.saveEmailIntegration({
       serviceUrl: normalized,
       status: "connected",
       lastTestedAt: testedAt,
       lastError: null,
     });
   } catch (error) {
-    repository.saveEmailIntegration({
+    emailAccessRepository.saveEmailIntegration({
       serviceUrl: normalized,
       status: "failed",
       lastTestedAt: testedAt,
@@ -172,7 +174,7 @@ export async function setEmailAccountEnabled(
 
 export async function deleteEmailAccount(accountId: string) {
   if (
-    repository
+    emailAccessRepository
       .listAgentEmailAccess()
       .some(({ accountIds }) => accountIds.includes(accountId))
   ) {
@@ -180,9 +182,12 @@ export async function deleteEmailAccount(accountId: string) {
       "Remove this account from every agent profile before deleting it.",
     );
   }
-  const account = (await client().listAccounts()).find(({ id }) => id === accountId);
+  const account = (await client().listAccounts()).find(
+    ({ id }) => id === accountId,
+  );
   if (!account) throw new OperationalError("Email account not found.");
-  if (account.managed) await client().deleteManagedProtonBridgeAccount(accountId);
+  if (account.managed)
+    await client().deleteManagedProtonBridgeAccount(accountId);
   else await client().deleteAccount(accountId);
   return getEmailIntegrationState();
 }
@@ -250,7 +255,7 @@ function validateAccess(input: {
   sendEnabled: boolean;
   sendPolicy: EmailSendPolicy;
 }) {
-  const agent = repository.getAgent(input.agentId);
+  const agent = agentRepository.getAgent(input.agentId);
   if (!agent) throw new OperationalError("Agent not found.");
   if (input.accountIds.length === 0) {
     throw new OperationalError("Select at least one Email account.");
@@ -282,7 +287,9 @@ export async function saveAgentEmailAccess(input: {
   const remoteAccounts = await client().listAccounts();
   const remoteIds = new Set(remoteAccounts.map(({ id }) => id));
   if (input.accountIds.some((id) => !remoteIds.has(id))) {
-    throw new OperationalError("One or more selected Email accounts no longer exist.");
+    throw new OperationalError(
+      "One or more selected Email accounts no longer exist.",
+    );
   }
   const selectedAccounts = remoteAccounts.filter(({ id }) =>
     input.accountIds.includes(id),
@@ -300,8 +307,8 @@ export async function saveAgentEmailAccess(input: {
     );
   }
 
-  const agent = repository.getAgent(input.agentId)!;
-  const current = repository.getAgentEmailAccess(input.agentId);
+  const agent = agentRepository.getAgent(input.agentId)!;
+  const current = emailAccessRepository.getAgentEmailAccess(input.agentId);
   const profileInput = {
     name: `slab-agents:${agent.slug}`,
     readEnabled: input.readEnabled,
@@ -343,7 +350,7 @@ export async function saveAgentEmailAccess(input: {
   }
 
   try {
-    const saved = repository.saveAgentEmailAccess({
+    const saved = emailAccessRepository.saveAgentEmailAccess({
       agentId: input.agentId,
       profileId: profile.id,
       profileName: profile.name,
@@ -377,16 +384,16 @@ export async function saveAgentEmailAccess(input: {
 }
 
 export async function revokeAgentEmailAccess(agentId: string) {
-  const current = repository.getAgentEmailAccess(agentId);
+  const current = emailAccessRepository.getAgentEmailAccess(agentId);
   if (!current) throw new OperationalError("Agent Email access was not found.");
   await client().revokeToken(current.profileId, current.tokenId);
-  repository.deleteAgentEmailAccess(agentId);
+  emailAccessRepository.deleteAgentEmailAccess(agentId);
   deleteEmailConnectorToken(current.tokenId);
 }
 
 export function getAgentEmailMcp(agentId: string) {
   const config = currentConfig();
-  const access = repository.getAgentEmailAccess(agentId);
+  const access = emailAccessRepository.getAgentEmailAccess(agentId);
   if (!config || config.status !== "connected" || !access) return null;
   const bearerToken = readEmailConnectorToken(access.tokenId);
   return {

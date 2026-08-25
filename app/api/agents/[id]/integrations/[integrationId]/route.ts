@@ -1,6 +1,7 @@
+import { agentRepository } from "@/lib/repositories/agent-repository";
+import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { z } from "zod";
 import { apiError, notFound } from "@/lib/api";
-import { repository } from "@/lib/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,13 +20,13 @@ export async function PATCH(
       params,
       request.json().then((body) => schema.parse(body)),
     ]);
-    const agent = repository.getAgent(agentId);
-    const integration = repository.getIntegration(integrationId);
+    const agent = agentRepository.getAgent(agentId);
+    const integration = integrationRepository.getIntegration(integrationId);
     if (!agent || !integration) {
       throw notFound("Agent or integration not found.");
     }
 
-    const data = repository.setAgentIntegrationTools(
+    const data = integrationRepository.setAgentIntegrationTools(
       integrationId,
       agentId,
       input.enabled ? integration.tools.map((tool) => tool.key) : [],

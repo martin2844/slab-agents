@@ -2,7 +2,7 @@ import "server-only";
 
 import { DocsClient } from "@/lib/mcp/docs-client";
 import { WorkClient } from "@/lib/mcp/work-client";
-import { settingsStore } from "@/lib/repositories/settings-store";
+import { settingsRepository } from "@/lib/repositories/settings-repository";
 import { getRuntimeConfig, runtimeIds } from "@/lib/runtime-config";
 import { listRuntimeCatalog } from "@/lib/runtime-service";
 import { testRunner } from "@/lib/runner";
@@ -76,7 +76,7 @@ export function getSetupStatus(): SetupStatus {
       } satisfies SetupCheck;
     }
 
-    const stored = settingsStore.get(statusKey(service));
+    const stored = settingsRepository.get(statusKey(service));
     if (stored) {
       try {
         const value = JSON.parse(stored) as StoredCheck;
@@ -135,7 +135,7 @@ async function performCheck(service: SetupService) {
       service === "codex"
         ? `${availableRuntime?.displayName ?? "Agent runtime"} is available through the local Runner.`
         : `${labels[service]} connected successfully.`;
-    settingsStore.set(
+    settingsRepository.set(
       statusKey(service),
       JSON.stringify({
         state: "connected",
@@ -145,7 +145,7 @@ async function performCheck(service: SetupService) {
       } satisfies StoredCheck),
     );
   } catch (error) {
-    settingsStore.set(
+    settingsRepository.set(
       statusKey(service),
       JSON.stringify({
         state: "failed",

@@ -1,6 +1,6 @@
+import { operatorPackRepository } from "@/lib/repositories/operator-pack-repository";
 import { apiError, notFound } from "@/lib/api";
 import { refreshOperatorPackAcceptance } from "@/lib/packs/service";
-import { repository } from "@/lib/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,8 @@ export async function GET(
 ) {
   try {
     const { id, acceptanceId } = await ctx.params;
-    const acceptance = repository.getOperatorPackAcceptance(acceptanceId);
+    const acceptance =
+      operatorPackRepository.getOperatorPackAcceptance(acceptanceId);
     if (!acceptance || acceptance.packId !== id) {
       throw notFound("Acceptance Run not found.");
     }

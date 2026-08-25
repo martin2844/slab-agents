@@ -45,7 +45,7 @@ type ClaimResult = {
   reason: DurableAdmission["reason"];
 };
 
-export class DurableRunQueue {
+export class RunQueueRepository {
   readonly ownerId: string;
   private readonly database: Database;
   private readonly leaseMs: number;

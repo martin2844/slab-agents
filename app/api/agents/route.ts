@@ -1,6 +1,6 @@
+import { agentRepository } from "@/lib/repositories/agent-repository";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
-import { repository } from "@/lib/repository";
 import { assertRuntimeSelectable } from "@/lib/runtime-config";
 
 export const runtime = "nodejs";
@@ -22,7 +22,7 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 export async function GET() {
-  return Response.json({ data: repository.listAgents() });
+  return Response.json({ data: agentRepository.listAgents() });
 }
 export async function POST(request: Request) {
   try {
@@ -30,10 +30,10 @@ export async function POST(request: Request) {
     assertRuntimeSelectable(input.runtime, input.model);
     let slug = slugify(input.name),
       suffix = 2;
-    while (repository.getAgent(slug))
+    while (agentRepository.getAgent(slug))
       slug = `${slugify(input.name)}-${suffix++}`;
     return Response.json(
-      { data: repository.createAgent({ ...input, slug }) },
+      { data: agentRepository.createAgent({ ...input, slug }) },
       { status: 201 },
     );
   } catch (error) {

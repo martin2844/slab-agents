@@ -1,5 +1,14 @@
 import "server-only";
 
+import { agentRepository } from "@/lib/repositories/agent-repository";
+import { automationRepository } from "@/lib/repositories/automation-repository";
+import { conversationRepository } from "@/lib/repositories/conversation-repository";
+import { emailAccessRepository } from "@/lib/repositories/email-access-repository";
+import { integrationRepository } from "@/lib/repositories/integration-repository";
+import { operatorPackRepository } from "@/lib/repositories/operator-pack-repository";
+import { runRepository } from "@/lib/repositories/run-repository";
+import { withImmediateTransaction } from "@/lib/db/transaction";
+
 import { OperationalError } from "@/lib/operational-error";
 
 import { CronExpressionParser } from "cron-parser";
@@ -27,7 +36,6 @@ import {
   decidePackResourceChange,
   samePackSnapshot,
 } from "@/lib/packs/lifecycle";
-import { repository } from "@/lib/repository";
 import { getRuntimeConfig, runtimeIds } from "@/lib/runtime-config";
 import { createRunExecution, executeRunInBackground } from "@/lib/run-service";
 import { getSetupStatus } from "@/lib/setup";
@@ -93,10 +101,12 @@ function automationSnapshot(automation: Automation) {
 }
 
 function localCatalog(): PackCatalogEntry[] {
-  return repository.listOperatorPackDefinitions().map((definition) => ({
-    manifest: parseOperatorPackManifest(definition.manifest),
-    source: "local" as const,
-  }));
+  return operatorPackRepository
+    .listOperatorPackDefinitions()
+    .map((definition) => ({
+      manifest: parseOperatorPackManifest(definition.manifest),
+      source: "local" as const,
+    }));
 }
 
 export function listOperatorPackCatalog(): PackCatalogEntry[] {
@@ -114,7 +124,7 @@ export function listOperatorPackCatalog(): PackCatalogEntry[] {
 export function getOperatorPackCatalogEntry(id: string) {
   const official = getOfficialOperatorPack(id);
   if (official) return { manifest: official, source: "official" as const };
-  const local = repository.getOperatorPackDefinition(id);
+  const local = operatorPackRepository.getOperatorPackDefinition(id);
   return local
     ? {
         manifest: parseOperatorPackManifest(local.manifest),
@@ -125,7 +135,9 @@ export function getOperatorPackCatalogEntry(id: string) {
 
 function integrationMatchesCapability(
   category: PackCapabilityCategory,
-  integration: ReturnType<typeof repository.listIntegrations>[number],
+  integration: ReturnType<
+    typeof integrationRepository.listIntegrations
+  >[number],
 ) {
   if (category === "calendar") {
     return integration.provider.startsWith("calendar_");
@@ -143,12 +155,14 @@ function integrationMatchesCapability(
 }
 
 function packAgents(manifest: OperatorPackManifest) {
-  const resources = repository.listOperatorPackResources(manifest.id);
+  const resources = operatorPackRepository.listOperatorPackResources(
+    manifest.id,
+  );
   return manifest.agents.flatMap((template) => {
     const resource = findResource(resources, "agent", template.key);
     const agent = resource?.resourceId
-      ? repository.getAgent(resource.resourceId)
-      : repository.getAgent(template.slug);
+      ? agentRepository.getAgent(resource.resourceId)
+      : agentRepository.getAgent(template.slug);
     return agent ? [agent] : [];
   });
 }
@@ -169,13 +183,15 @@ function capabilityAvailable(
     );
   }
   if (category === "email") {
-    if (repository.getEmailIntegrationRecord()?.status !== "connected") {
+    if (
+      emailAccessRepository.getEmailIntegrationRecord()?.status !== "connected"
+    ) {
       return false;
     }
     return (
       agents.length > 0 &&
       agents.every((agent) => {
-        const access = repository.getAgentEmailAccess(agent.id);
+        const access = emailAccessRepository.getAgentEmailAccess(agent.id);
         return Boolean(
           access &&
           access.accountIds.length > 0 &&
@@ -184,7 +200,7 @@ function capabilityAvailable(
       })
     );
   }
-  const integrations = repository
+  const integrations = integrationRepository
     .listIntegrations()
     .filter(
       (integration) =>
@@ -276,10 +292,10 @@ function resolvePackAgent(
   resource?: OperatorPackResource,
 ) {
   const tracked = resource?.resourceId
-    ? repository.getAgent(resource.resourceId)
+    ? agentRepository.getAgent(resource.resourceId)
     : null;
   if (tracked) {
-    const slugOwner = repository.getAgent(template.slug);
+    const slugOwner = agentRepository.getAgent(template.slug);
     if (slugOwner && slugOwner.id !== tracked.id) {
       throw new OperationalError(
         `Agent slug ${template.slug} is already used by another Agent.`,
@@ -287,7 +303,7 @@ function resolvePackAgent(
     }
     return tracked;
   }
-  return repository.getAgent(template.slug);
+  return agentRepository.getAgent(template.slug);
 }
 
 function resolvePackQuickAction(
@@ -297,10 +313,13 @@ function resolvePackQuickAction(
 ) {
   if (!agent) return null;
   const tracked = resource?.resourceId
-    ? repository.getAgentQuickAction(resource.resourceId)
+    ? agentRepository.getAgentQuickAction(resource.resourceId)
     : null;
   if (tracked) {
-    const labelOwner = repository.getAgentQuickActionByLabel(agent.id, label);
+    const labelOwner = agentRepository.getAgentQuickActionByLabel(
+      agent.id,
+      label,
+    );
     if (labelOwner && labelOwner.id !== tracked.id) {
       throw new OperationalError(
         `Quick action label ${label} is already used by another action on ${agent.name}.`,
@@ -308,7 +327,7 @@ function resolvePackQuickAction(
     }
     return tracked;
   }
-  return repository.getAgentQuickActionByLabel(agent.id, label);
+  return agentRepository.getAgentQuickActionByLabel(agent.id, label);
 }
 
 function manifestResourceKeys(manifest: OperatorPackManifest) {
@@ -337,15 +356,15 @@ function resourceLabel(resource: OperatorPackResource) {
 async function currentPackResourceSnapshot(resource: OperatorPackResource) {
   if (!resource.resourceId) return undefined;
   if (resource.resourceType === "agent") {
-    const agent = repository.getAgent(resource.resourceId);
+    const agent = agentRepository.getAgent(resource.resourceId);
     return agent ? agentSnapshot(agent) : undefined;
   }
   if (resource.resourceType === "quick_action") {
-    const action = repository.getAgentQuickAction(resource.resourceId);
+    const action = agentRepository.getAgentQuickAction(resource.resourceId);
     return action ? actionSnapshot(action) : undefined;
   }
   if (resource.resourceType === "automation") {
-    const automation = repository.getAutomation(resource.resourceId);
+    const automation = automationRepository.getAutomation(resource.resourceId);
     return automation ? automationSnapshot(automation) : undefined;
   }
   try {
@@ -386,8 +405,9 @@ export async function previewOperatorPack(
   if (!entry) throw new OperationalError("Operator Pack not found.");
   const { manifest, source } = entry;
   assertManifestRuntimeCompatibility(manifest);
-  const installation = repository.getOperatorPackInstallation(packId);
-  const resources = repository.listOperatorPackResources(packId);
+  const installation =
+    operatorPackRepository.getOperatorPackInstallation(packId);
+  const resources = operatorPackRepository.listOperatorPackResources(packId);
   const changes: OperatorPackPreviewChange[] = [];
 
   for (const template of manifest.agents) {
@@ -439,7 +459,7 @@ export async function previewOperatorPack(
   for (const template of manifest.automations) {
     const resource = findResource(resources, "automation", template.key);
     const current = resource?.resourceId
-      ? repository.getAutomation(resource.resourceId)
+      ? automationRepository.getAutomation(resource.resourceId)
       : null;
     changes.push(
       previewChange({
@@ -550,7 +570,7 @@ function applyLocalPackResources(
     )?.runtimeId ??
     enabledRuntimeConfigs[0]?.runtimeId ??
     "codex";
-  repository.saveOperatorPackInstallation({
+  operatorPackRepository.saveOperatorPackInstallation({
     packId: pack.id,
     packVersion: pack.version,
     source,
@@ -561,7 +581,7 @@ function applyLocalPackResources(
 
   for (const change of preview.changes) {
     if (change.action !== "detach") continue;
-    const resource = repository.getOperatorPackResource(
+    const resource = operatorPackRepository.getOperatorPackResource(
       pack.id,
       change.resourceType,
       change.resourceKey,
@@ -572,9 +592,11 @@ function applyLocalPackResources(
       resource.resourceId &&
       resource.managed
     ) {
-      repository.updateAutomation(resource.resourceId, { enabled: false });
+      automationRepository.updateAutomation(resource.resourceId, {
+        enabled: false,
+      });
     }
-    repository.saveOperatorPackResource({
+    operatorPackRepository.saveOperatorPackResource({
       packId: pack.id,
       resourceType: resource.resourceType,
       resourceKey: resource.resourceKey,
@@ -594,7 +616,7 @@ function applyLocalPackResources(
       (item) =>
         item.resourceType === "agent" && item.resourceKey === template.key,
     )!;
-    const previousResource = repository.getOperatorPackResource(
+    const previousResource = operatorPackRepository.getOperatorPackResource(
       pack.id,
       "agent",
       template.key,
@@ -604,7 +626,7 @@ function applyLocalPackResources(
     let createdByPack = previousResource?.createdByPack ?? !agent;
     let managed = false;
     if (!agent) {
-      agent = repository.createAgent({
+      agent = agentRepository.createAgent({
         name: template.name,
         slug: template.slug,
         role: template.role,
@@ -617,7 +639,7 @@ function applyLocalPackResources(
       createdByPack = true;
       managed = true;
     } else if (change.action === "update" || change.action === "unchanged") {
-      agent = repository.updateAgent(agent.id, {
+      agent = agentRepository.updateAgent(agent.id, {
         name: template.name,
         slug: template.slug,
         role: template.role,
@@ -628,7 +650,7 @@ function applyLocalPackResources(
       })!;
       managed = true;
     } else if (change.action === "conflict" && conflictStrategy === "replace") {
-      agent = repository.updateAgent(agent.id, {
+      agent = agentRepository.updateAgent(agent.id, {
         name: template.name,
         slug: template.slug,
         role: template.role,
@@ -640,7 +662,7 @@ function applyLocalPackResources(
       managed = true;
     }
     agentsByKey.set(template.key, agent);
-    repository.saveOperatorPackResource({
+    operatorPackRepository.saveOperatorPackResource({
       packId: pack.id,
       resourceType: "agent",
       resourceKey: template.key,
@@ -661,11 +683,12 @@ function applyLocalPackResources(
           item.resourceType === "quick_action" &&
           item.resourceKey === resourceKey,
       )!;
-      const previousActionResource = repository.getOperatorPackResource(
-        pack.id,
-        "quick_action",
-        resourceKey,
-      );
+      const previousActionResource =
+        operatorPackRepository.getOperatorPackResource(
+          pack.id,
+          "quick_action",
+          resourceKey,
+        );
       let action = resolvePackQuickAction(
         agent,
         actionTemplate.label,
@@ -679,7 +702,10 @@ function applyLocalPackResources(
         previousActionResource?.createdByPack ?? !action;
       let actionManaged = false;
       if (!action) {
-        action = repository.createAgentQuickAction(agent.id, actionTemplate);
+        action = agentRepository.createAgentQuickAction(
+          agent.id,
+          actionTemplate,
+        );
         actionCreatedByPack = true;
         actionManaged = true;
       } else if (
@@ -687,10 +713,13 @@ function applyLocalPackResources(
         actionChange.action === "unchanged" ||
         (actionChange.action === "conflict" && conflictStrategy === "replace")
       ) {
-        action = repository.updateAgentQuickAction(action.id, actionTemplate)!;
+        action = agentRepository.updateAgentQuickAction(
+          action.id,
+          actionTemplate,
+        )!;
         actionManaged = true;
       }
-      repository.saveOperatorPackResource({
+      operatorPackRepository.saveOperatorPackResource({
         packId: pack.id,
         resourceType: "quick_action",
         resourceKey,
@@ -711,13 +740,13 @@ function applyLocalPackResources(
       (item) =>
         item.resourceType === "automation" && item.resourceKey === template.key,
     )!;
-    const previousResource = repository.getOperatorPackResource(
+    const previousResource = operatorPackRepository.getOperatorPackResource(
       pack.id,
       "automation",
       template.key,
     );
     let automation = previousResource?.resourceId
-      ? repository.getAutomation(previousResource.resourceId)
+      ? automationRepository.getAutomation(previousResource.resourceId)
       : null;
     assertPreviewStillCurrent(
       change,
@@ -727,7 +756,7 @@ function applyLocalPackResources(
     let createdByPack = previousResource?.createdByPack ?? !automation;
     const agent = agentsByKey.get(template.agentKey)!;
     if (!automation) {
-      automation = repository.createAutomation({
+      automation = automationRepository.createAutomation({
         name: template.name,
         agentId: agent.id,
         cronExpression: template.cronExpression,
@@ -742,7 +771,7 @@ function applyLocalPackResources(
       change.action === "unchanged" ||
       (change.action === "conflict" && conflictStrategy === "replace")
     ) {
-      automation = repository.updateAutomation(automation.id, {
+      automation = automationRepository.updateAutomation(automation.id, {
         name: template.name,
         cronExpression: template.cronExpression,
         prompt: template.prompt,
@@ -751,7 +780,7 @@ function applyLocalPackResources(
       })!;
       managed = true;
     }
-    repository.saveOperatorPackResource({
+    operatorPackRepository.saveOperatorPackResource({
       packId: pack.id,
       resourceType: "automation",
       resourceKey: template.key,
@@ -774,7 +803,7 @@ async function applyDocResources(
   const { pack } = preview;
   for (const template of pack.docs) {
     const tag = packResourceTag(pack.id, template.key);
-    const previous = repository.getOperatorPackResource(
+    const previous = operatorPackRepository.getOperatorPackResource(
       pack.id,
       "doc",
       template.key,
@@ -822,7 +851,7 @@ async function applyDocResources(
         });
         managed = true;
       }
-      repository.saveOperatorPackResource({
+      operatorPackRepository.saveOperatorPackResource({
         packId: pack.id,
         resourceType: "doc",
         resourceKey: template.key,
@@ -837,7 +866,7 @@ async function applyDocResources(
         lastError: null,
       });
     } catch (error) {
-      repository.saveOperatorPackResource({
+      operatorPackRepository.saveOperatorPackResource({
         packId: pack.id,
         resourceType: "doc",
         resourceKey: template.key,
@@ -875,12 +904,12 @@ export async function installOperatorPack(
 ) {
   return withPackInstallLock(packId, async () => {
     const preview = await previewOperatorPack(packId);
-    repository.transaction(() =>
+    withImmediateTransaction(() =>
       applyLocalPackResources(preview, conflictStrategy),
     );
     try {
       await applyDocResources(preview, conflictStrategy);
-      return repository.saveOperatorPackInstallation({
+      return operatorPackRepository.saveOperatorPackInstallation({
         packId,
         packVersion: preview.pack.version,
         source: preview.source,
@@ -893,7 +922,7 @@ export async function installOperatorPack(
         error instanceof Error
           ? error.message
           : "Pack installation was interrupted.";
-      repository.saveOperatorPackInstallation({
+      operatorPackRepository.saveOperatorPackInstallation({
         packId,
         packVersion: preview.pack.version,
         source: preview.source,
@@ -910,20 +939,26 @@ export async function installOperatorPack(
 
 export function disableOperatorPack(packId: string) {
   return withPackInstallLock(packId, async () => {
-    const installation = repository.getOperatorPackInstallation(packId);
-    if (!installation) throw new OperationalError("Operator Pack is not installed.");
-    return repository.transaction(() => {
-      for (const resource of repository.listOperatorPackResources(packId)) {
+    const installation =
+      operatorPackRepository.getOperatorPackInstallation(packId);
+    if (!installation)
+      throw new OperationalError("Operator Pack is not installed.");
+    return withImmediateTransaction(() => {
+      for (const resource of operatorPackRepository.listOperatorPackResources(
+        packId,
+      )) {
         if (
           resource.resourceType === "automation" &&
           resource.resourceId &&
           resource.managed
         ) {
-          repository.updateAutomation(resource.resourceId, { enabled: false });
+          automationRepository.updateAutomation(resource.resourceId, {
+            enabled: false,
+          });
         }
       }
-      repository.detachOperatorPackResources(packId);
-      return repository.saveOperatorPackInstallation({
+      operatorPackRepository.detachOperatorPackResources(packId);
+      return operatorPackRepository.saveOperatorPackInstallation({
         packId,
         packVersion: installation.packVersion,
         source: installation.source,
@@ -939,10 +974,14 @@ export function disableOperatorPack(packId: string) {
 export function importOperatorPack(input: unknown) {
   const manifest = parseOperatorPackManifest(input);
   if (getOfficialOperatorPack(manifest.id)) {
-    throw new OperationalError("Official Operator Pack IDs cannot be replaced.");
+    throw new OperationalError(
+      "Official Operator Pack IDs cannot be replaced.",
+    );
   }
   assertManifestRuntimeCompatibility(manifest);
-  const existing = repository.getOperatorPackDefinition(manifest.id);
+  const existing = operatorPackRepository.getOperatorPackDefinition(
+    manifest.id,
+  );
   if (
     existing &&
     comparePackVersions(manifest.version, existing.version) <= 0
@@ -951,7 +990,7 @@ export function importOperatorPack(input: unknown) {
       "Imported pack version must be newer than the local version.",
     );
   }
-  return repository.saveOperatorPackDefinition(manifest);
+  return operatorPackRepository.saveOperatorPackDefinition(manifest);
 }
 
 export function removeLocalOperatorPackDefinition(packId: string) {
@@ -959,19 +998,20 @@ export function removeLocalOperatorPackDefinition(packId: string) {
     if (getOfficialOperatorPack(packId)) {
       throw new OperationalError("Official Operator Packs cannot be deleted.");
     }
-    const installation = repository.getOperatorPackInstallation(packId);
+    const installation =
+      operatorPackRepository.getOperatorPackInstallation(packId);
     if (installation && installation.status !== "disabled") {
       throw new OperationalError(
         "Disable the installed pack before deleting its definition.",
       );
     }
-    return repository.deleteOperatorPackDefinition(packId);
+    return operatorPackRepository.deleteOperatorPackDefinition(packId);
   });
 }
 
 function latestAcceptance(packId: string, packVersion?: string) {
   return (
-    repository
+    operatorPackRepository
       .listOperatorPackAcceptances(packId)
       .find(
         (acceptance) => !packVersion || acceptance.packVersion === packVersion,
@@ -984,7 +1024,7 @@ export async function getOperatorPackSummaries(): Promise<
 > {
   const summaries: OperatorPackSummary[] = [];
   for (const entry of listOperatorPackCatalog()) {
-    const installation = repository.getOperatorPackInstallation(
+    const installation = operatorPackRepository.getOperatorPackInstallation(
       entry.manifest.id,
     );
     let acceptance = latestAcceptance(
@@ -1052,7 +1092,7 @@ async function createAcceptanceFixtures(
           author: "Slab Acceptance QA",
         })
       : null;
-  repository.updateOperatorPackAcceptance(acceptance.id, {
+  operatorPackRepository.updateOperatorPackAcceptance(acceptance.id, {
     projectKey: project.key,
     docId: doc?.id ?? null,
   });
@@ -1077,9 +1117,12 @@ export async function startOperatorPackAcceptance(
   scenarioId?: string,
 ) {
   const entry = getOperatorPackCatalogEntry(packId);
-  const installation = repository.getOperatorPackInstallation(packId);
+  const installation =
+    operatorPackRepository.getOperatorPackInstallation(packId);
   if (!entry || !installation || installation.status !== "installed") {
-    throw new OperationalError("Install the Operator Pack before running acceptance QA.");
+    throw new OperationalError(
+      "Install the Operator Pack before running acceptance QA.",
+    );
   }
   if (installation.packVersion !== entry.manifest.version) {
     throw new OperationalError(
@@ -1104,7 +1147,7 @@ export async function startOperatorPackAcceptance(
   const agentTemplate = entry.manifest.agents.find(
     (item) => item.key === scenario.agentKey,
   )!;
-  const agentResource = repository.getOperatorPackResource(
+  const agentResource = operatorPackRepository.getOperatorPackResource(
     packId,
     "agent",
     agentTemplate.key,
@@ -1113,7 +1156,7 @@ export async function startOperatorPackAcceptance(
   if (!agent || !agent.enabled) {
     throw new OperationalError("The pack Agent is missing or disabled.");
   }
-  const acceptance = repository.createOperatorPackAcceptance({
+  const acceptance = operatorPackRepository.createOperatorPackAcceptance({
     packId,
     scenarioId: scenario.id,
     packVersion: installation.packVersion,
@@ -1126,12 +1169,12 @@ export async function startOperatorPackAcceptance(
       acceptance,
       agent,
     );
-    repository.updateOperatorPackAcceptance(acceptance.id, {
+    operatorPackRepository.updateOperatorPackAcceptance(acceptance.id, {
       issueKey: fixture.issue.key,
     });
     let run;
     if (scenario.execution === "review") {
-      const thread = repository.createThread(
+      const thread = conversationRepository.createThread(
         agent.id,
         `${entry.manifest.name} acceptance · ${fixture.issue.key}`,
       );
@@ -1150,7 +1193,7 @@ export async function startOperatorPackAcceptance(
       void executeRunInBackground(run.id);
     } else {
       const findAssignmentRun = () =>
-        repository
+        runRepository
           .listRuns()
           .find(
             (candidate) =>
@@ -1163,10 +1206,12 @@ export async function startOperatorPackAcceptance(
         find: findAssignmentRun,
       });
       if (!run) {
-        throw new OperationalError("Work assignment did not create an Agent Run.");
+        throw new OperationalError(
+          "Work assignment did not create an Agent Run.",
+        );
       }
     }
-    return repository.updateOperatorPackAcceptance(acceptance.id, {
+    return operatorPackRepository.updateOperatorPackAcceptance(acceptance.id, {
       runId: run.id,
       status: run.status === "queued" ? "queued" : "running",
       error: null,
@@ -1174,7 +1219,7 @@ export async function startOperatorPackAcceptance(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Acceptance setup failed.";
-    repository.updateOperatorPackAcceptance(acceptance.id, {
+    operatorPackRepository.updateOperatorPackAcceptance(acceptance.id, {
       status: "failed",
       error: message,
       completedAt: new Date().toISOString(),
@@ -1184,7 +1229,7 @@ export async function startOperatorPackAcceptance(
 }
 
 function acceptanceToolEvidence(
-  events: ReturnType<typeof repository.listRunEvents>,
+  events: ReturnType<typeof runRepository.listRunEvents>,
 ) {
   return events
     .filter((event) => event.type === "tool_completed")
@@ -1205,36 +1250,38 @@ function acceptanceToolEvidence(
 }
 
 export async function refreshOperatorPackAcceptance(id: string) {
-  const acceptance = repository.getOperatorPackAcceptance(id);
+  const acceptance = operatorPackRepository.getOperatorPackAcceptance(id);
   if (!acceptance || !acceptance.runId) return acceptance;
   if (acceptance.status === "passed" || acceptance.status === "failed") {
     return acceptance;
   }
-  const run = repository.getRun(acceptance.runId);
+  const run = runRepository.getRun(acceptance.runId);
   if (!run) {
-    return repository.updateOperatorPackAcceptance(id, {
+    return operatorPackRepository.updateOperatorPackAcceptance(id, {
       status: "failed",
       error: "Acceptance Run no longer exists.",
       completedAt: new Date().toISOString(),
     })!;
   }
   if (["queued", "running", "waiting_approval"].includes(run.status)) {
-    return repository.updateOperatorPackAcceptance(id, {
+    return operatorPackRepository.updateOperatorPackAcceptance(id, {
       status: run.status === "queued" ? "queued" : "running",
       error: null,
     })!;
   }
   if (run.status !== "completed") {
-    return repository.updateOperatorPackAcceptance(id, {
+    return operatorPackRepository.updateOperatorPackAcceptance(id, {
       status: "failed",
       evidence: { runStatus: run.status },
       error: `Acceptance Run ended with status ${run.status}.`,
       completedAt: new Date().toISOString(),
     })!;
   }
-  repository.updateOperatorPackAcceptance(id, { status: "evaluating" });
+  operatorPackRepository.updateOperatorPackAcceptance(id, {
+    status: "evaluating",
+  });
   try {
-    const events = repository.listRunEvents(run.id);
+    const events = runRepository.listRunEvents(run.id);
     const tools = acceptanceToolEvidence(events);
     const issue = acceptance.issueKey
       ? await WorkClient.getIssue(acceptance.issueKey)
@@ -1265,7 +1312,7 @@ export async function refreshOperatorPackAcceptance(id: string) {
       completedToolCount: tools.length,
       createdWorkItems: evaluation.createdWorkItems,
     };
-    return repository.updateOperatorPackAcceptance(id, {
+    return operatorPackRepository.updateOperatorPackAcceptance(id, {
       status: evaluation.passed ? "passed" : "failed",
       evidence,
       error: evaluation.passed
@@ -1274,7 +1321,7 @@ export async function refreshOperatorPackAcceptance(id: string) {
       completedAt: new Date().toISOString(),
     })!;
   } catch (error) {
-    return repository.updateOperatorPackAcceptance(id, {
+    return operatorPackRepository.updateOperatorPackAcceptance(id, {
       status: "evaluating",
       error:
         error instanceof Error
@@ -1286,11 +1333,11 @@ export async function refreshOperatorPackAcceptance(id: string) {
 
 export function operatorPackMetrics(): OperatorPackMetrics {
   const installedVersions = new Map(
-    repository
+    operatorPackRepository
       .listOperatorPackInstallations()
       .map((installation) => [installation.packId, installation.packVersion]),
   );
-  const acceptances = repository
+  const acceptances = operatorPackRepository
     .listOperatorPackAcceptances()
     .filter(
       (acceptance) =>
@@ -1302,7 +1349,7 @@ export function operatorPackMetrics(): OperatorPackMetrics {
     ["preparing", "queued", "running", "evaluating"].includes(item.status),
   ).length;
   const terminal = passed + failed;
-  const firstAcceptedMinutes = repository
+  const firstAcceptedMinutes = operatorPackRepository
     .listOperatorPackInstallations()
     .flatMap((installation) => {
       const accepted = acceptances

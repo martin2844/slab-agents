@@ -1,10 +1,10 @@
+import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { apiError, badRequest, notFound } from "@/lib/api";
 import {
   saveCustomHttpIntegration,
   saveCustomMcpIntegration,
   savePostHogIntegration,
 } from "@/lib/integrations/service";
-import { repository } from "@/lib/repository";
 import {
   asIntegrationAuthType,
   customHttpIntegrationUpdateSchema,
@@ -22,7 +22,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const current = repository.getIntegrationRecord(id);
+    const current = integrationRepository.getIntegrationRecord(id);
     if (!current) {
       throw notFound("Integration not found.");
     }
@@ -89,17 +89,19 @@ export async function DELETE(
       request
         .json()
         .then((body) =>
-          z.object({ expectedVersion: z.number().int().positive() }).parse(body),
+          z
+            .object({ expectedVersion: z.number().int().positive() })
+            .parse(body),
         ),
     ]);
-    const current = repository.getIntegration(id);
+    const current = integrationRepository.getIntegration(id);
     if (!current) {
       throw notFound("Integration not found.");
     }
     const agentIds = Object.entries(current.permissions)
       .filter(([, tools]) => tools.length > 0)
       .map(([agentId]) => agentId);
-    repository.deleteIntegration(id, input.expectedVersion);
+    integrationRepository.deleteIntegration(id, input.expectedVersion);
     return Response.json({ data: { id, agentIds } });
   } catch (error) {
     return apiError(error);

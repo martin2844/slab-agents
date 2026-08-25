@@ -344,8 +344,12 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     import { OFFICIAL_OPERATOR_PACKS } from "./lib/packs/catalog.ts";
     import { DocsClient } from "./lib/mcp/docs-client.ts";
     import { WorkClient } from "./lib/mcp/work-client.ts";
-    import { repository } from "./lib/repository.ts";
-    import { settingsStore } from "./lib/repositories/settings-store.ts";
+    import { agentRepository } from "./lib/repositories/agent-repository.ts";
+    import { automationRepository } from "./lib/repositories/automation-repository.ts";
+    import { integrationRepository } from "./lib/repositories/integration-repository.ts";
+    import { operatorPackRepository } from "./lib/repositories/operator-pack-repository.ts";
+    import { runRepository } from "./lib/repositories/run-repository.ts";
+    import { settingsRepository } from "./lib/repositories/settings-repository.ts";
     import {
       capabilityStates,
       disableOperatorPack,
@@ -364,45 +368,45 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     assert.match(OFFICIAL_OPERATOR_PACKS[1].workConventions.join(" "), /current deliverable/i);
     importOperatorPack(manifest);
     await installOperatorPack(manifest.id);
-    let installation = repository.getOperatorPackInstallation(manifest.id);
+    let installation = operatorPackRepository.getOperatorPackInstallation(manifest.id);
     assert.equal(installation.status, "installed");
-    const agent = repository.getAgent("test-operator");
+    const agent = agentRepository.getAgent("test-operator");
     assert.ok(agent);
-    assert.equal(repository.listAgentQuickActions(agent.id).length, 1);
-    const resource = repository.getOperatorPackResource(manifest.id, "automation", "weekly");
+    assert.equal(agentRepository.listAgentQuickActions(agent.id).length, 1);
+    const resource = operatorPackRepository.getOperatorPackResource(manifest.id, "automation", "weekly");
     assert.ok(resource?.resourceId);
-    assert.equal(repository.getAutomation(resource.resourceId).enabled, false);
-    const oldAcceptance = repository.createOperatorPackAcceptance({
+    assert.equal(automationRepository.getAutomation(resource.resourceId).enabled, false);
+    const oldAcceptance = operatorPackRepository.createOperatorPackAcceptance({
       packId: manifest.id,
       scenarioId: "synthetic-review",
       packVersion: manifest.version,
       rubric: manifest.acceptanceScenarios[0].rubric,
     });
-    repository.updateOperatorPackAcceptance(oldAcceptance.id, {
+    operatorPackRepository.updateOperatorPackAcceptance(oldAcceptance.id, {
       status: "passed",
       completedAt: new Date().toISOString(),
     });
 
-    repository.updateAgent(agent.id, { instructions: "User-owned instructions" });
+    agentRepository.updateAgent(agent.id, { instructions: "User-owned instructions" });
     let preview = await previewOperatorPack(manifest.id);
     const conflict = preview.changes.find((change) => change.resourceType === "agent");
     assert.equal(conflict.action, "conflict");
     await installOperatorPack(manifest.id, "preserve");
-    assert.equal(repository.getAgent(agent.id).instructions, "User-owned instructions");
+    assert.equal(agentRepository.getAgent(agent.id).instructions, "User-owned instructions");
     await installOperatorPack(manifest.id, "replace");
-    assert.equal(repository.getAgent(agent.id).instructions, manifest.agents[0].instructions);
+    assert.equal(agentRepository.getAgent(agent.id).instructions, manifest.agents[0].instructions);
 
     await disableOperatorPack(manifest.id);
-    installation = repository.getOperatorPackInstallation(manifest.id);
+    installation = operatorPackRepository.getOperatorPackInstallation(manifest.id);
     assert.equal(installation.status, "disabled");
-    assert.ok(repository.getAgent(agent.id));
-    assert.ok(repository.getAutomation(resource.resourceId));
-    assert.ok(repository.listOperatorPackResources(manifest.id).every((item) => !item.managed && item.state === "detached"));
+    assert.ok(agentRepository.getAgent(agent.id));
+    assert.ok(automationRepository.getAutomation(resource.resourceId));
+    assert.ok(operatorPackRepository.listOperatorPackResources(manifest.id).every((item) => !item.managed && item.state === "detached"));
 
     await installOperatorPack(manifest.id);
-    assert.ok(repository.listOperatorPackResources(manifest.id).every((item) => item.managed && item.state === "applied"));
+    assert.ok(operatorPackRepository.listOperatorPackResources(manifest.id).every((item) => item.managed && item.state === "applied"));
 
-    const actionId = repository.listAgentQuickActions(agent.id)[0].id;
+    const actionId = agentRepository.listAgentQuickActions(agent.id)[0].id;
     const renamed = {
       ...manifest,
       version: "1.1.0",
@@ -421,19 +425,19 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     const renamedSummary = (await getOperatorPackSummaries()).find((item) => item.manifest.id === renamed.id);
     assert.equal(renamedSummary.acceptance, null);
     assert.equal(operatorPackMetrics().total, 0);
-    assert.equal(repository.getAgent(agent.id).slug, "renamed-test-operator");
-    assert.equal(repository.listAgents().filter((item) => item.id === agent.id).length, 1);
-    assert.equal(repository.listAgentQuickActions(agent.id).length, 1);
-    assert.equal(repository.getAgentQuickAction(actionId).label, "Inspect renamed fixture");
-    assert.equal(repository.getAutomation(resource.resourceId).enabled, true);
+    assert.equal(agentRepository.getAgent(agent.id).slug, "renamed-test-operator");
+    assert.equal(agentRepository.listAgents().filter((item) => item.id === agent.id).length, 1);
+    assert.equal(agentRepository.listAgentQuickActions(agent.id).length, 1);
+    assert.equal(agentRepository.getAgentQuickAction(actionId).label, "Inspect renamed fixture");
+    assert.equal(automationRepository.getAutomation(resource.resourceId).enabled, true);
 
-    const currentAcceptance = repository.createOperatorPackAcceptance({
+    const currentAcceptance = operatorPackRepository.createOperatorPackAcceptance({
       packId: renamed.id,
       scenarioId: "synthetic-review",
       packVersion: renamed.version,
       rubric: renamed.acceptanceScenarios[0].rubric,
     });
-    repository.updateOperatorPackAcceptance(currentAcceptance.id, {
+    operatorPackRepository.updateOperatorPackAcceptance(currentAcceptance.id, {
       status: "passed",
       completedAt: new Date().toISOString(),
     });
@@ -441,10 +445,10 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     assert.equal(operatorPackMetrics().passed, 1);
 
     await disableOperatorPack(renamed.id);
-    assert.equal(repository.getAutomation(resource.resourceId).enabled, false);
+    assert.equal(automationRepository.getAutomation(resource.resourceId).enabled, false);
     await installOperatorPack(renamed.id);
-    assert.equal(repository.getAutomation(resource.resourceId).enabled, true);
-    assert.ok(repository.listOperatorPackResources(renamed.id).every((item) => item.managed));
+    assert.equal(automationRepository.getAutomation(resource.resourceId).enabled, true);
+    assert.ok(operatorPackRepository.listOperatorPackResources(renamed.id).every((item) => item.managed));
 
     const reduced = {
       ...renamed,
@@ -456,11 +460,11 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     preview = await previewOperatorPack(reduced.id);
     assert.equal(preview.changes.filter((change) => change.action === "detach").length, 2);
     await installOperatorPack(reduced.id);
-    assert.equal(repository.getAutomation(resource.resourceId).enabled, false);
-    assert.equal(repository.getOperatorPackResource(reduced.id, "automation", "weekly").state, "detached");
-    assert.ok(repository.getAgentQuickAction(actionId));
+    assert.equal(automationRepository.getAutomation(resource.resourceId).enabled, false);
+    assert.equal(operatorPackRepository.getOperatorPackResource(reduced.id, "automation", "weekly").state, "detached");
+    assert.ok(agentRepository.getAgentQuickAction(actionId));
 
-    const existingAgent = repository.createAgent({
+    const existingAgent = agentRepository.createAgent({
       name: "Existing operator",
       slug: "existing-operator",
       role: "Existing role",
@@ -477,17 +481,17 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     };
     importOperatorPack(adopted);
     await installOperatorPack(adopted.id);
-    assert.equal(repository.getOperatorPackResource(adopted.id, "agent", "operator").managed, false);
-    assert.equal(repository.getOperatorPackResource(adopted.id, "quick_action", "operator.inspect").managed, true);
-    assert.equal(repository.getOperatorPackResource(adopted.id, "quick_action", "operator.inspect").createdByPack, true);
-    assert.ok(repository.getAgent(existingAgent.id));
+    assert.equal(operatorPackRepository.getOperatorPackResource(adopted.id, "agent", "operator").managed, false);
+    assert.equal(operatorPackRepository.getOperatorPackResource(adopted.id, "quick_action", "operator.inspect").managed, true);
+    assert.equal(operatorPackRepository.getOperatorPackResource(adopted.id, "quick_action", "operator.inspect").createdByPack, true);
+    assert.ok(agentRepository.getAgent(existingAgent.id));
     await installOperatorPack(adopted.id, "replace");
-    assert.equal(repository.getOperatorPackResource(adopted.id, "agent", "operator").managed, true);
-    assert.equal(repository.getOperatorPackResource(adopted.id, "agent", "operator").createdByPack, false);
+    assert.equal(operatorPackRepository.getOperatorPackResource(adopted.id, "agent", "operator").managed, true);
+    assert.equal(operatorPackRepository.getOperatorPackResource(adopted.id, "agent", "operator").createdByPack, false);
     await disableOperatorPack(adopted.id);
     await installOperatorPack(adopted.id);
-    assert.equal(repository.getOperatorPackResource(adopted.id, "agent", "operator").managed, true);
-    assert.equal(repository.getAgent(existingAgent.id).id, existingAgent.id);
+    assert.equal(operatorPackRepository.getOperatorPackResource(adopted.id, "agent", "operator").managed, true);
+    assert.equal(agentRepository.getAgent(existingAgent.id).id, existingAgent.id);
 
     const scoped = {
       ...manifest,
@@ -506,8 +510,8 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     };
     importOperatorPack(scoped);
     await installOperatorPack(scoped.id);
-    const scopedAgent = repository.getAgent("scoped-operator");
-    const integration = repository.saveIntegration({
+    const scopedAgent = agentRepository.getAgent("scoped-operator");
+    const integration = integrationRepository.saveIntegration({
       provider: "posthog",
       name: "PostHog",
       config: {},
@@ -518,7 +522,7 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
       permissions: {},
     });
     assert.equal(capabilityStates(scoped).find((item) => item.category === "product_analytics").available, false);
-    repository.saveIntegration({
+    integrationRepository.saveIntegration({
       id: integration.id,
       provider: "posthog",
       name: "PostHog",
@@ -531,9 +535,9 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     });
     assert.equal(capabilityStates(scoped).find((item) => item.category === "product_analytics").available, true);
 
-    settingsStore.set("docs_mcp_url", "http://docs.test/mcp");
-    settingsStore.set("docs_api_key", "test-key");
-    settingsStore.set("setup_status_docs", JSON.stringify({
+    settingsRepository.set("docs_mcp_url", "http://docs.test/mcp");
+    settingsRepository.set("docs_api_key", "test-key");
+    settingsRepository.set("setup_status_docs", JSON.stringify({
       state: "connected",
       detail: "Connected for test.",
       checkedAt: new Date().toISOString(),
@@ -615,7 +619,7 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     assert.equal(docUpdate.proposed.body, docPackV2.docs[0].body);
     failNextUpdate = true;
     await assert.rejects(installOperatorPack(docPack.id), /synthetic update interruption/);
-    assert.equal(repository.getOperatorPackResource(docPack.id, "doc", "guide").state, "failed");
+    assert.equal(operatorPackRepository.getOperatorPackResource(docPack.id, "doc", "guide").state, "failed");
     preview = await previewOperatorPack(docPack.id);
     assert.equal(preview.changes.find((change) => change.resourceType === "doc").action, "update");
     await installOperatorPack(docPack.id);
@@ -658,8 +662,8 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     const disabling = disableOperatorPack(docPack.id);
     releaseUpdate();
     await Promise.all([installing, disabling]);
-    assert.equal(repository.getOperatorPackInstallation(docPack.id).status, "disabled");
-    assert.ok(repository.listOperatorPackResources(docPack.id).every((item) => item.state === "detached"));
+    assert.equal(operatorPackRepository.getOperatorPackInstallation(docPack.id).status, "disabled");
+    assert.ok(operatorPackRepository.listOperatorPackResources(docPack.id).every((item) => item.state === "detached"));
 
     const racePack = {
       ...docPack,
@@ -668,7 +672,7 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     };
     importOperatorPack(racePack);
     await installOperatorPack(racePack.id);
-    const raceAgent = repository.getAgent("race-operator");
+    const raceAgent = agentRepository.getAgent("race-operator");
     const racePackV2 = {
       ...racePack,
       version: "1.1.0",
@@ -684,19 +688,19 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     pauseNextGet = true;
     const racingInstall = installOperatorPack(racePack.id);
     await getStarted;
-    repository.updateAgent(raceAgent.id, {
+    agentRepository.updateAgent(raceAgent.id, {
       instructions: "A concurrent user edit made after the install preview.",
     });
     releaseGet();
     await assert.rejects(racingInstall, /changed after preview/);
     assert.equal(
-      repository.getAgent(raceAgent.id).instructions,
+      agentRepository.getAgent(raceAgent.id).instructions,
       "A concurrent user edit made after the install preview.",
     );
 
-    settingsStore.set("work_mcp_url", "http://work.test/mcp");
-    settingsStore.set("work_api_key", "test-key");
-    settingsStore.set("setup_status_work", JSON.stringify({
+    settingsRepository.set("work_mcp_url", "http://work.test/mcp");
+    settingsRepository.set("work_api_key", "test-key");
+    settingsRepository.set("setup_status_work", JSON.stringify({
       state: "connected",
       detail: "Connected for test.",
       checkedAt: new Date().toISOString(),
@@ -738,11 +742,11 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     };
     importOperatorPack(acceptancePack);
     await installOperatorPack(acceptancePack.id);
-    const acceptanceAgent = repository.getAgent("acceptance-operator");
-    repository.updateAgent(acceptanceAgent.id, { slug: "operator-renamed-by-user" });
+    const acceptanceAgent = agentRepository.getAgent("acceptance-operator");
+    agentRepository.updateAgent(acceptanceAgent.id, { slug: "operator-renamed-by-user" });
     await installOperatorPack(acceptancePack.id, "preserve");
     const acceptanceRun = await startOperatorPackAcceptance(acceptancePack.id);
-    assert.equal(repository.getRun(acceptanceRun.runId).agentId, acceptanceAgent.id);
+    assert.equal(runRepository.getRun(acceptanceRun.runId).agentId, acceptanceAgent.id);
     assert.equal(createProjectCalls, 1);
     assert.equal(workProjects[0].key, "QA");
     assert.equal(workProjects[0].name, "Operator Pack Acceptance");

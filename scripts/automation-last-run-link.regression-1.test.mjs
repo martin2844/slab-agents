@@ -11,7 +11,10 @@ test("automation last-run timestamps link to the actual latest run", async () =>
       new URL("../components/automations-view.tsx", import.meta.url),
       "utf8",
     ),
-    readFile(new URL("../lib/repository.ts", import.meta.url), "utf8"),
+    readFile(
+      new URL("../lib/repositories/automation-repository.ts", import.meta.url),
+      "utf8",
+    ),
     readFile(new URL("../lib/types.ts", import.meta.url), "utf8"),
   ]);
 

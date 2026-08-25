@@ -1,10 +1,10 @@
+import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { apiError, conflict, notFound } from "@/lib/api";
 import {
   retestCustomHttpIntegration,
   retestCustomMcpIntegration,
   retestPostHogIntegration,
 } from "@/lib/integrations/service";
-import { repository } from "@/lib/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const integration = repository.getIntegrationRecord(id);
+    const integration = integrationRepository.getIntegrationRecord(id);
     if (!integration) {
       throw notFound("Integration not found.");
     }

@@ -9,7 +9,7 @@ test("calendar capabilities reuse the run-scoped integration boundary", async ()
     read("lib/integrations/calendar-service.ts"),
     read("lib/runner.ts"),
     read("app/api/integrations/[id]/mcp/route.ts"),
-    read("lib/repository.ts"),
+    read("lib/repositories/integration-repository.ts"),
   ]);
 
   assert.match(
@@ -37,10 +37,10 @@ test("calendar capabilities reuse the run-scoped integration boundary", async ()
 });
 
 test("calendar writes use existing approvals and read-only providers cannot expose writes", async () => {
-  const [service, mcp, repository, contract] = await Promise.all([
+  const [service, mcp, mappers, contract] = await Promise.all([
     read("lib/integrations/calendar-service.ts"),
     read("lib/integrations/calendar-mcp.ts"),
-    read("lib/repository.ts"),
+    read("lib/repositories/integration-records.ts"),
     read("lib/integrations/calendar-contract.ts"),
   ]);
 
@@ -51,7 +51,7 @@ test("calendar writes use existing approvals and read-only providers cannot expo
   assert.match(mcp, /readOnlyHint: true/);
   assert.match(mcp, /MAX_CONCURRENT_CALENDAR_CALLS = 4/);
   assert.match(
-    repository,
+    mappers,
     /record\.provider !== "calendar_ics" \|\| tool\.readOnly/,
   );
   assert.match(contract, /"approval_required"/);
@@ -101,6 +101,9 @@ test("Calendar is managed in Settings and assignable from Agent capabilities", a
   assert.match(editor, /Agent access/);
   assert.match(editor, /agentIds: form\.agentIds/);
   assert.doesNotMatch(editor, /Promise\.all\([\s\S]*\/api\/agents\//);
-  assert.match(pageData, /integrations: repository\.listIntegrations\(\)/);
+  assert.match(
+    pageData,
+    /integrations: integrationRepository\.listIntegrations\(\)/,
+  );
   assert.match(agentDetail, /integration\.provider\.startsWith\("calendar_"\)/);
 });

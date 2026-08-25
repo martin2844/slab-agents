@@ -1,11 +1,12 @@
 import "server-only";
 
+import { integrationRepository } from "@/lib/repositories/integration-repository";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 
 import { callMcpTool } from "@/lib/mcp/client";
-import { repository } from "@/lib/repository";
 import {
   listPostHogProjects,
   queryPostHogAnalytics,
@@ -430,7 +431,7 @@ export async function handleCustomHttpMcpRequest(
   }
   const record = access.record;
 
-  const operations = repository.listCustomHttpOperations(record.id);
+  const operations = integrationRepository.listCustomHttpOperations(record.id);
   if (!operations || operations.length === 0) {
     return Response.json(
       {
@@ -548,7 +549,7 @@ export async function handleCustomMcpRequest(
   }
   const record = access.record;
 
-  const tools = repository.listCustomMcpTools(record.id);
+  const tools = integrationRepository.listCustomMcpTools(record.id);
   if (!tools.length) {
     return Response.json(
       {
@@ -644,7 +645,7 @@ export async function routeCustomMcpRequest(
   integrationId: string,
   runId: string,
 ) {
-  const integration = repository.getIntegrationRecord(integrationId);
+  const integration = integrationRepository.getIntegrationRecord(integrationId);
   if (!integration) return unauthorizedResponse();
 
   if (integration.provider === "custom_http") {

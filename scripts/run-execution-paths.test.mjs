@@ -39,7 +39,7 @@ test("every entry point uses the same persisted execution contract", async () =>
   assert.match(coordination, /eventInstructions: coordinationInstructions/);
   assert.match(
     scheduler,
-    /startAutomationRun\([\s\S]*automation\.id,[\s\S]*"automation",[\s\S]*current,[\s\S]*occurrence,[\s\S]*\)/,
+    /startAutomationRun\(\s*automation\.id,\s*"automation",\s*current,\s*occurrence,?\s*\)/,
   );
   assert.match(automationRun, /startAutomationRun\(id, "manual"\)/);
   for (const key of [
@@ -61,9 +61,9 @@ test("every entry point uses the same persisted execution contract", async () =>
 });
 
 test("execution semantics are persisted and historical runs are backfilled", async () => {
-  const [migration, repository, types] = await Promise.all([
+  const [migration, runRepository, types] = await Promise.all([
     read("db/migrations/202608170006_run_execution_semantics.cjs"),
-    read("lib/repository.ts"),
+    read("lib/repositories/run-repository.ts"),
     read("lib/types.ts"),
   ]);
 
@@ -72,8 +72,8 @@ test("execution semantics are persisted and historical runs are backfilled", asy
   }
   assert.match(migration, /work_coordination_events/);
   assert.match(migration, /WHEN 'operating_loop' THEN 'manual'/);
-  assert.match(repository, /runInstructions: String\(row\.run_instructions/);
-  assert.match(repository, /input\.runInstructions/);
+  assert.match(runRepository, /runInstructions: String\(row\.run_instructions/);
+  assert.match(runRepository, /input\.runInstructions/);
   assert.match(types, /trigger: RunTrigger/);
   assert.match(types, /mode: RunMode/);
   assert.match(types, /issueKey: string \| null/);

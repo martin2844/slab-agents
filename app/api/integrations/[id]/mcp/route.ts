@@ -1,8 +1,8 @@
+import { integrationRepository } from "@/lib/repositories/integration-repository";
 import {
   handlePostHogMcpRequest,
   routeCustomMcpRequest,
 } from "@/lib/integrations/mcp-server";
-import { repository } from "@/lib/repository";
 import { isCalendarProvider } from "@/lib/integrations/calendar-contract";
 import { handleCalendarMcpRequest } from "@/lib/integrations/calendar-mcp";
 
@@ -15,7 +15,7 @@ export async function POST(
 ) {
   const { id } = await params;
   const requestUrl = new URL(request.url);
-  const integration = repository.getIntegrationRecord(id);
+  const integration = integrationRepository.getIntegrationRecord(id);
   if (!integration) {
     return new Response("Integration not found", { status: 404 });
   }

@@ -1,4 +1,5 @@
-import { repository } from "@/lib/repository";
+import { agentRepository } from "@/lib/repositories/agent-repository";
+import { conversationRepository } from "@/lib/repositories/conversation-repository";
 import { apiError, notFound } from "@/lib/api";
 export const dynamic = "force-dynamic";
 export async function GET(
@@ -6,10 +7,10 @@ export async function GET(
   ctx: RouteContext<"/api/threads/[id]">,
 ) {
   const { id } = await ctx.params;
-  const thread = repository.getThread(id);
+  const thread = conversationRepository.getThread(id);
   if (!thread) return apiError(notFound("Thread not found"));
-  const agent = repository.getAgent(thread.agentId);
+  const agent = agentRepository.getAgent(thread.agentId);
   return Response.json({
-    data: { thread, agent, messages: repository.listMessages(id) },
+    data: { thread, agent, messages: conversationRepository.listMessages(id) },
   });
 }

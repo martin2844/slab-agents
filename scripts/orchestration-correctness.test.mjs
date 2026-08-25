@@ -11,6 +11,9 @@ const migrationDirectory = path.resolve("db/migrations");
 
 let directory;
 let modules;
+let agentRepository;
+let conversationRepository;
+let runRepository;
 
 test.before(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "slab-correctness-"));
@@ -24,14 +27,19 @@ test.before(async () => {
   await migrations.migrate.latest();
   await migrations.destroy();
   process.env.SLAB_WORKSPACE_DB = filename;
+  ({ agentRepository } =
+    await import("../lib/repositories/agent-repository.ts"));
+  ({ conversationRepository } =
+    await import("../lib/repositories/conversation-repository.ts"));
+  ({ runRepository } = await import("../lib/repositories/run-repository.ts"));
   modules = await Promise.all([
-    import("../lib/repository.ts"),
+    import("../lib/repositories/agent-repository.ts"),
     import("../lib/run-service.ts"),
     import("../lib/work-coordination.ts"),
-    import("../lib/db.ts"),
-    import("../lib/repositories/approval-store.ts"),
+    import("../lib/db/database.ts"),
+    import("../lib/repositories/approval-repository.ts"),
     import("../lib/approval-resolution.ts"),
-    import("../lib/repositories/work-coordination-store.ts"),
+    import("../lib/repositories/work-coordination-repository.ts"),
   ]);
 });
 
@@ -39,8 +47,8 @@ test.after(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-function createAgent(repository, slug = "coo") {
-  return repository.createAgent({
+function createAgent(_repository, slug = "coo") {
+  return agentRepository.createAgent({
     name: slug.toUpperCase(),
     slug,
     role: "Operations",
@@ -53,10 +61,9 @@ function createAgent(repository, slug = "coo") {
 }
 
 test("state-triggered work is queued while an earlier thread run is active", async () => {
-  const [{ repository }, { createRunExecution }, { triggerAgent }] =
-    modules;
+  const [{ repository }, { createRunExecution }, { triggerAgent }] = modules;
   const agent = createAgent(repository);
-  const thread = repository.getOrCreateWorkAgentThread(
+  const thread = conversationRepository.getOrCreateWorkAgentThread(
     "OPS-1",
     agent.id,
     "OPS-1 · Existing work",
@@ -69,7 +76,7 @@ test("state-triggered work is queued while an earlier thread run is active", asy
     issueKey: "OPS-1",
     prompt: "Existing assignment",
   });
-  repository.updateRun(active.id, "running");
+  runRepository.updateRun(active.id, "running");
 
   const dispatched = [];
   await triggerAgent(
@@ -122,16 +129,22 @@ test("state-triggered work is queued while an earlier thread run is active", asy
     },
   );
 
-  const runs = repository.listRuns().filter((run) => run.threadId === thread.id);
+  const runs = runRepository
+    .listRuns()
+    .filter((run) => run.threadId === thread.id);
   assert.equal(runs.length, 2);
   assert.equal(runs.find((run) => run.id !== active.id)?.status, "queued");
   assert.equal(dispatched.length, 1);
 });
 
 test("approval completion never overwrites terminal state or bypasses another approval", async () => {
-  const [{ repository }, { createRunExecution }, , , { approvalStore }] = modules;
+  const [{ repository }, { createRunExecution }, , , { approvalRepository }] =
+    modules;
   const agent = createAgent(repository, "sales");
-  const thread = repository.createThread(agent.id, "Approval lifecycle");
+  const thread = conversationRepository.createThread(
+    agent.id,
+    "Approval lifecycle",
+  );
   const run = createRunExecution({
     agentId: agent.id,
     threadId: thread.id,
@@ -139,25 +152,25 @@ test("approval completion never overwrites terminal state or bypasses another ap
     mode: "task",
     prompt: "Run with approvals",
   });
-  repository.updateRun(run.id, "waiting_approval");
-  const first = approvalStore.create(run.id, "approval-1", "First", {});
-  approvalStore.create(run.id, "approval-2", "Second", {});
+  runRepository.updateRun(run.id, "waiting_approval");
+  const first = approvalRepository.create(run.id, "approval-1", "First", {});
+  approvalRepository.create(run.id, "approval-2", "Second", {});
 
-  approvalStore.claim(first.id);
-  approvalStore.resolve(first.id, "approved");
-  assert.equal(approvalStore.resumeRunWhenClear(run.id), false);
-  assert.equal(repository.getRun(run.id)?.status, "waiting_approval");
+  approvalRepository.claim(first.id);
+  approvalRepository.resolve(first.id, "approved");
+  assert.equal(runRepository.resumeWhenApprovalsClear(run.id), false);
+  assert.equal(runRepository.getRun(run.id)?.status, "waiting_approval");
 
-  const second = approvalStore
+  const second = approvalRepository
     .listForRun(run.id)
     .find((approval) => approval.runnerApprovalId === "approval-2");
   assert.ok(second);
-  approvalStore.claim(second.id);
-  approvalStore.resolve(second.id, "approved");
-  repository.updateRun(run.id, "completed");
-  assert.equal(approvalStore.resumeRunWhenClear(run.id), false);
-  assert.equal(repository.getRun(run.id)?.status, "completed");
-  assert.ok(repository.getRun(run.id)?.completedAt);
+  approvalRepository.claim(second.id);
+  approvalRepository.resolve(second.id, "approved");
+  runRepository.updateRun(run.id, "completed");
+  assert.equal(runRepository.resumeWhenApprovalsClear(run.id), false);
+  assert.equal(runRepository.getRun(run.id)?.status, "completed");
+  assert.ok(runRepository.getRun(run.id)?.completedAt);
 });
 
 test("a missing Runner run dismisses every stale approval and cancels the local run", async () => {
@@ -166,11 +179,14 @@ test("a missing Runner run dismisses every stale approval and cancels the local 
     { createRunExecution },
     ,
     ,
-    { approvalStore },
+    { approvalRepository },
     { resolveApprovalAction },
   ] = modules;
   const agent = createAgent(repository, "stale-approval");
-  const thread = repository.createThread(agent.id, "Stale approvals");
+  const thread = conversationRepository.createThread(
+    agent.id,
+    "Stale approvals",
+  );
   const run = createRunExecution({
     agentId: agent.id,
     threadId: thread.id,
@@ -178,9 +194,9 @@ test("a missing Runner run dismisses every stale approval and cancels the local 
     mode: "task",
     prompt: "Run whose Runner state disappeared",
   });
-  repository.updateRun(run.id, "waiting_approval");
-  const first = approvalStore.create(run.id, "missing-1", "First", {});
-  approvalStore.create(run.id, "missing-2", "Second", {});
+  runRepository.updateRun(run.id, "waiting_approval");
+  const first = approvalRepository.create(run.id, "missing-1", "First", {});
+  approvalRepository.create(run.id, "missing-2", "Second", {});
 
   const result = await resolveApprovalAction(first.id, "approve", {
     resolveRunner: async () => {
@@ -190,18 +206,17 @@ test("a missing Runner run dismisses every stale approval and cancels the local 
   });
 
   assert.equal(result.dismissed, true);
-  assert.equal(repository.getRun(run.id)?.status, "cancelled");
+  assert.equal(runRepository.getRun(run.id)?.status, "cancelled");
   assert.deepEqual(
-    approvalStore.listForRun(run.id).map((approval) => approval.status),
+    approvalRepository.listForRun(run.id).map((approval) => approval.status),
     ["denied", "denied"],
   );
   assert.equal(
-    repository
+    runRepository
       .listRunEvents(run.id)
       .some((event) => event.type === "approval_dismissed"),
     true,
   );
-
 });
 
 test("resolving a stale approval never rewrites an already terminal run", async () => {
@@ -210,11 +225,14 @@ test("resolving a stale approval never rewrites an already terminal run", async 
     { createRunExecution },
     ,
     ,
-    { approvalStore },
+    { approvalRepository },
     { resolveApprovalAction },
   ] = modules;
   const agent = createAgent(repository, "terminal-approval");
-  const thread = repository.createThread(agent.id, "Terminal approval");
+  const thread = conversationRepository.createThread(
+    agent.id,
+    "Terminal approval",
+  );
   const run = createRunExecution({
     agentId: agent.id,
     threadId: thread.id,
@@ -222,11 +240,16 @@ test("resolving a stale approval never rewrites an already terminal run", async 
     mode: "task",
     prompt: "Already finished",
   });
-  repository.updateRun(run.id, "waiting_approval");
-  const approval = approvalStore.create(run.id, "late", "Late approval", {});
-  repository.updateRun(run.id, "completed");
+  runRepository.updateRun(run.id, "waiting_approval");
+  const approval = approvalRepository.create(
+    run.id,
+    "late",
+    "Late approval",
+    {},
+  );
+  runRepository.updateRun(run.id, "completed");
   let runnerCalls = 0;
-  const runCount = repository.listRuns().length;
+  const runCount = runRepository.listRuns().length;
 
   const result = await resolveApprovalAction(approval.id, "approve", {
     resolveRunner: async () => {
@@ -238,9 +261,9 @@ test("resolving a stale approval never rewrites an already terminal run", async 
 
   assert.equal(result.dismissed, true);
   assert.equal(runnerCalls, 0);
-  assert.equal(repository.listRuns().length, runCount);
-  assert.equal(repository.getRun(run.id)?.status, "completed");
-  assert.equal(approvalStore.get(approval.id)?.status, "denied");
+  assert.equal(runRepository.listRuns().length, runCount);
+  assert.equal(runRepository.getRun(run.id)?.status, "completed");
+  assert.equal(approvalRepository.get(approval.id)?.status, "denied");
 });
 
 test("a locally failed approval finalization never resends an accepted Runner decision", async () => {
@@ -249,11 +272,14 @@ test("a locally failed approval finalization never resends an accepted Runner de
     { createRunExecution },
     ,
     ,
-    { approvalStore },
+    { approvalRepository },
     { resolveApprovalAction },
   ] = modules;
   const agent = createAgent(repository, "approval-recovery");
-  const thread = repository.createThread(agent.id, "Approval recovery");
+  const thread = conversationRepository.createThread(
+    agent.id,
+    "Approval recovery",
+  );
   const run = createRunExecution({
     agentId: agent.id,
     threadId: thread.id,
@@ -261,8 +287,8 @@ test("a locally failed approval finalization never resends an accepted Runner de
     mode: "task",
     prompt: "Recover local finalization",
   });
-  repository.updateRun(run.id, "waiting_approval");
-  const approval = approvalStore.create(run.id, "recover", "Recover", {});
+  runRepository.updateRun(run.id, "waiting_approval");
+  const approval = approvalRepository.create(run.id, "recover", "Recover", {});
   let runnerCalls = 0;
 
   await assert.rejects(
@@ -278,9 +304,9 @@ test("a locally failed approval finalization never resends an accepted Runner de
     }),
     /simulated SQLite/,
   );
-  assert.equal(approvalStore.get(approval.id)?.status, "resolving");
+  assert.equal(approvalRepository.get(approval.id)?.status, "resolving");
   assert.equal(
-    approvalStore.get(approval.id)?.details.runnerDecision,
+    approvalRepository.get(approval.id)?.details.runnerDecision,
     "approve",
   );
 
@@ -301,8 +327,8 @@ test("a locally failed approval finalization never resends an accepted Runner de
     mode: "task",
     prompt: "Fail marker persistence",
   });
-  repository.updateRun(markerRun.id, "waiting_approval");
-  const markerApproval = approvalStore.create(
+  runRepository.updateRun(markerRun.id, "waiting_approval");
+  const markerApproval = approvalRepository.create(
     markerRun.id,
     "marker-failure",
     "Marker failure",
@@ -319,7 +345,7 @@ test("a locally failed approval finalization never resends an accepted Runner de
     }),
     /Could not record Runner approval resolution/,
   );
-  assert.equal(approvalStore.get(markerApproval.id)?.status, "resolving");
+  assert.equal(approvalRepository.get(markerApproval.id)?.status, "resolving");
   await assert.rejects(
     resolveApprovalAction(markerApproval.id, "approve", {
       resolveRunner: async () => {
@@ -339,8 +365,8 @@ test("a locally failed approval finalization never resends an accepted Runner de
     mode: "task",
     prompt: "Terminal cleanup race",
   });
-  repository.updateRun(terminalRun.id, "waiting_approval");
-  const terminalApproval = approvalStore.create(
+  runRepository.updateRun(terminalRun.id, "waiting_approval");
+  const terminalApproval = approvalRepository.create(
     terminalRun.id,
     "terminal-race",
     "Terminal race",
@@ -351,14 +377,14 @@ test("a locally failed approval finalization never resends an accepted Runner de
     "approve",
     {
       resolveRunner: async () => {
-        approvalStore.closePending(terminalRun.id);
+        approvalRepository.closePending(terminalRun.id);
         return {};
       },
       runnerRunNotFound: () => false,
     },
   );
   assert.equal(terminalResult.status, "approved");
-  assert.equal(approvalStore.get(terminalApproval.id)?.status, "approved");
+  assert.equal(approvalRepository.get(terminalApproval.id)?.status, "approved");
 });
 
 test("a failed issue inspection leaves state unobserved so the next poll retries", async () => {
@@ -369,7 +395,7 @@ test("a failed issue inspection leaves state unobserved so the next poll retries
     ,
     ,
     ,
-    { workCoordinationStore },
+    { workCoordinationRepository },
   ] = modules;
   const agent = createAgent(repository, "retry-event");
   const issue = {
@@ -395,7 +421,7 @@ test("a failed issue inspection leaves state unobserved so the next poll retries
     }),
     /run rejected once/,
   );
-  assert.equal(workCoordinationStore.getItem(issue.key), undefined);
+  assert.equal(workCoordinationRepository.getItem(issue.key), undefined);
 
   const dispatched = [];
   await inspectIssue("OPS", issue, [agent], {
@@ -405,7 +431,10 @@ test("a failed issue inspection leaves state unobserved so the next poll retries
     listComments: async () => [],
   });
   assert.equal(dispatched.length, 1);
-  assert.equal(workCoordinationStore.getItem(issue.key)?.assignee, agent.slug);
+  assert.equal(
+    workCoordinationRepository.getItem(issue.key)?.assignee,
+    agent.slug,
+  );
 });
 
 test("a stale incomplete coordination claim is recoverable after a crash", async () => {
@@ -416,11 +445,11 @@ test("a stale incomplete coordination claim is recoverable after a crash", async
     { db },
     ,
     ,
-    { workCoordinationStore },
+    { workCoordinationRepository },
   ] = modules;
   const agent = createAgent(repository, "stale-claim");
   const dedupeKey = "assignment:OPS-STALE:v1";
-  workCoordinationStore.claimEvent({
+  workCoordinationRepository.claimEvent({
     dedupeKey,
     issueKey: "OPS-STALE",
     type: "assignment",
@@ -462,8 +491,11 @@ test("a stale incomplete coordination claim is recoverable after a crash", async
 test("run creation rolls back when any invariant write fails", async () => {
   const [{ repository }, { createRunExecution }, , { db }] = modules;
   const agent = createAgent(repository, "atomic");
-  const thread = repository.createThread(agent.id, "Atomic creation");
-  const before = repository.listRuns().length;
+  const thread = conversationRepository.createThread(
+    agent.id,
+    "Atomic creation",
+  );
+  const before = runRepository.listRuns().length;
   db.exec(`CREATE TRIGGER reject_test_message
     BEFORE INSERT ON messages
     BEGIN SELECT RAISE(ABORT, 'message rejected'); END`);
@@ -479,15 +511,19 @@ test("run creation rolls back when any invariant write fails", async () => {
       }),
     /message rejected/,
   );
-  assert.equal(repository.listRuns().length, before);
+  assert.equal(runRepository.listRuns().length, before);
   db.exec("DROP TRIGGER reject_test_message");
 });
 
 test("abandoned-run recovery closes resolving approvals", async () => {
-  const [{ repository }, { createRunExecution }, , , { approvalStore }] = modules;
+  const [{ repository }, { createRunExecution }, , , { approvalRepository }] =
+    modules;
   const { recoverRunDispatch } = await import("../lib/run-dispatcher.ts");
   const agent = createAgent(repository, "recovery-approval");
-  const thread = repository.createThread(agent.id, "Recovery approval");
+  const thread = conversationRepository.createThread(
+    agent.id,
+    "Recovery approval",
+  );
   const run = createRunExecution({
     agentId: agent.id,
     threadId: thread.id,
@@ -495,9 +531,14 @@ test("abandoned-run recovery closes resolving approvals", async () => {
     mode: "task",
     prompt: "Recover abandoned approval",
   });
-  repository.updateRun(run.id, "waiting_approval");
-  const approval = approvalStore.create(run.id, "abandoned", "Abandoned", {});
-  assert.ok(approvalStore.claim(approval.id));
+  runRepository.updateRun(run.id, "waiting_approval");
+  const approval = approvalRepository.create(
+    run.id,
+    "abandoned",
+    "Abandoned",
+    {},
+  );
+  assert.ok(approvalRepository.claim(approval.id));
 
   recoverRunDispatch({
     recoverExpired: () => ({
@@ -506,14 +547,18 @@ test("abandoned-run recovery closes resolving approvals", async () => {
       releasedQueued: [],
     }),
   });
-  assert.equal(approvalStore.get(approval.id)?.status, "denied");
+  assert.equal(approvalRepository.get(approval.id)?.status, "denied");
 });
 
 test("requeued approval recovery never leaves a resolving zombie", async () => {
-  const [{ repository }, { createRunExecution }, , , { approvalStore }] = modules;
+  const [{ repository }, { createRunExecution }, , , { approvalRepository }] =
+    modules;
   const { recoverRunDispatch } = await import("../lib/run-dispatcher.ts");
   const agent = createAgent(repository, "requeued-approval");
-  const thread = repository.createThread(agent.id, "Requeued approval");
+  const thread = conversationRepository.createThread(
+    agent.id,
+    "Requeued approval",
+  );
   const run = createRunExecution({
     agentId: agent.id,
     threadId: thread.id,
@@ -521,10 +566,15 @@ test("requeued approval recovery never leaves a resolving zombie", async () => {
     mode: "task",
     prompt: "Recover ambiguous approval",
   });
-  repository.updateRun(run.id, "waiting_approval");
-  const approval = approvalStore.create(run.id, "ambiguous", "Ambiguous", {});
-  assert.ok(approvalStore.claim(approval.id));
-  repository.updateRun(run.id, "queued");
+  runRepository.updateRun(run.id, "waiting_approval");
+  const approval = approvalRepository.create(
+    run.id,
+    "ambiguous",
+    "Ambiguous",
+    {},
+  );
+  assert.ok(approvalRepository.claim(approval.id));
+  runRepository.updateRun(run.id, "queued");
 
   recoverRunDispatch({
     recoverExpired: () => ({
@@ -534,10 +584,10 @@ test("requeued approval recovery never leaves a resolving zombie", async () => {
     }),
   });
 
-  assert.equal(repository.getRun(run.id)?.status, "failed");
-  assert.equal(approvalStore.get(approval.id)?.status, "denied");
+  assert.equal(runRepository.getRun(run.id)?.status, "failed");
+  assert.equal(approvalRepository.get(approval.id)?.status, "denied");
   assert.equal(
-    repository
+    runRepository
       .listRunEvents(run.id)
       .some(
         (event) =>
@@ -554,19 +604,19 @@ test("requeued approval recovery never leaves a resolving zombie", async () => {
     mode: "task",
     prompt: "Recover recorded approval",
   });
-  repository.updateRun(recordedRun.id, "waiting_approval");
-  const recordedApproval = approvalStore.create(
+  runRepository.updateRun(recordedRun.id, "waiting_approval");
+  const recordedApproval = approvalRepository.create(
     recordedRun.id,
     "recorded",
     "Recorded",
     {},
   );
-  assert.ok(approvalStore.claim(recordedApproval.id));
+  assert.ok(approvalRepository.claim(recordedApproval.id));
   assert.equal(
-    approvalStore.recordRunnerDecision(recordedApproval.id, "approve"),
+    approvalRepository.recordRunnerDecision(recordedApproval.id, "approve"),
     true,
   );
-  repository.updateRun(recordedRun.id, "queued");
+  runRepository.updateRun(recordedRun.id, "queued");
   recoverRunDispatch({
     recoverExpired: () => ({
       requeued: [recordedRun.id],
@@ -574,16 +624,24 @@ test("requeued approval recovery never leaves a resolving zombie", async () => {
       releasedQueued: [],
     }),
   });
-  assert.equal(repository.getRun(recordedRun.id)?.status, "queued");
-  assert.equal(approvalStore.get(recordedApproval.id)?.status, "approved");
+  assert.equal(runRepository.getRun(recordedRun.id)?.status, "queued");
+  assert.equal(approvalRepository.get(recordedApproval.id)?.status, "approved");
 });
 
 test("recovery rolls back queue and approval changes when audit persistence fails", async () => {
-  const [{ repository }, { createRunExecution }, , { db }, { approvalStore }] =
-    modules;
+  const [
+    { repository },
+    { createRunExecution },
+    ,
+    { db },
+    { approvalRepository },
+  ] = modules;
   const { recoverRunDispatch } = await import("../lib/run-dispatcher.ts");
   const agent = createAgent(repository, "atomic-recovery");
-  const thread = repository.createThread(agent.id, "Atomic recovery");
+  const thread = conversationRepository.createThread(
+    agent.id,
+    "Atomic recovery",
+  );
   const run = createRunExecution({
     agentId: agent.id,
     threadId: thread.id,
@@ -591,14 +649,14 @@ test("recovery rolls back queue and approval changes when audit persistence fail
     mode: "task",
     prompt: "Recover atomically",
   });
-  repository.updateRun(run.id, "waiting_approval");
-  const approval = approvalStore.create(
+  runRepository.updateRun(run.id, "waiting_approval");
+  const approval = approvalRepository.create(
     run.id,
     "atomic-recovery",
     "Atomic recovery",
     {},
   );
-  assert.ok(approvalStore.claim(approval.id));
+  assert.ok(approvalRepository.claim(approval.id));
 
   db.exec(`CREATE TRIGGER reject_recovery_audit
     BEFORE INSERT ON run_events
@@ -609,7 +667,7 @@ test("recovery rolls back queue and approval changes when audit persistence fail
       () =>
         recoverRunDispatch({
           recoverExpired: () => {
-            repository.updateRun(run.id, "queued");
+            runRepository.updateRun(run.id, "queued");
             return {
               requeued: [run.id],
               failed: [],
@@ -623,6 +681,6 @@ test("recovery rolls back queue and approval changes when audit persistence fail
     db.exec("DROP TRIGGER reject_recovery_audit");
   }
 
-  assert.equal(repository.getRun(run.id)?.status, "waiting_approval");
-  assert.equal(approvalStore.get(approval.id)?.status, "resolving");
+  assert.equal(runRepository.getRun(run.id)?.status, "waiting_approval");
+  assert.equal(approvalRepository.get(approval.id)?.status, "resolving");
 });

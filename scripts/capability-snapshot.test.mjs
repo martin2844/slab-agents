@@ -24,8 +24,17 @@ test("custom capabilities remain a per-run snapshot, including an empty snapshot
   process.env.SLAB_WORKSPACE_DB = filename;
   process.env.SLAB_INTERNAL_URL = "http://127.0.0.1:3009";
 
-  const [{ repository }, service] = await Promise.all([
-    import("../lib/repository.ts"),
+  const [
+    { agentRepository },
+    { conversationRepository },
+    { integrationRepository },
+    { runRepository },
+    service,
+  ] = await Promise.all([
+    import("../lib/repositories/agent-repository.ts"),
+    import("../lib/repositories/conversation-repository.ts"),
+    import("../lib/repositories/integration-repository.ts"),
+    import("../lib/repositories/run-repository.ts"),
     import("../lib/integrations/service.ts"),
   ]);
   const originalFetch = globalThis.fetch;
@@ -34,7 +43,7 @@ test("custom capabilities remain a per-run snapshot, including an empty snapshot
     globalThis.fetch = originalFetch;
   });
 
-  const agent = repository.createAgent({
+  const agent = agentRepository.createAgent({
     name: "Sales",
     slug: "sales-snapshot",
     role: "Sales",
@@ -44,9 +53,9 @@ test("custom capabilities remain a per-run snapshot, including an empty snapshot
     enabled: true,
     fullAccess: false,
   });
-  const thread = repository.createThread(agent.id, "Snapshot test");
+  const thread = conversationRepository.createThread(agent.id, "Snapshot test");
   const createRun = () =>
-    repository.createRun({
+    runRepository.createRun({
       agentId: agent.id,
       threadId: thread.id,
       runtime: "codex",
@@ -56,7 +65,10 @@ test("custom capabilities remain a per-run snapshot, including an empty snapshot
       runInstructions: "Test",
     });
   const runA = createRun();
-  assert.deepEqual(service.getAgentCustomIntegrationsMcp(agent.id, runA.id), []);
+  assert.deepEqual(
+    service.getAgentCustomIntegrationsMcp(agent.id, runA.id),
+    [],
+  );
 
   const firstOperation = {
     key: "health",
@@ -73,7 +85,10 @@ test("custom capabilities remain a per-run snapshot, including an empty snapshot
   });
 
   // A retry/reconnect of the already-started run must not hot-plug the new tool.
-  assert.deepEqual(service.getAgentCustomIntegrationsMcp(agent.id, runA.id), []);
+  assert.deepEqual(
+    service.getAgentCustomIntegrationsMcp(agent.id, runA.id),
+    [],
+  );
 
   const runB = createRun();
   const snapshotB = service.getAgentCustomIntegrationsMcp(agent.id, runB.id);
@@ -83,7 +98,7 @@ test("custom capabilities remain a per-run snapshot, including an empty snapshot
   // Runs created before snapshot markers were introduced already have rows.
   // Their first retry must adopt those rows instead of recapturing live config.
   const legacyRun = createRun();
-  repository.saveRunIntegrationCapability({
+  integrationRepository.saveRunIntegrationCapability({
     runId: legacyRun.id,
     integrationId: integration.id,
     agentId: agent.id,
@@ -92,7 +107,7 @@ test("custom capabilities remain a per-run snapshot, including an empty snapshot
     allowedTools: snapshotB[0].snapshot.tools,
   });
 
-  const current = repository.getIntegration(integration.id);
+  const current = integrationRepository.getIntegration(integration.id);
   await service.saveCustomHttpIntegration({
     id: integration.id,
     expectedVersion: current.version,

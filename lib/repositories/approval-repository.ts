@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { db, now } from "@/lib/db";
+import { db, now } from "@/lib/db/database";
 import type { Approval } from "@/lib/types";
 
 type Row = Record<string, unknown>;
@@ -28,7 +28,7 @@ function mapApproval(row: Row): Approval {
   };
 }
 
-export const approvalStore = {
+export const approvalRepository = {
   create(
     runId: string,
     runnerApprovalId: string,
@@ -58,8 +58,7 @@ export const approvalStore = {
   },
   get(id: string) {
     const row = db.prepare("SELECT * FROM approvals WHERE id=?").get(id) as
-      | Row
-      | undefined;
+      Row | undefined;
     return row ? mapApproval(row) : null;
   },
   list(status?: Approval["status"]) {
@@ -70,7 +69,9 @@ export const approvalStore = {
           )
           .all(status)
       : db
-          .prepare("SELECT * FROM approvals ORDER BY created_at DESC,rowid DESC")
+          .prepare(
+            "SELECT * FROM approvals ORDER BY created_at DESC,rowid DESC",
+          )
           .all();
     return (rows as Row[]).map(mapApproval);
   },
@@ -98,7 +99,7 @@ export const approvalStore = {
         "UPDATE approvals SET status='resolving' WHERE id=? AND status='pending'",
       )
       .run(id);
-    return result.changes === 1 ? this.get(id) : null;
+    return result.changes === 1 ? approvalRepository.get(id) : null;
   },
   release(id: string) {
     db.prepare(
@@ -120,35 +121,7 @@ export const approvalStore = {
         "UPDATE approvals SET status=?,resolved_at=? WHERE id=? AND status='resolving'",
       )
       .run(status, now(), id);
-    return result.changes === 1 ? this.get(id) : null;
-  },
-  resumeRunWhenClear(runId: string) {
-    return (
-      db
-        .prepare(
-          `UPDATE runs
-           SET status='running',completed_at=NULL
-           WHERE id=?
-             AND status='waiting_approval'
-             AND NOT EXISTS (
-               SELECT 1 FROM approvals
-               WHERE run_id=? AND status IN ('pending','resolving')
-             )`,
-        )
-        .run(runId, runId).changes === 1
-    );
-  },
-  cancelRunIfActive(runId: string, error: string) {
-    const timestamp = now();
-    return (
-      db
-        .prepare(
-          `UPDATE runs
-           SET status='cancelled',started_at=COALESCE(started_at,?),completed_at=?,error=?
-           WHERE id=? AND status IN ('queued','running','waiting_approval')`,
-        )
-        .run(timestamp, timestamp, error, runId).changes === 1
-    );
+    return result.changes === 1 ? approvalRepository.get(id) : null;
   },
   closePending(runId: string) {
     return db

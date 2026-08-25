@@ -1,5 +1,7 @@
 import "server-only";
 
+import { runtimeConfigRepository } from "@/lib/repositories/runtime-config-repository";
+
 import { OperationalError } from "@/lib/operational-error";
 
 import { decryptLocalSecret } from "@/lib/secrets";
@@ -14,7 +16,6 @@ import {
   testRunnerRuntime,
   type RunnerRuntimeSummary,
 } from "@/lib/runner";
-import { repository } from "@/lib/repository";
 import type { RuntimeCatalogItem } from "@/lib/types";
 
 const fallbackDefinitions: Record<
@@ -77,7 +78,9 @@ async function readJsonLimited(
       bytes += next.value.byteLength;
       if (bytes > maxBytes) {
         await reader.cancel();
-        throw new OperationalError("Runtime model discovery response is too large.");
+        throw new OperationalError(
+          "Runtime model discovery response is too large.",
+        );
       }
       chunks.push(next.value);
     }
@@ -196,7 +199,7 @@ export async function testRuntime(
     if (runtimeId === "codex" || runtimeId === "gemini") {
       await testRuntimeOwned(runtimeId);
       if (
-        !repository.completeRuntimeVerification({
+        !runtimeConfigRepository.completeRuntimeVerification({
           runtimeId,
           expectedConfigVersion: config.configVersion,
           status: "connected",
@@ -237,7 +240,7 @@ export async function testRuntime(
         .slice(0, 100);
       const models = ["default", ...new Set(discovered)];
       if (
-        !repository.completeRuntimeVerification({
+        !runtimeConfigRepository.completeRuntimeVerification({
           runtimeId,
           expectedConfigVersion: config.configVersion,
           models,
@@ -252,7 +255,9 @@ export async function testRuntime(
         throw new RuntimeConfigurationChangedError();
     } else {
       if (!config.credentialCiphertext || !config.baseUrl) {
-        throw new OperationalError("Configure a Direct API endpoint and API key first.");
+        throw new OperationalError(
+          "Configure a Direct API endpoint and API key first.",
+        );
       }
       const response = await fetcher(
         `${config.baseUrl.replace(/\/$/, "")}/models`,
@@ -267,7 +272,9 @@ export async function testRuntime(
         },
       );
       if (response.status >= 300 && response.status < 400) {
-        throw new OperationalError("Direct API model discovery refused a redirect.");
+        throw new OperationalError(
+          "Direct API model discovery refused a redirect.",
+        );
       }
       if (!response.ok) {
         throw new OperationalError(
@@ -284,11 +291,13 @@ export async function testRuntime(
         .filter((id) => id.length > 0 && id.length <= 200)
         .slice(0, 200);
       if (discovered.length === 0) {
-        throw new OperationalError("Direct API did not report any usable models.");
+        throw new OperationalError(
+          "Direct API did not report any usable models.",
+        );
       }
       const models = [...new Set(discovered)];
       if (
-        !repository.completeRuntimeVerification({
+        !runtimeConfigRepository.completeRuntimeVerification({
           runtimeId,
           expectedConfigVersion: config.configVersion,
           models,
@@ -305,7 +314,7 @@ export async function testRuntime(
   } catch (error) {
     if (error instanceof RuntimeConfigurationChangedError) throw error;
     if (
-      !repository.completeRuntimeVerification({
+      !runtimeConfigRepository.completeRuntimeVerification({
         runtimeId,
         expectedConfigVersion: config.configVersion,
         status: "failed",

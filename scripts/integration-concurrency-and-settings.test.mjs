@@ -10,7 +10,9 @@ register("./test-alias-loader.mjs", import.meta.url);
 const migrationDirectory = path.resolve("db/migrations");
 
 test("custom integration saves and tests cannot overwrite a newer version", async (t) => {
-  const directory = await mkdtemp(path.join(tmpdir(), "slab-integration-race-"));
+  const directory = await mkdtemp(
+    path.join(tmpdir(), "slab-integration-race-"),
+  );
   t.after(() => rm(directory, { recursive: true, force: true }));
   const filename = path.join(directory, "workspace.db");
   const migrations = knexFactory({
@@ -24,16 +26,18 @@ test("custom integration saves and tests cannot overwrite a newer version", asyn
   process.env.SLAB_WORKSPACE_DB = filename;
 
   const [
-    { repository },
+    { agentRepository },
+    { integrationRepository },
     service,
     settings,
-    { settingsStore },
+    { settingsRepository },
     calendarService,
   ] = await Promise.all([
-    import("../lib/repository.ts"),
+    import("../lib/repositories/agent-repository.ts"),
+    import("../lib/repositories/integration-repository.ts"),
     import("../lib/integrations/service.ts"),
     import("../lib/settings.ts"),
-    import("../lib/repositories/settings-store.ts"),
+    import("../lib/repositories/settings-repository.ts"),
     import("../lib/integrations/calendar-service.ts"),
   ]);
   const originalFetch = globalThis.fetch;
@@ -85,7 +89,10 @@ test("custom integration saves and tests cannot overwrite a newer version", asyn
   await newer;
   releases[0]();
   await assert.rejects(older, /changed while it was being saved/i);
-  assert.equal(repository.getIntegration(initial.id)?.name, "Newer request");
+  assert.equal(
+    integrationRepository.getIntegration(initial.id)?.name,
+    "Newer request",
+  );
 
   let releaseRetest;
   globalThis.fetch = () =>
@@ -95,7 +102,7 @@ test("custom integration saves and tests cannot overwrite a newer version", asyn
   const staleRetest = service.retestCustomHttpIntegration(initial.id);
   await new Promise((resolve) => setImmediate(resolve));
   globalThis.fetch = async () => new Response(null, { status: 204 });
-  const beforeCurrentSave = repository.getIntegration(initial.id);
+  const beforeCurrentSave = integrationRepository.getIntegration(initial.id);
   assert.ok(beforeCurrentSave?.version);
   await service.saveCustomHttpIntegration({
     id: initial.id,
@@ -109,11 +116,11 @@ test("custom integration saves and tests cannot overwrite a newer version", asyn
   releaseRetest();
   await assert.rejects(staleRetest, /changed while.*test/i);
   assert.equal(
-    repository.getIntegration(initial.id)?.name,
+    integrationRepository.getIntegration(initial.id)?.name,
     "Current configuration",
   );
 
-  const agent = repository.createAgent({
+  const agent = agentRepository.createAgent({
     name: "Sales",
     slug: "sales",
     role: "Sales",
@@ -123,14 +130,16 @@ test("custom integration saves and tests cannot overwrite a newer version", asyn
     enabled: true,
     fullAccess: false,
   });
-  let permissionVersion = repository.getIntegration(initial.id).version;
-  repository.setAgentIntegrationTools(
+  let permissionVersion = integrationRepository.getIntegration(
+    initial.id,
+  ).version;
+  integrationRepository.setAgentIntegrationTools(
     initial.id,
     agent.id,
     ["health"],
     permissionVersion,
   );
-  permissionVersion = repository.getIntegration(initial.id).version;
+  permissionVersion = integrationRepository.getIntegration(initial.id).version;
   let releasePermissionRace;
   globalThis.fetch = () =>
     new Promise((resolve) => {
@@ -147,15 +156,21 @@ test("custom integration saves and tests cannot overwrite a newer version", asyn
     operations: [operation],
   });
   await new Promise((resolve) => setImmediate(resolve));
-  repository.setAgentIntegrationTools(
+  integrationRepository.setAgentIntegrationTools(
     initial.id,
     agent.id,
     [],
     permissionVersion,
   );
   releasePermissionRace();
-  await assert.rejects(stalePermissionSave, /changed while it was being saved/i);
-  assert.deepEqual(repository.listIntegrationPermissions(initial.id), {});
+  await assert.rejects(
+    stalePermissionSave,
+    /changed while it was being saved/i,
+  );
+  assert.deepEqual(
+    integrationRepository.listIntegrationPermissions(initial.id),
+    {},
+  );
 
   await assert.rejects(
     service.saveCustomHttpIntegration({
@@ -170,31 +185,39 @@ test("custom integration saves and tests cannot overwrite a newer version", asyn
     /changed while it was being saved/i,
   );
   assert.equal(
-    repository.getIntegration(initial.id)?.name,
+    integrationRepository.getIntegration(initial.id)?.name,
     "Current configuration",
   );
 
-  settingsStore.set("work_api_key", "legacy-plaintext-key");
+  settingsRepository.set("work_api_key", "legacy-plaintext-key");
   assert.equal(settings.getSetting("work_api_key"), "legacy-plaintext-key");
-  const encrypted = settingsStore.get("work_api_key");
+  const encrypted = settingsRepository.get("work_api_key");
   assert.match(encrypted, /^encrypted:v1\./);
   assert.doesNotMatch(encrypted, /legacy-plaintext-key/);
 
-  settingsStore.set("work_api_key", "v1.legacy-reader-key");
+  settingsRepository.set("work_api_key", "v1.legacy-reader-key");
   assert.equal(settings.getSetting("work_api_key"), "v1.legacy-reader-key");
-  assert.notEqual(settingsStore.get("work_api_key"), "v1.legacy-reader-key");
+  assert.notEqual(
+    settingsRepository.get("work_api_key"),
+    "v1.legacy-reader-key",
+  );
 
-  settingsStore.set("work_api_key", "stale-legacy-key");
-  const originalCompareAndSet = settingsStore.compareAndSet;
-  settingsStore.compareAndSet = (key, expectedValue, value) => {
+  settingsRepository.set("work_api_key", "stale-legacy-key");
+  const originalCompareAndSet = settingsRepository.compareAndSet;
+  settingsRepository.compareAndSet = (key, expectedValue, value) => {
     settings.setSetting("work_api_key", "concurrent-new-key");
-    return originalCompareAndSet.call(settingsStore, key, expectedValue, value);
+    return originalCompareAndSet.call(
+      settingsRepository,
+      key,
+      expectedValue,
+      value,
+    );
   };
   try {
     assert.equal(settings.getSetting("work_api_key"), "concurrent-new-key");
     assert.equal(settings.getSetting("work_api_key"), "concurrent-new-key");
   } finally {
-    settingsStore.compareAndSet = originalCompareAndSet;
+    settingsRepository.compareAndSet = originalCompareAndSet;
   }
 
   const rawSecret = "mcp-super-secret";
@@ -212,18 +235,21 @@ test("custom integration saves and tests cannot overwrite a newer version", asyn
   assert.doesNotMatch(failedMcp.lastError ?? "", new RegExp(rawSecret));
   assert.match(failedMcp.lastError ?? "", /\[REDACTED\]/);
   assert.doesNotMatch(
-    repository.getIntegration(failedMcp.id)?.lastError ?? "",
+    integrationRepository.getIntegration(failedMcp.id)?.lastError ?? "",
     new RegExp(rawSecret),
   );
 
-  const deleteVersion = repository.getIntegration(failedMcp.id).version;
+  const deleteVersion = integrationRepository.getIntegration(
+    failedMcp.id,
+  ).version;
   assert.throws(
-    () => repository.deleteIntegration(failedMcp.id, deleteVersion - 1),
+    () =>
+      integrationRepository.deleteIntegration(failedMcp.id, deleteVersion - 1),
     /changed while it was being saved/i,
   );
-  assert.ok(repository.getIntegration(failedMcp.id));
-  repository.deleteIntegration(failedMcp.id, deleteVersion);
-  assert.equal(repository.getIntegration(failedMcp.id), null);
+  assert.ok(integrationRepository.getIntegration(failedMcp.id));
+  integrationRepository.deleteIntegration(failedMcp.id, deleteVersion);
+  assert.equal(integrationRepository.getIntegration(failedMcp.id), null);
 
   const posthogReleases = [];
   globalThis.fetch = () =>
@@ -244,7 +270,7 @@ test("custom integration saves and tests cannot overwrite a newer version", asyn
   posthogReleases[0]();
   await assert.rejects(first, /created by another request/i);
   assert.equal(
-    repository
+    integrationRepository
       .listIntegrationRecords()
       .filter((record) => record.provider === "posthog").length,
     1,
@@ -284,7 +310,7 @@ test("custom integration saves and tests cannot overwrite a newer version", asyn
     /changed while it was being saved/i,
   );
   assert.equal(
-    repository.getIntegration(calendar.id).name,
+    integrationRepository.getIntegration(calendar.id).name,
     newerCalendar.name,
   );
 });

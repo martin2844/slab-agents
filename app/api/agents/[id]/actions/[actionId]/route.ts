@@ -1,6 +1,6 @@
+import { agentRepository } from "@/lib/repositories/agent-repository";
 import { z } from "zod";
 import { apiError, notFound } from "@/lib/api";
-import { repository } from "@/lib/repository";
 
 export const runtime = "nodejs";
 
@@ -10,8 +10,8 @@ const schema = z.object({
 });
 
 async function ownedAction(agentId: string, actionId: string) {
-  const agent = repository.getAgent(agentId);
-  const action = repository.getAgentQuickAction(actionId);
+  const agent = agentRepository.getAgent(agentId);
+  const action = agentRepository.getAgentQuickAction(actionId);
   if (!agent || !action || action.agentId !== agent.id) {
     throw notFound("Quick task not found");
   }
@@ -26,7 +26,7 @@ export async function PATCH(
     const { id, actionId } = await ctx.params;
     await ownedAction(id, actionId);
     return Response.json({
-      data: repository.updateAgentQuickAction(
+      data: agentRepository.updateAgentQuickAction(
         actionId,
         schema.parse(await request.json()),
       ),
@@ -43,7 +43,7 @@ export async function DELETE(
   try {
     const { id, actionId } = await ctx.params;
     await ownedAction(id, actionId);
-    repository.deleteAgentQuickAction(actionId);
+    agentRepository.deleteAgentQuickAction(actionId);
     return new Response(null, { status: 204 });
   } catch (error) {
     return apiError(error);

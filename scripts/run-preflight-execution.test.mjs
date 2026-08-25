@@ -10,11 +10,11 @@ test("Work preflight runs after durable lease admission and before Runner", asyn
   const [source, preflightService, durableQueue] = await Promise.all([
     read("lib/run-service.ts"),
     read("lib/work-run-preflight-service.ts"),
-    read("lib/durable-run-queue.ts"),
+    read("lib/repositories/run-queue-repository.ts"),
   ]);
   const dequeue = source.indexOf("lease = await admission.ready");
   const preflight = source.indexOf("await runPreflight(run, agent)");
-  const running = source.indexOf('repository.updateRun(run.id, "running")');
+  const running = source.indexOf('runRepository.updateRun(run.id, "running")');
   const budget = source.indexOf("admitBudget(run, agent)");
   const runner = source.indexOf("await startRunner({");
 

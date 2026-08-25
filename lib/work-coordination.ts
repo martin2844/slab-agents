@@ -1,13 +1,17 @@
 import "server-only";
 
-import { repository } from "@/lib/repository";
+import { agentRepository } from "@/lib/repositories/agent-repository";
+import { conversationRepository } from "@/lib/repositories/conversation-repository";
+import { runRepository } from "@/lib/repositories/run-repository";
+import { withImmediateTransaction } from "@/lib/db/transaction";
+
 import { createRunExecution, executeRunInBackground } from "@/lib/run-service";
 import { WorkClient } from "@/lib/mcp/work-client";
 import type { Agent, Comment, Issue } from "@/lib/types";
 import { mentionHandles, sameAgentIdentity } from "@/lib/work-status";
 import { mapWithConcurrency } from "@/lib/async";
 import { getSetting } from "@/lib/settings";
-import { workCoordinationStore } from "@/lib/repositories/work-coordination-store";
+import { workCoordinationRepository } from "@/lib/repositories/work-coordination-repository";
 
 type TriggerType =
   "assignment" | "resumed" | "review_requested" | "blocked" | "mention";
@@ -163,8 +167,8 @@ export async function triggerAgent(
   execute: (runId: string) => Promise<void> = executeRunInBackground,
 ) {
   try {
-    const run = repository.transaction(() => {
-      const eventId = workCoordinationStore.claimEvent({
+    const run = withImmediateTransaction(() => {
+      const eventId = workCoordinationRepository.claimEvent({
         dedupeKey: input.dedupeKey,
         issueKey: input.issue.key,
         type: input.type,
@@ -173,7 +177,7 @@ export async function triggerAgent(
       });
       if (!eventId) return null;
 
-      const thread = repository.getOrCreateWorkAgentThread(
+      const thread = conversationRepository.getOrCreateWorkAgentThread(
         input.issue.key,
         input.agent.id,
         `${input.issue.key} · ${input.issue.title}`,
@@ -191,13 +195,13 @@ export async function triggerAgent(
         prompt: coordinationInput(input),
         eventInstructions: coordinationInstructions(input),
       });
-      repository.addRunEvent(created.id, "work_coordination_triggered", {
+      runRepository.addRunEvent(created.id, "work_coordination_triggered", {
         issueKey: input.issue.key,
         issueVersion: input.issue.version,
         trigger: input.type,
         commentId: input.comment?.id ?? null,
       });
-      workCoordinationStore.completeEvent(eventId, created.id);
+      workCoordinationRepository.completeEvent(eventId, created.id);
       return created;
     });
     if (!run) return;
@@ -221,7 +225,7 @@ export async function inspectIssue(
 ) {
   const dispatch = dependencies.dispatch ?? triggerAgent;
   const listComments = dependencies.listComments ?? WorkClient.listComments;
-  const previous = workCoordinationStore.getItem(issue.key);
+  const previous = workCoordinationRepository.getItem(issue.key);
   const assignedAgent = resolveAgent(agents, issue.assignee);
   const assigneeChanged =
     !previous ||
@@ -290,9 +294,9 @@ export async function inspectIssue(
   }
 
   for (const comment of comments) {
-    if (workCoordinationStore.hasSeenComment(comment.id)) continue;
+    if (workCoordinationRepository.hasSeenComment(comment.id)) continue;
     if (!previous) {
-      workCoordinationStore.rememberComment(issue.key, comment.id);
+      workCoordinationRepository.rememberComment(issue.key, comment.id);
       continue;
     }
     const targets = mentionedAgents(agents, comment);
@@ -309,10 +313,10 @@ export async function inspectIssue(
         dedupeKey: `mention:${comment.id}:${target.id}`,
       });
     }
-    workCoordinationStore.rememberComment(issue.key, comment.id);
+    workCoordinationRepository.rememberComment(issue.key, comment.id);
   }
 
-  workCoordinationStore.observeItem({
+  workCoordinationRepository.observeItem({
     issueKey: issue.key,
     projectKey,
     assignee: issue.assignee ?? null,
@@ -328,7 +332,7 @@ export function tickWorkCoordination() {
   }
   const tick = (async () => {
     try {
-      const agents = repository.listAgents();
+      const agents = agentRepository.listAgents();
       if (!agents.some((agent) => agent.enabled)) return;
       const projects = await WorkClient.listProjects();
       for (const project of projects) {

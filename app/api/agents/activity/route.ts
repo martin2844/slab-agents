@@ -1,7 +1,7 @@
-import { repository } from "@/lib/repository";
+import { runRepository } from "@/lib/repositories/run-repository";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return Response.json({ data: repository.listAgentActivityRuns() });
+  return Response.json({ data: runRepository.listAgentActivityRuns() });
 }

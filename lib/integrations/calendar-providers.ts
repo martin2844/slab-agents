@@ -1,10 +1,11 @@
 import "server-only";
 
+import type { IntegrationRecord } from "@/lib/repositories/integration-repository";
+
 import { randomUUID } from "node:crypto";
 import { XMLParser } from "fast-xml-parser";
 import ICAL from "ical.js";
 
-import type { IntegrationRecord } from "@/lib/repository";
 import type {
   CalendarAdapter,
   CalendarCredentials,

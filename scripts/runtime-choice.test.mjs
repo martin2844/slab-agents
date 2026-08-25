@@ -24,13 +24,17 @@ test("runtime configuration, model selection, and credentials stay server-side",
 
   process.env.SLAB_WORKSPACE_DB = filename;
   const [
-    { repository },
+    { agentRepository },
+    { conversationRepository },
+    { runtimeConfigRepository },
     runtimeConfig,
     runtimeService,
     { createRunExecution },
     setup,
   ] = await Promise.all([
-    import("../lib/repository.ts"),
+    import("../lib/repositories/agent-repository.ts"),
+    import("../lib/repositories/conversation-repository.ts"),
+    import("../lib/repositories/runtime-config-repository.ts"),
     import("../lib/runtime-config.ts"),
     import("../lib/runtime-service.ts"),
     import("../lib/run-service.ts"),
@@ -42,7 +46,7 @@ test("runtime configuration, model selection, and credentials stay server-side",
     runtimeId: "claude",
     apiKey: rawKey,
   });
-  const stored = repository.getRuntimeConfig("claude");
+  const stored = runtimeConfigRepository.getRuntimeConfig("claude");
   assert.ok(stored?.credentialCiphertext);
   assert.doesNotMatch(stored.credentialCiphertext, /runtime-choice-secret/);
 
@@ -87,10 +91,10 @@ test("runtime configuration, model selection, and credentials stay server-side",
     runtimeId: "claude",
     apiKey: rotatedKey,
   });
-  const rotated = repository.getRuntimeConfig("claude");
+  const rotated = runtimeConfigRepository.getRuntimeConfig("claude");
   releaseDiscovery();
   await assert.rejects(staleTest, /configuration changed/i);
-  const afterStaleTest = repository.getRuntimeConfig("claude");
+  const afterStaleTest = runtimeConfigRepository.getRuntimeConfig("claude");
   assert.equal(
     afterStaleTest?.credentialCiphertext,
     rotated?.credentialCiphertext,
@@ -116,7 +120,7 @@ test("runtime configuration, model selection, and credentials stay server-side",
     apiFormat: "chat_completions",
     defaultModel: "kimi-test",
   });
-  const storedDirect = repository.getRuntimeConfig("direct_api");
+  const storedDirect = runtimeConfigRepository.getRuntimeConfig("direct_api");
   assert.equal(storedDirect?.baseUrl, "https://provider.example.test/v1");
   assert.equal(storedDirect?.apiFormat, "chat_completions");
   assert.ok(storedDirect?.credentialCiphertext);
@@ -138,7 +142,8 @@ test("runtime configuration, model selection, and credentials stay server-side",
     defaultModel: "kimi-test",
   });
   assert.equal(
-    repository.getRuntimeConfig("direct_api")?.lastVerificationStatus,
+    runtimeConfigRepository.getRuntimeConfig("direct_api")
+      ?.lastVerificationStatus,
     "connected",
     "enable/model-only saves must preserve a current connection verification",
   );
@@ -148,7 +153,8 @@ test("runtime configuration, model selection, and credentials stay server-side",
     apiFormat: "chat_completions",
   });
   assert.equal(
-    repository.getRuntimeConfig("direct_api")?.lastVerificationStatus,
+    runtimeConfigRepository.getRuntimeConfig("direct_api")
+      ?.lastVerificationStatus,
     "connected",
     "equivalent normalized endpoint fields must preserve verification",
   );
@@ -188,7 +194,7 @@ test("runtime configuration, model selection, and credentials stay server-side",
     /authentication is owned by slab-runner/,
   );
 
-  const agent = repository.createAgent({
+  const agent = agentRepository.createAgent({
     name: "Claude Operator",
     slug: "claude-operator",
     role: "Operations",
@@ -198,7 +204,10 @@ test("runtime configuration, model selection, and credentials stay server-side",
     enabled: true,
     fullAccess: false,
   });
-  const thread = repository.createThread(agent.id, "Runtime selection");
+  const thread = conversationRepository.createThread(
+    agent.id,
+    "Runtime selection",
+  );
   const run = createRunExecution({
     agentId: agent.id,
     threadId: thread.id,
@@ -209,7 +218,7 @@ test("runtime configuration, model selection, and credentials stay server-side",
   assert.equal(run.runtime, "claude");
   assert.equal(run.model, "claude-sonnet-4-20250514");
 
-  const directAgent = repository.createAgent({
+  const directAgent = agentRepository.createAgent({
     name: "Direct Operator",
     slug: "direct-operator",
     role: "Operations",
@@ -219,7 +228,7 @@ test("runtime configuration, model selection, and credentials stay server-side",
     enabled: true,
     fullAccess: false,
   });
-  const directThread = repository.createThread(
+  const directThread = conversationRepository.createThread(
     directAgent.id,
     "Direct runtime",
   );
@@ -233,7 +242,7 @@ test("runtime configuration, model selection, and credentials stay server-side",
   assert.equal(directRun.runtime, "direct_api");
   assert.equal(directRun.model, "kimi-test");
 
-  const geminiAgent = repository.createAgent({
+  const geminiAgent = agentRepository.createAgent({
     name: "Gemini Operator",
     slug: "gemini-operator",
     role: "Operations",
@@ -243,7 +252,7 @@ test("runtime configuration, model selection, and credentials stay server-side",
     enabled: true,
     fullAccess: false,
   });
-  const geminiThread = repository.createThread(
+  const geminiThread = conversationRepository.createThread(
     geminiAgent.id,
     "Gemini runtime",
   );
@@ -379,40 +388,38 @@ test("runtime configuration, model selection, and credentials stay server-side",
 });
 
 test("runtime UI is write-only for provider credentials and run audit shows selection", async () => {
-  const [
-    settings,
-    runDetail,
-    migration,
-    directMigration,
-    geminiMigration,
-  ] = await Promise.all([
-    readFile(
-      new URL("../components/runtime-settings.tsx", import.meta.url),
-      "utf8",
-    ),
-    readFile(new URL("../components/run-detail.tsx", import.meta.url), "utf8"),
-    readFile(
-      new URL(
-        "../db/migrations/202608240022_runtime_provider_choice.cjs",
-        import.meta.url,
+  const [settings, runDetail, migration, directMigration, geminiMigration] =
+    await Promise.all([
+      readFile(
+        new URL("../components/runtime-settings.tsx", import.meta.url),
+        "utf8",
       ),
-      "utf8",
-    ),
-    readFile(
-      new URL(
-        "../db/migrations/202608240024_direct_api_runtime.cjs",
-        import.meta.url,
+      readFile(
+        new URL("../components/run-detail.tsx", import.meta.url),
+        "utf8",
       ),
-      "utf8",
-    ),
-    readFile(
-      new URL(
-        "../db/migrations/202608240025_gemini_runtime.cjs",
-        import.meta.url,
+      readFile(
+        new URL(
+          "../db/migrations/202608240022_runtime_provider_choice.cjs",
+          import.meta.url,
+        ),
+        "utf8",
       ),
-      "utf8",
-    ),
-  ]);
+      readFile(
+        new URL(
+          "../db/migrations/202608240024_direct_api_runtime.cjs",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+      readFile(
+        new URL(
+          "../db/migrations/202608240025_gemini_runtime.cjs",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ]);
 
   assert.match(settings, /type="password"/);
   assert.match(settings, /Configured · replace only/);

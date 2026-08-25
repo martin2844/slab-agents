@@ -1,10 +1,10 @@
+import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { apiError, badRequest } from "@/lib/api";
 import {
   saveCustomHttpIntegration,
   saveCustomMcpIntegration,
   savePostHogIntegration,
 } from "@/lib/integrations/service";
-import { repository } from "@/lib/repository";
 import {
   asIntegrationAuthType,
   integrationCreateSchema,
@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return Response.json({ data: repository.listIntegrations() });
+  return Response.json({ data: integrationRepository.listIntegrations() });
 }
 
 export async function POST(request: Request) {

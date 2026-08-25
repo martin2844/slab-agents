@@ -132,10 +132,10 @@ test("scheduled run creation is transactional and pending occurrences recover", 
       readFile("lib/scheduler.ts", "utf8"),
     ),
     import("node:fs/promises").then(({ readFile }) =>
-      readFile("lib/repository.ts", "utf8"),
+      readFile("lib/repositories/automation-repository.ts", "utf8"),
     ),
   ]);
-  assert.match(service, /repository\.transaction\(\(\) =>/);
+  assert.match(service, /withImmediateTransaction\(\(\) =>/);
   assert.match(service, /claimAutomationOccurrence/);
   assert.match(service, /markAutomationOccurrenceDispatched/);
   assert.match(service, /if \(!lease\.isCurrent\(\)\) return/);

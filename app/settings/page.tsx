@@ -1,8 +1,8 @@
+import { agentRepository } from "@/lib/repositories/agent-repository";
 import type { Metadata } from "next";
 import { SettingsView } from "@/components/settings-view";
 import { getEmailIntegrationState } from "@/lib/integrations/email-service";
 import { listCalendarIntegrations } from "@/lib/integrations/calendar-service";
-import { repository } from "@/lib/repository";
 import { getPublicSettings } from "@/lib/settings";
 import { getSetupStatus } from "@/lib/setup";
 import { authStatus } from "@/lib/auth/service";
@@ -38,7 +38,7 @@ export default async function SettingsPage({
       initialEmail={await getEmailIntegrationState()}
       initialCalendars={listCalendarIntegrations()}
       auth={authStatus()}
-      agents={repository.listAgents()}
+      agents={agentRepository.listAgents()}
       initialTab={initialTab}
       initialEmailOpen={initialEmailOpen}
       initialCalendarOpen={

@@ -26,19 +26,23 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
   process.env.SLAB_WORKSPACE_DB = filename;
 
   const [
-    { repository },
+    { agentRepository },
+    { conversationRepository },
+    { runRepository },
     budget,
     { createRunExecution, executeRun },
     { startRunnerRun },
-    { settingsStore },
+    { settingsRepository },
   ] = await Promise.all([
-    import("../lib/repository.ts"),
+    import("../lib/repositories/agent-repository.ts"),
+    import("../lib/repositories/conversation-repository.ts"),
+    import("../lib/repositories/run-repository.ts"),
     import("../lib/budget-control.ts"),
     import("../lib/run-service.ts"),
     import("../lib/runner.ts"),
-    import("../lib/repositories/settings-store.ts"),
+    import("../lib/repositories/settings-repository.ts"),
   ]);
-  const agent = repository.createAgent({
+  const agent = agentRepository.createAgent({
     name: "Execution Budget Agent",
     slug: "execution-budget-agent",
     role: "Operations",
@@ -47,7 +51,10 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
     enabled: true,
     fullAccess: false,
   });
-  const thread = repository.createThread(agent.id, "Budget execution");
+  const thread = conversationRepository.createThread(
+    agent.id,
+    "Budget execution",
+  );
   let configuration = budget.getBudgetConfiguration();
   configuration = budget.updateBudgetConfiguration({
     expectedVersion: configuration.workspace.version,
@@ -79,15 +86,15 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
   ))
     void event;
   assert.equal(starts, 0);
-  assert.equal(repository.getRun(rejectedRun.id)?.status, "skipped");
-  assert.equal(repository.getRun(rejectedRun.id)?.usage, null);
+  assert.equal(runRepository.getRun(rejectedRun.id)?.status, "skipped");
+  assert.equal(runRepository.getRun(rejectedRun.id)?.usage, null);
   assert.ok(
-    repository
+    runRepository
       .listRunEvents(rejectedRun.id)
       .some(({ type }) => type === "run_budget_rejected"),
   );
   assert.ok(
-    !repository
+    !runRepository
       .listRunEvents(rejectedRun.id)
       .some(({ type }) => type === "run_started"),
   );
@@ -139,16 +146,16 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
       startRunner,
       observeBudget: (runId, eventKey, data) => {
         assert.equal(
-          repository.getRun(runId)?.runnerEventId,
+          runRepository.getRun(runId)?.runnerEventId,
           0,
           "usage must be accounted before its Runner cursor advances",
         );
         return budget.observeRunUsage(runId, eventKey, data);
       },
       settleBudget: (runId, terminalStatus) => {
-        assert.equal(repository.getRun(runId)?.status, terminalStatus);
+        assert.equal(runRepository.getRun(runId)?.status, terminalStatus);
         assert.equal(
-          repository.getRun(runId)?.runnerEventId,
+          runRepository.getRun(runId)?.runnerEventId,
           1,
           "terminal settlement must happen before its Runner cursor advances",
         );
@@ -162,11 +169,11 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
   ))
     void event;
   assert.deepEqual(cancelled, [limitedRun.id]);
-  assert.equal(repository.getRun(limitedRun.id)?.status, "cancelled");
+  assert.equal(runRepository.getRun(limitedRun.id)?.status, "cancelled");
   assert.equal(budget.getRunBudget(limitedRun.id)?.status, "exceeded");
   assert.equal(budget.getRunBudget(limitedRun.id)?.terminalStatus, "cancelled");
   assert.ok(
-    repository
+    runRepository
       .listRunEvents(limitedRun.id)
       .some(({ type }) => type === "run_budget_exceeded"),
   );
@@ -221,9 +228,9 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
     { startRunner: reconnectingRunner, cancelRunner: retryingCancel },
   ))
     void event;
-  assert.equal(repository.getRun(retryRun.id)?.status, "queued");
+  assert.equal(runRepository.getRun(retryRun.id)?.status, "queued");
   assert.ok(
-    repository
+    runRepository
       .listRunEvents(retryRun.id)
       .some(({ type }) => type === "run_budget_cancel_failed"),
   );
@@ -236,10 +243,10 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
     void event;
   assert.equal(runnerStarts, 2);
   assert.equal(cancellationAttempts, 2);
-  assert.equal(repository.getRun(retryRun.id)?.status, "cancelled");
+  assert.equal(runRepository.getRun(retryRun.id)?.status, "cancelled");
   assert.equal(budget.getRunBudget(retryRun.id)?.terminalStatus, "cancelled");
 
-  settingsStore.set("runner_url", "http://runner.test");
+  settingsRepository.set("runner_url", "http://runner.test");
   const compatibilityCalls = [];
   const oldRunnerFetcher = async (url) => {
     compatibilityCalls.push(String(url));
@@ -336,11 +343,11 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
   )) {
     void event;
   }
-  assert.equal(repository.getRun(compatibilityRun.id)?.status, "failed");
+  assert.equal(runRepository.getRun(compatibilityRun.id)?.status, "failed");
   assert.equal(budget.getRunBudget(compatibilityRun.id)?.actualCostUsd, 0);
   assert.equal(budget.getRunBudget(compatibilityRun.id)?.status, "settled");
   assert.ok(
-    repository
+    runRepository
       .listRunEvents(compatibilityRun.id)
       .some(
         ({ type, payload }) =>
@@ -364,7 +371,7 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
     budget.admitRunBudget(afterCompatibilityFailure, agent).allowed,
     true,
   );
-  repository.updateRun(afterCompatibilityFailure.id, "cancelled");
+  runRepository.updateRun(afterCompatibilityFailure.id, "cancelled");
   budget.releaseRunBudgetWithoutRuntime(
     afterCompatibilityFailure.id,
     "cancelled",
@@ -403,11 +410,11 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
   )) {
     void event;
   }
-  assert.equal(repository.getRun(catalogFailureRun.id)?.status, "failed");
+  assert.equal(runRepository.getRun(catalogFailureRun.id)?.status, "failed");
   assert.equal(budget.getRunBudget(catalogFailureRun.id)?.actualCostUsd, 0);
   assert.deepEqual(catalogFailureCalls, [
-    `${settingsStore.get("runner_url")}/runs/${catalogFailureRun.id}/attach`,
-    `${settingsStore.get("runner_url")}/runtimes`,
+    `${settingsRepository.get("runner_url")}/runs/${catalogFailureRun.id}/attach`,
+    `${settingsRepository.get("runner_url")}/runtimes`,
   ]);
 
   const afterCatalogFailure = createRunExecution({

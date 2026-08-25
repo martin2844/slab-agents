@@ -1,6 +1,6 @@
+import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { apiError, conflict, notFound } from "@/lib/api";
 import { startCalendarOAuth } from "@/lib/integrations/calendar-service";
-import { repository } from "@/lib/repository";
 import { publicRequestOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const integration = repository.getIntegrationRecord(id);
+    const integration = integrationRepository.getIntegrationRecord(id);
     if (!integration) {
       throw notFound("Calendar integration not found.");
     }

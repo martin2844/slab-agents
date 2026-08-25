@@ -1,5 +1,5 @@
+import { automationRepository } from "@/lib/repositories/automation-repository";
 import { apiError, notFound } from "@/lib/api";
-import { repository } from "@/lib/repository";
 import { automationUpdateSchema } from "@/lib/api-schemas/automation";
 export async function PATCH(
   request: Request,
@@ -7,7 +7,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await ctx.params;
-    const result = repository.updateAutomation(
+    const result = automationRepository.updateAutomation(
       id,
       automationUpdateSchema.parse(await request.json()),
     );

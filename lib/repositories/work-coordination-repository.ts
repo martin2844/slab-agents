@@ -1,18 +1,14 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { db, now } from "@/lib/db";
+import { db, now } from "@/lib/db/database";
 
 type CoordinationTrigger =
-  | "assignment"
-  | "resumed"
-  | "review_requested"
-  | "blocked"
-  | "mention";
+  "assignment" | "resumed" | "review_requested" | "blocked" | "mention";
 
 const CLAIM_STALE_AFTER_MS = 5 * 60_000;
 
-export const workCoordinationStore = {
+export const workCoordinationRepository = {
   getItem(issueKey: string) {
     return db
       .prepare("SELECT * FROM work_coordination_items WHERE issue_key=?")

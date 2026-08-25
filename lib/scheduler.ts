@@ -1,6 +1,7 @@
 import "server-only";
 
-import { repository } from "@/lib/repository";
+import { automationRepository } from "@/lib/repositories/automation-repository";
+
 import { startAutomationRun } from "@/lib/run-service";
 import { dueAutomation } from "@/lib/automation-schedule";
 
@@ -15,7 +16,7 @@ export async function tickScheduler() {
   state.slabSchedulerBusy = true;
   try {
     const current = new Date();
-    for (const occurrence of repository.listPendingAutomationOccurrences()) {
+    for (const occurrence of automationRepository.listPendingAutomationOccurrences()) {
       try {
         startAutomationRun(
           occurrence.automationId,
@@ -30,17 +31,12 @@ export async function tickScheduler() {
         );
       }
     }
-    for (const automation of repository.listAutomations()) {
+    for (const automation of automationRepository.listAutomations()) {
       if (!automation.enabled || !automation.cronExpression) continue;
       try {
         const occurrence = dueAutomation(automation, current);
         if (!occurrence) continue;
-        startAutomationRun(
-          automation.id,
-          "automation",
-          current,
-          occurrence,
-        );
+        startAutomationRun(automation.id, "automation", current, occurrence);
       } catch (error) {
         console.error(`[scheduler] ${automation.name}:`, error);
       }

@@ -1,6 +1,6 @@
+import { runRepository } from "@/lib/repositories/run-repository";
 import { ThreadChat } from "@/components/thread-chat";
 import { getThreadPageData } from "@/lib/page-data";
-import { repository } from "@/lib/repository";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -13,11 +13,12 @@ export default async function ThreadPage({
   const { run } = await searchParams;
   const data = getThreadPageData(threadId);
   if (!data) notFound();
-  const requestedRun = typeof run === "string" ? repository.getRun(run) : null;
+  const requestedRun =
+    typeof run === "string" ? runRepository.getRun(run) : null;
   const linkedRun =
     requestedRun?.threadId === threadId
       ? requestedRun
-      : repository.getActiveRunForThread(threadId);
+      : runRepository.getActiveRunForThread(threadId);
   return (
     <ThreadChat
       key={threadId}

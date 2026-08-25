@@ -1,7 +1,8 @@
 import "server-only";
 
+import { runRepository } from "@/lib/repositories/run-repository";
+
 import { WorkClient } from "@/lib/mcp/work-client";
-import { repository } from "@/lib/repository";
 import type { Agent, Run } from "@/lib/types";
 import {
   evaluateWorkRunPreflight,
@@ -11,7 +12,10 @@ import {
 } from "@/lib/work-run-preflight";
 
 function issueWasNotFound(error: unknown) {
-  return error instanceof Error && /issue.+not found|not found.+issue/i.test(error.message);
+  return (
+    error instanceof Error &&
+    /issue.+not found|not found.+issue/i.test(error.message)
+  );
 }
 
 export async function preflightWorkRun(
@@ -21,7 +25,7 @@ export async function preflightWorkRun(
   if (!requiresWorkRunPreflight(run.trigger)) return null;
 
   const expected = expectedWorkRunCondition(run.trigger, agent);
-  repository.addRunEvent(run.id, "run_preflight_started", {
+  runRepository.addRunEvent(run.id, "run_preflight_started", {
     trigger: run.trigger,
     issueKey: run.issueKey,
     expected,
@@ -32,10 +36,11 @@ export async function preflightWorkRun(
     issue = run.issueKey ? await WorkClient.getIssue(run.issueKey) : null;
   } catch (error) {
     if (!issueWasNotFound(error)) {
-      repository.addRunEvent(run.id, "run_preflight_failed", {
+      runRepository.addRunEvent(run.id, "run_preflight_failed", {
         trigger: run.trigger,
         issueKey: run.issueKey,
-        error: error instanceof Error ? error.message : "Work preflight failed.",
+        error:
+          error instanceof Error ? error.message : "Work preflight failed.",
       });
       throw error;
     }
@@ -46,7 +51,7 @@ export async function preflightWorkRun(
     targetAgent: agent,
     issue,
   });
-  repository.addRunEvent(run.id, "run_preflight_completed", {
+  runRepository.addRunEvent(run.id, "run_preflight_completed", {
     ...result,
     issueKey: run.issueKey,
   });

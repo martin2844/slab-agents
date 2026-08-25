@@ -1,14 +1,13 @@
 import "server-only";
 
-import { db, now } from "@/lib/db";
+import { db, now } from "@/lib/db/database";
 
-export const settingsStore = {
+export const settingsRepository = {
   get(key: string) {
     return (
       (
         db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
-          | { value: string }
-          | undefined
+          { value: string } | undefined
       )?.value ?? null
     );
   },

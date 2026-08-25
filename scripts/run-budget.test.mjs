@@ -23,11 +23,18 @@ test("budget admission reserves atomically, reconciles idempotently, and preserv
   await migrations.destroy();
   process.env.SLAB_WORKSPACE_DB = filename;
 
-  const [{ repository }, budget] = await Promise.all([
-    import("../lib/repository.ts"),
+  const [
+    { agentRepository },
+    { conversationRepository },
+    { runRepository },
+    budget,
+  ] = await Promise.all([
+    import("../lib/repositories/agent-repository.ts"),
+    import("../lib/repositories/conversation-repository.ts"),
+    import("../lib/repositories/run-repository.ts"),
     import("../lib/budget-control.ts"),
   ]);
-  const agent = repository.createAgent({
+  const agent = agentRepository.createAgent({
     name: "Budget Agent",
     slug: "budget-agent",
     role: "Operations",
@@ -36,9 +43,9 @@ test("budget admission reserves atomically, reconciles idempotently, and preserv
     enabled: true,
     fullAccess: false,
   });
-  const thread = repository.createThread(agent.id, "Budget tests");
+  const thread = conversationRepository.createThread(agent.id, "Budget tests");
   const makeRun = (id, runtime = "codex", model = "priced-model") =>
-    repository.createRun({
+    runRepository.createRun({
       id,
       agentId: agent.id,
       threadId: thread.id,

@@ -10,7 +10,10 @@ test("Runs refresh uses the bounded activity contract without losing stable data
     read("components/runs-view.tsx"),
   ]);
 
-  assert.match(route, /activity \? getRunsActivityData\(\) : getRunsPageData\(\)/);
+  assert.match(
+    route,
+    /activity \? getRunsActivityData\(\) : getRunsPageData\(\)/,
+  );
   assert.match(view, /api<Partial<RunsData>>\("\/api\/runs\?activity=1"\)/);
   assert.match(view, /previous\.runs\.filter/);
   assert.match(view, /agents: next\.agents \?\? previous\.agents/);
@@ -32,7 +35,7 @@ test("Runs expose their existing product chat without creating another run", asy
     assert.match(source, /\?run=\$\{[^}]+\}/);
     assert.match(source, /Open chat/);
   }
-  assert.match(threadPage, /repository\.getActiveRunForThread\(threadId\)/);
+  assert.match(threadPage, /runRepository\.getActiveRunForThread\(threadId\)/);
   assert.match(threadPage, /linkedRun\?\.threadId === threadId/);
   assert.doesNotMatch(view, /POST[\s\S]*\/api\/threads/);
   assert.doesNotMatch(detail, /POST[\s\S]*\/api\/threads/);

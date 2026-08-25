@@ -1,10 +1,10 @@
+import { operatorPackRepository } from "@/lib/repositories/operator-pack-repository";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import {
   refreshOperatorPackAcceptance,
   startOperatorPackAcceptance,
 } from "@/lib/packs/service";
-import { repository } from "@/lib/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export async function GET(
   try {
     const { id } = await ctx.params;
     const data = await Promise.all(
-      repository
+      operatorPackRepository
         .listOperatorPackAcceptances(id)
         .map((acceptance) => refreshOperatorPackAcceptance(acceptance.id)),
     );

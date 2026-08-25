@@ -1,5 +1,6 @@
+import { agentRepository } from "@/lib/repositories/agent-repository";
+import { conversationRepository } from "@/lib/repositories/conversation-repository";
 import { z } from "zod";
-import { repository } from "@/lib/repository";
 import { createRunExecution, executeRun } from "@/lib/run-service";
 import { apiError, conflict, notFound } from "@/lib/api";
 
@@ -12,9 +13,9 @@ const schema = z.object({
 export async function POST(request: Request) {
   try {
     const { threadId, message } = schema.parse(await request.json());
-    const thread = repository.getThread(threadId);
+    const thread = conversationRepository.getThread(threadId);
     if (!thread) throw notFound("Thread not found");
-    const agent = repository.getAgent(thread.agentId);
+    const agent = agentRepository.getAgent(thread.agentId);
     if (!agent) throw notFound("Agent not found");
     if (!agent.enabled)
       throw conflict("This agent is disabled.", "AGENT_DISABLED");

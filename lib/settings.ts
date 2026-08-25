@@ -1,6 +1,6 @@
 import "server-only";
 
-import { settingsStore } from "@/lib/repositories/settings-store";
+import { settingsRepository } from "@/lib/repositories/settings-repository";
 import { readSecret } from "@/lib/server-config";
 import { decryptLocalSecret, encryptLocalSecret } from "@/lib/secrets";
 
@@ -48,31 +48,32 @@ function readStoredSecret(key: SettingKey, stored: string): string {
   const legacyDecrypted = decryptLegacyEnvelope(stored);
   if (legacyDecrypted !== null) {
     const tagged = `${SETTING_SECRET_PREFIX}${stored}`;
-    if (settingsStore.compareAndSet(key, stored, tagged)) return legacyDecrypted;
-    const current = settingsStore.get(key);
+    if (settingsRepository.compareAndSet(key, stored, tagged))
+      return legacyDecrypted;
+    const current = settingsRepository.get(key);
     if (current == null) return defaults[key];
     return readStoredSecret(key, current);
   }
 
   const encrypted = `${SETTING_SECRET_PREFIX}${encryptLocalSecret(stored)}`;
-  if (settingsStore.compareAndSet(key, stored, encrypted)) return stored;
+  if (settingsRepository.compareAndSet(key, stored, encrypted)) return stored;
 
   // A concurrent settings write won the migration race. Read that value rather
   // than overwriting it with the stale plaintext value we observed.
-  const current = settingsStore.get(key);
+  const current = settingsRepository.get(key);
   if (current == null) return defaults[key];
   return readStoredSecret(key, current);
 }
 
 export function getSetting(key: SettingKey) {
-  const stored = settingsStore.get(key);
+  const stored = settingsRepository.get(key);
   if (stored == null) return defaults[key];
   if (!secretSettingKeys.has(key)) return stored;
   return readStoredSecret(key, stored);
 }
 
 export function setSetting(key: SettingKey, value: string) {
-  settingsStore.set(
+  settingsRepository.set(
     key,
     secretSettingKeys.has(key)
       ? `${SETTING_SECRET_PREFIX}${encryptLocalSecret(value)}`

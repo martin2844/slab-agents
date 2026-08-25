@@ -25,18 +25,22 @@ test("executeRun resumes durable cursors and persists runtime identity", async (
   process.env.SLAB_WORKSPACE_DB = filename;
   const [
     { db },
-    { repository },
+    { agentRepository },
+    { conversationRepository },
+    { runRepository },
     { createRunExecution, executeRun },
     { startRunnerRun },
-    { settingsStore },
+    { settingsRepository },
   ] = await Promise.all([
-    import("../lib/db.ts"),
-    import("../lib/repository.ts"),
+    import("../lib/db/database.ts"),
+    import("../lib/repositories/agent-repository.ts"),
+    import("../lib/repositories/conversation-repository.ts"),
+    import("../lib/repositories/run-repository.ts"),
     import("../lib/run-service.ts"),
     import("../lib/runner.ts"),
-    import("../lib/repositories/settings-store.ts"),
+    import("../lib/repositories/settings-repository.ts"),
   ]);
-  const agent = repository.createAgent({
+  const agent = agentRepository.createAgent({
     name: "Recovery Agent",
     slug: "recovery-agent",
     role: "Operations",
@@ -45,7 +49,10 @@ test("executeRun resumes durable cursors and persists runtime identity", async (
     enabled: true,
     fullAccess: false,
   });
-  const thread = repository.createThread(agent.id, "Durable recovery");
+  const thread = conversationRepository.createThread(
+    agent.id,
+    "Durable recovery",
+  );
   const run = createRunExecution({
     runId: "control-plane-run",
     agentId: agent.id,
@@ -58,7 +65,7 @@ test("executeRun resumes durable cursors and persists runtime identity", async (
     "UPDATE runs SET runner_run_id=?,runner_event_id=? WHERE id=?",
   ).run("runner-run", 7, run.id);
 
-  settingsStore.set("runner_url", "http://runner.test");
+  settingsRepository.set("runner_url", "http://runner.test");
   const calls = [];
   const replay = [
     {
@@ -111,22 +118,22 @@ test("executeRun resumes durable cursors and persists runtime identity", async (
     calls.every(({ url }) => !url.endsWith("/runs")),
     "a durable attach must not create a replacement Runner run",
   );
-  assert.equal(repository.getRun(run.id)?.status, "completed");
-  assert.equal(repository.getRun(run.id)?.runnerEventId, 9);
+  assert.equal(runRepository.getRun(run.id)?.status, "completed");
+  assert.equal(runRepository.getRun(run.id)?.runnerEventId, 9);
   assert.equal(
-    repository
+    runRepository
       .listRunEvents(run.id)
       .filter(({ type }) => type === "run_completed").length,
     1,
   );
   assert.equal(
-    repository
+    runRepository
       .listRunEvents(run.id)
       .filter(({ type }) => type === "assistant_message").length,
     1,
   );
   assert.equal(
-    repository
+    conversationRepository
       .listMessages(thread.id)
       .filter(({ role }) => role === "assistant").length,
     1,
@@ -143,7 +150,10 @@ test("executeRun resumes durable cursors and persists runtime identity", async (
   assert.equal(starts.length, 1);
   assert.equal(calls.length, 2);
 
-  const auditThread = repository.createThread(agent.id, "Runtime audit");
+  const auditThread = conversationRepository.createThread(
+    agent.id,
+    "Runtime audit",
+  );
   const auditRun = createRunExecution({
     runId: "runtime-audit-run",
     agentId: agent.id,
@@ -188,7 +198,7 @@ test("executeRun resumes durable cursors and persists runtime identity", async (
   )) {
     void event;
   }
-  const runnerStarted = repository
+  const runnerStarted = runRepository
     .listRunEvents(auditRun.id)
     .find(({ type }) => type === "runner_run_started");
   assert.deepEqual(runnerStarted?.payload, {
@@ -196,5 +206,5 @@ test("executeRun resumes durable cursors and persists runtime identity", async (
     runtimeDefinition,
     runnerRunId: auditRun.id,
   });
-  assert.equal(repository.getRun(auditRun.id)?.status, "completed");
+  assert.equal(runRepository.getRun(auditRun.id)?.status, "completed");
 });

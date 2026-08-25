@@ -1,5 +1,11 @@
 import "server-only";
 
+import { agentRepository } from "@/lib/repositories/agent-repository";
+import { integrationRepository } from "@/lib/repositories/integration-repository";
+import { runRepository } from "@/lib/repositories/run-repository";
+import { withImmediateTransaction } from "@/lib/db/transaction";
+import type { IntegrationRecord } from "@/lib/repositories/integration-repository";
+
 import {
   createHash,
   randomBytes,
@@ -19,7 +25,6 @@ import {
   testPostHogConnection,
   type PostHogDatacenter,
 } from "@/lib/integrations/posthog";
-import { repository, type IntegrationRecord } from "@/lib/repository";
 import { internalRoute } from "@/lib/server-config";
 import { decryptLocalSecret, encryptLocalSecret } from "@/lib/secrets";
 import type {
@@ -235,7 +240,7 @@ function normalizePermissionTools(
 ) {
   const available = new Set(availableToolKeys);
   const validAgentIds = new Set(
-    repository.listAgents().map((agent) => agent.id),
+    agentRepository.listAgents().map((agent) => agent.id),
   );
 
   const result: Record<string, string[]> = {};
@@ -263,7 +268,7 @@ function normalizePermissionTools(
 function normalizePosthogPermissions(permissions: Record<string, string[]>) {
   const validTools = new Set(POSTHOG_TOOLS.map((tool) => tool.key));
   const validAgentIds = new Set(
-    repository.listAgents().map((agent) => agent.id),
+    agentRepository.listAgents().map((agent) => agent.id),
   );
   return Object.fromEntries(
     Object.entries(permissions)
@@ -430,8 +435,8 @@ export async function savePostHogIntegration(input: {
   enabled?: boolean;
 }): Promise<Integration> {
   const current = input.id
-    ? repository.getIntegrationRecord(input.id)
-    : repository.getIntegrationRecordByProvider("posthog");
+    ? integrationRepository.getIntegrationRecord(input.id)
+    : integrationRepository.getIntegrationRecordByProvider("posthog");
   if (!input.id && current) throw new IntegrationVersionConflictError();
   assertExpectedVersion(current, input.expectedVersion, Boolean(input.id));
 
@@ -470,7 +475,7 @@ export async function savePostHogIntegration(input: {
   }
   if (input.enabled === false) status = "disabled";
 
-  return repository.saveIntegration({
+  return integrationRepository.saveIntegration({
     id: current?.id,
     provider: "posthog",
     name: "PostHog",
@@ -509,7 +514,9 @@ export async function saveCustomHttpIntegration(input: {
 
   const baseUrl = normalizeHttpIntegrationBaseUrl(input.baseUrl);
   const authType = normalizeAuthType(input.authType);
-  const current = input.id ? repository.getIntegrationRecord(input.id) : null;
+  const current = input.id
+    ? integrationRepository.getIntegrationRecord(input.id)
+    : null;
   assertExpectedVersion(current, input.expectedVersion, Boolean(input.id));
 
   if (current && current.provider !== "custom_http") {
@@ -613,7 +620,7 @@ export async function saveCustomHttpIntegration(input: {
     input.permissions,
   );
 
-  return repository.saveIntegration({
+  return integrationRepository.saveIntegration({
     id: current?.id,
     provider: "custom_http",
     name,
@@ -663,7 +670,9 @@ export async function saveCustomMcpIntegration(input: {
     1_000,
     120_000,
   );
-  const current = input.id ? repository.getIntegrationRecord(input.id) : null;
+  const current = input.id
+    ? integrationRepository.getIntegrationRecord(input.id)
+    : null;
   assertExpectedVersion(current, input.expectedVersion, Boolean(input.id));
 
   if (current && current.provider !== "custom_mcp") {
@@ -746,7 +755,7 @@ export async function saveCustomMcpIntegration(input: {
     input.permissions,
   );
 
-  return repository.saveIntegration({
+  return integrationRepository.saveIntegration({
     id: current?.id,
     provider: "custom_mcp",
     name,
@@ -772,7 +781,7 @@ export async function saveCustomMcpIntegration(input: {
 }
 
 export async function retestPostHogIntegration(id: string) {
-  const record = repository.getIntegrationRecord(id);
+  const record = integrationRepository.getIntegrationRecord(id);
   if (!record || record.provider !== "posthog") {
     throw new IntegrationNotFoundError("PostHog integration not found.");
   }
@@ -782,7 +791,7 @@ export async function retestPostHogIntegration(id: string) {
   try {
     credentials = readPosthogCredentials(record);
   } catch {
-    const updated = repository.updateIntegrationCheckIfVersion(
+    const updated = integrationRepository.updateIntegrationCheckIfVersion(
       id,
       record.version,
       {
@@ -795,8 +804,11 @@ export async function retestPostHogIntegration(id: string) {
     return updated;
   }
   try {
-    await testPostHogConnection(record.config.datacenter ?? "us", credentials.apiKey);
-    const updated = repository.updateIntegrationCheckIfVersion(
+    await testPostHogConnection(
+      record.config.datacenter ?? "us",
+      credentials.apiKey,
+    );
+    const updated = integrationRepository.updateIntegrationCheckIfVersion(
       id,
       record.version,
       {
@@ -811,7 +823,7 @@ export async function retestPostHogIntegration(id: string) {
       );
     return updated;
   } catch (error) {
-    const updated = repository.updateIntegrationCheckIfVersion(
+    const updated = integrationRepository.updateIntegrationCheckIfVersion(
       id,
       record.version,
       {
@@ -832,7 +844,7 @@ export async function retestPostHogIntegration(id: string) {
 }
 
 export async function retestCustomHttpIntegration(id: string) {
-  const record = repository.getIntegrationRecord(id);
+  const record = integrationRepository.getIntegrationRecord(id);
   if (!record || record.provider !== "custom_http") {
     throw new IntegrationNotFoundError("Custom HTTP integration not found.");
   }
@@ -857,7 +869,7 @@ export async function retestCustomHttpIntegration(id: string) {
       );
     }
 
-    const updated = repository.updateIntegrationCheckIfVersion(
+    const updated = integrationRepository.updateIntegrationCheckIfVersion(
       id,
       record.version,
       {
@@ -872,7 +884,7 @@ export async function retestCustomHttpIntegration(id: string) {
       );
     return updated;
   } catch (error) {
-    const updated = repository.updateIntegrationCheckIfVersion(
+    const updated = integrationRepository.updateIntegrationCheckIfVersion(
       id,
       record.version,
       {
@@ -895,7 +907,7 @@ export async function retestCustomHttpIntegration(id: string) {
 }
 
 export async function retestCustomMcpIntegration(id: string) {
-  const record = repository.getIntegrationRecord(id);
+  const record = integrationRepository.getIntegrationRecord(id);
   if (!record || record.provider !== "custom_mcp") {
     throw new IntegrationNotFoundError("Custom MCP integration not found.");
   }
@@ -916,10 +928,10 @@ export async function retestCustomMcpIntegration(id: string) {
       "custom_mcp",
       record.slug,
       mcpTools.map((tool) => toFullToolName(record.slug, tool.name)),
-      repository.listIntegrationPermissions(record.id),
+      integrationRepository.listIntegrationPermissions(record.id),
     );
 
-    return repository.saveIntegration({
+    return integrationRepository.saveIntegration({
       id: record.id,
       provider: "custom_mcp",
       name: record.name,
@@ -935,7 +947,7 @@ export async function retestCustomMcpIntegration(id: string) {
       expectedVersion: record.version,
     });
   } catch (error) {
-    const updated = repository.updateIntegrationCheckIfVersion(
+    const updated = integrationRepository.updateIntegrationCheckIfVersion(
       id,
       record.version,
       {
@@ -961,7 +973,7 @@ export function getPostHogRuntimeAccess(
   integrationId: string,
   agentId: string,
 ) {
-  const record = repository.getIntegrationRecord(integrationId);
+  const record = integrationRepository.getIntegrationRecord(integrationId);
   if (
     !record ||
     record.provider !== "posthog" ||
@@ -972,7 +984,7 @@ export function getPostHogRuntimeAccess(
   }
 
   const allowedTools =
-    repository.listIntegrationPermissions(record.id)[agentId] ?? [];
+    integrationRepository.listIntegrationPermissions(record.id)[agentId] ?? [];
   if (allowedTools.length === 0) return null;
 
   return {
@@ -983,11 +995,12 @@ export function getPostHogRuntimeAccess(
 }
 
 export function getAgentPostHogMcp(agentId: string) {
-  const record = repository.getIntegrationRecordByProvider("posthog");
+  const record =
+    integrationRepository.getIntegrationRecordByProvider("posthog");
   if (!record || record.status !== "connected" || !record.enabled) return null;
 
   const allowedTools =
-    repository.listIntegrationPermissions(record.id)[agentId] ?? [];
+    integrationRepository.listIntegrationPermissions(record.id)[agentId] ?? [];
   if (allowedTools.length === 0) return null;
 
   const credentials = readPosthogCredentials(record);
@@ -1031,11 +1044,11 @@ export function getRunCustomIntegrationRuntimeAccess(
   runId: string,
   token: string,
 ): RunCustomIntegrationAccess {
-  const capability = repository.getRunIntegrationCapability(
+  const capability = integrationRepository.getRunIntegrationCapability(
     runId,
     integrationId,
   );
-  const run = repository.getRun(runId);
+  const run = runRepository.getRun(runId);
   if (
     !capability ||
     !run ||
@@ -1047,7 +1060,7 @@ export function getRunCustomIntegrationRuntimeAccess(
     return { status: "unauthorized" };
   }
 
-  const record = repository.getIntegrationRecord(integrationId);
+  const record = integrationRepository.getIntegrationRecord(integrationId);
   if (
     !record ||
     (record.provider !== "custom_http" && record.provider !== "custom_mcp")
@@ -1072,26 +1085,27 @@ export function getRunCustomIntegrationRuntimeAccess(
 }
 
 export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
-  return repository.transaction(() => {
-    const existing = repository.listRunIntegrationCapabilities(runId).filter(
-      (capability) => {
-        const integration = repository.getIntegrationRecord(
+  return withImmediateTransaction(() => {
+    const existing = integrationRepository
+      .listRunIntegrationCapabilities(runId)
+      .filter((capability) => {
+        const integration = integrationRepository.getIntegrationRecord(
           capability.integrationId,
         );
         return (
           integration?.provider === "custom_http" ||
           integration?.provider === "custom_mcp"
         );
-      },
-    );
-    const alreadyCaptured = repository.hasRunIntegrationSnapshot(
+      });
+    const alreadyCaptured = integrationRepository.hasRunIntegrationSnapshot(
       runId,
       "custom",
     );
     const captureFromLive = !alreadyCaptured && existing.length === 0;
-    if (!alreadyCaptured) repository.markRunIntegrationSnapshot(runId, "custom");
+    if (!alreadyCaptured)
+      integrationRepository.markRunIntegrationSnapshot(runId, "custom");
     const candidates = captureFromLive
-      ? repository
+      ? integrationRepository
           .listIntegrations()
           .filter(
             (integration) =>
@@ -1103,14 +1117,17 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
           .map((integration) => ({
             integration,
             allowedTools:
-              repository.listIntegrationPermissions(integration.id)[agentId] ??
-              [],
+              integrationRepository.listIntegrationPermissions(integration.id)[
+                agentId
+              ] ?? [],
             version: integration.version ?? 1,
           }))
       : existing
           .filter((capability) => capability.agentId === agentId)
           .map((capability) => ({
-            integration: repository.getIntegration(capability.integrationId),
+            integration: integrationRepository.getIntegration(
+              capability.integrationId,
+            ),
             allowedTools: capability.allowedTools,
             version: capability.integrationVersion,
           }));
@@ -1125,7 +1142,7 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
         return [];
       }
       const token = randomBytes(32).toString("base64url");
-      const capability = repository.saveRunIntegrationCapability({
+      const capability = integrationRepository.saveRunIntegrationCapability({
         runId,
         integrationId: integration.id,
         agentId,

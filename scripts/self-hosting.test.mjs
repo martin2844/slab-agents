@@ -9,7 +9,7 @@ test("production builds are pure and container startup owns migrations", async (
     await Promise.all([
       read("package.json"),
       read("next.config.ts"),
-      read("lib/db.ts"),
+      read("lib/db/database.ts"),
       read("Dockerfile"),
       read("scripts/container-entrypoint.sh"),
     ]);
@@ -44,22 +44,31 @@ test("the production image exposes distinct liveness and readiness contracts", a
 });
 
 test("container-only credentials support secret files and internal Docker DNS", async () => {
-  const [settings, runner, emailClient, emailService, integrations, serverConfig] =
-    await Promise.all([
-      read("lib/settings.ts"),
-      read("lib/runner.ts"),
-      read("lib/integrations/email-client.ts"),
-      read("lib/integrations/email-service.ts"),
-      read("lib/integrations/service.ts"),
-      read("lib/server-config.ts"),
-    ]);
+  const [
+    settings,
+    runner,
+    emailClient,
+    emailService,
+    integrations,
+    serverConfig,
+  ] = await Promise.all([
+    read("lib/settings.ts"),
+    read("lib/runner.ts"),
+    read("lib/integrations/email-client.ts"),
+    read("lib/integrations/email-service.ts"),
+    read("lib/integrations/service.ts"),
+    read("lib/server-config.ts"),
+  ]);
 
   assert.match(settings, /TRACKER_API_KEY_FILE/);
   assert.match(settings, /DOCS_API_KEY_FILE/);
   assert.match(runner, /RUNNER_TOKEN_FILE/);
   assert.match(emailClient, /SLAB_EMAIL_ADMIN_KEY_FILE/);
   assert.match(emailService, /process\.env\.SLAB_EMAIL_URL/);
-  assert.match(emailService, /saveAndTestEmailIntegration\(currentServiceUrl\(\)\)/);
+  assert.match(
+    emailService,
+    /saveAndTestEmailIntegration\(currentServiceUrl\(\)\)/,
+  );
   assert.match(serverConfig, /CONTROL_PLANE_INTERNAL_URL/);
   assert.doesNotMatch(
     integrations,

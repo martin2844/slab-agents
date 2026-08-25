@@ -97,22 +97,30 @@ test("password bootstrap stores only a scrypt hash and rotation revokes sessions
 });
 
 test("the proxy protects pages and APIs while preserving health and scoped MCP", async () => {
-  const [proxy, service, login, passwordRoute, settings, dockerfile] =
-    await Promise.all([
-      read("proxy.ts"),
-      read("lib/auth/service.ts"),
-      read("app/api/auth/login/route.ts"),
-      read("app/api/auth/password/route.ts"),
-      read("components/settings-view.tsx"),
-      read("Dockerfile"),
-    ]);
+  const [
+    proxy,
+    service,
+    repository,
+    login,
+    passwordRoute,
+    settings,
+    dockerfile,
+  ] = await Promise.all([
+    read("proxy.ts"),
+    read("lib/auth/service.ts"),
+    read("lib/repositories/auth-repository.ts"),
+    read("app/api/auth/login/route.ts"),
+    read("app/api/auth/password/route.ts"),
+    read("components/settings-view.tsx"),
+    read("Dockerfile"),
+  ]);
 
   assert.match(proxy, /AUTHENTICATION_REQUIRED/);
   assert.match(proxy, /sameOriginRequest/);
   assert.match(proxy, /"\/health"/);
   assert.match(proxy, /internalMcpPath/);
-  assert.match(service, /auth_sessions/);
-  assert.match(service, /auth_login_attempts/);
+  assert.match(repository, /auth_sessions/);
+  assert.match(repository, /auth_login_attempts/);
   assert.match(service, /authenticationReadiness/);
   assert.match(login, /httpOnly: true/);
   assert.match(login, /sameSite: "lax"/);

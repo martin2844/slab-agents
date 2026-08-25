@@ -1,9 +1,11 @@
 import "server-only";
 
+import { runtimeConfigRepository } from "@/lib/repositories/runtime-config-repository";
+import type { RuntimeConfigRecord } from "@/lib/repositories/runtime-config-repository";
+
 import { OperationalError } from "@/lib/operational-error";
 
 import { decryptLocalSecret, encryptLocalSecret } from "@/lib/secrets";
-import { repository, type RuntimeConfigRecord } from "@/lib/repository";
 
 export const runtimeIds = ["codex", "claude", "direct_api", "gemini"] as const;
 export type RuntimeId = (typeof runtimeIds)[number];
@@ -80,7 +82,7 @@ export function isRuntimeId(value: string): value is RuntimeId {
 }
 
 export function getRuntimeConfig(runtimeId: RuntimeId): RuntimeConfigRecord {
-  const stored = repository.getRuntimeConfig(runtimeId);
+  const stored = runtimeConfigRepository.getRuntimeConfig(runtimeId);
   if (stored) return stored;
   const defaults = runtimeDefaults[runtimeId];
   const timestamp = new Date().toISOString();
@@ -118,10 +120,14 @@ export function saveRuntimeConfiguration(input: {
     : current.credentialCiphertext;
   const enabled = input.enabled ?? current.enabled;
   if (input.runtimeId === "claude" && enabled && !credentialCiphertext) {
-    throw new OperationalError("Configure an Anthropic API key before enabling Claude.");
+    throw new OperationalError(
+      "Configure an Anthropic API key before enabling Claude.",
+    );
   }
   if (input.runtimeId === "direct_api" && enabled && !credentialCiphertext) {
-    throw new OperationalError("Configure an API key before enabling Direct API.");
+    throw new OperationalError(
+      "Configure an API key before enabling Direct API.",
+    );
   }
   const baseUrl =
     input.runtimeId === "direct_api"
@@ -142,9 +148,11 @@ export function saveRuntimeConfiguration(input: {
     !current.models.includes(defaultModel) &&
     defaultModel !== "default"
   ) {
-    throw new OperationalError("Choose a model reported by the configured runtime.");
+    throw new OperationalError(
+      "Choose a model reported by the configured runtime.",
+    );
   }
-  return repository.saveRuntimeConfig({
+  return runtimeConfigRepository.saveRuntimeConfig({
     runtimeId: input.runtimeId,
     enabled,
     authMode: current.authMode,
@@ -164,9 +172,11 @@ export function saveRuntimeConfiguration(input: {
 }
 
 export function assertRuntimeSelectable(runtimeId: string, model: string) {
-  if (!isRuntimeId(runtimeId)) throw new OperationalError("Unsupported agent runtime.");
+  if (!isRuntimeId(runtimeId))
+    throw new OperationalError("Unsupported agent runtime.");
   const config = getRuntimeConfig(runtimeId);
-  if (!config.enabled) throw new OperationalError(`${runtimeId} runtime is disabled.`);
+  if (!config.enabled)
+    throw new OperationalError(`${runtimeId} runtime is disabled.`);
   // Codex app-server does not currently advertise or validate a model
   // catalog. Preserve existing explicit model values and let the runtime own
   // that validation until its adapter declares support for it.
@@ -175,12 +185,15 @@ export function assertRuntimeSelectable(runtimeId: string, model: string) {
     model !== "default" &&
     !config.models.includes(model)
   ) {
-    throw new OperationalError("The selected model is not available for this runtime.");
+    throw new OperationalError(
+      "The selected model is not available for this runtime.",
+    );
   }
 }
 
 export function resolveRuntimeModel(runtimeId: string, model: string) {
-  if (!isRuntimeId(runtimeId)) throw new OperationalError("Unsupported agent runtime.");
+  if (!isRuntimeId(runtimeId))
+    throw new OperationalError("Unsupported agent runtime.");
   const selected =
     model === "default" ? getRuntimeConfig(runtimeId).defaultModel : model;
   assertRuntimeSelectable(runtimeId, selected);
@@ -191,7 +204,9 @@ export function getRuntimeAuthentication(runtimeId: string) {
   if (runtimeId !== "claude" && runtimeId !== "direct_api") return null;
   const config = getRuntimeConfig(runtimeId);
   if (!config.enabled || !config.credentialCiphertext) {
-    throw new OperationalError(`${runtimeId} is disabled or missing an API key.`);
+    throw new OperationalError(
+      `${runtimeId} is disabled or missing an API key.`,
+    );
   }
   return {
     mode: "api_key" as const,
@@ -211,7 +226,9 @@ function normalizeDirectApiUrl(value: string): string {
     throw new OperationalError("Direct API URL must use HTTP or HTTPS.");
   }
   if (parsed.username || parsed.password) {
-    throw new OperationalError("Direct API credentials must not be embedded in the URL.");
+    throw new OperationalError(
+      "Direct API credentials must not be embedded in the URL.",
+    );
   }
   if (parsed.search || parsed.hash) {
     throw new OperationalError(

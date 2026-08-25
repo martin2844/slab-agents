@@ -1,8 +1,10 @@
 import "server-only";
 
+import { runRepository } from "@/lib/repositories/run-repository";
+import { withImmediateTransaction } from "@/lib/db/transaction";
+
 import { conflict, notFound } from "@/lib/api";
-import { approvalStore } from "@/lib/repositories/approval-store";
-import { repository } from "@/lib/repository";
+import { approvalRepository } from "@/lib/repositories/approval-repository";
 import { resolveRunnerApproval } from "@/lib/runner";
 import { isRunnerRunNotFound } from "@/lib/runner-errors";
 
@@ -12,7 +14,7 @@ type Dependencies = {
   resolveRunner: typeof resolveRunnerApproval;
   runnerRunNotFound: typeof isRunnerRunNotFound;
   finalizeLocal?: typeof finalizeLocalApproval;
-  recordRunnerDecision?: typeof approvalStore.recordRunnerDecision;
+  recordRunnerDecision?: typeof approvalRepository.recordRunnerDecision;
 };
 
 const defaultDependencies: Dependencies = {
@@ -21,21 +23,21 @@ const defaultDependencies: Dependencies = {
 };
 
 function finalizeLocalApproval(
-  approval: NonNullable<ReturnType<typeof approvalStore.get>>,
+  approval: NonNullable<ReturnType<typeof approvalRepository.get>>,
   decision: Decision,
 ) {
-  return repository.transaction(() => {
-    const result = approvalStore.resolve(
+  return withImmediateTransaction(() => {
+    const result = approvalRepository.resolve(
       approval.id,
       decision === "approve" ? "approved" : "denied",
     );
     if (!result) throw new Error("Could not finalize approval resolution");
-    repository.addRunEvent(
+    runRepository.addRunEvent(
       approval.runId,
       decision === "approve" ? "approval_approved" : "approval_denied",
       { approvalId: approval.id },
     );
-    approvalStore.resumeRunWhenClear(approval.runId);
+    runRepository.resumeWhenApprovalsClear(approval.runId);
     return result;
   });
 }
@@ -45,9 +47,9 @@ export async function resolveApprovalAction(
   decision: Decision,
   dependencies: Dependencies = defaultDependencies,
 ) {
-  const approval = approvalStore.claim(id);
+  const approval = approvalRepository.claim(id);
   if (!approval) {
-    const current = approvalStore.get(id);
+    const current = approvalRepository.get(id);
     if (
       current?.status === "resolving" &&
       current.details.runnerDecision === decision
@@ -66,24 +68,24 @@ export async function resolveApprovalAction(
   }
   const claimed = approval;
 
-  const run = repository.getRun(claimed.runId);
+  const run = runRepository.getRun(claimed.runId);
   if (
     run &&
     ["completed", "failed", "cancelled", "skipped"].includes(run.status)
   ) {
     try {
-      return repository.transaction(() => {
-        const result = approvalStore.resolve(id, "denied");
+      return withImmediateTransaction(() => {
+        const result = approvalRepository.resolve(id, "denied");
         if (!result) throw new Error("Could not dismiss stale approval");
-        approvalStore.closeOpen(claimed.runId);
-        repository.addRunEvent(claimed.runId, "approval_dismissed", {
+        approvalRepository.closeOpen(claimed.runId);
+        runRepository.addRunEvent(claimed.runId, "approval_dismissed", {
           approvalId: id,
           reason: "run_already_terminal",
         });
         return { ...result, dismissed: true as const };
       });
     } catch (error) {
-      approvalStore.release(id);
+      approvalRepository.release(id);
       throw error;
     }
   }
@@ -99,26 +101,27 @@ export async function resolveApprovalAction(
     );
     runnerAccepted = true;
     const recordRunnerDecision =
-      dependencies.recordRunnerDecision ?? approvalStore.recordRunnerDecision;
+      dependencies.recordRunnerDecision ??
+      approvalRepository.recordRunnerDecision;
     if (!recordRunnerDecision(id, decision)) {
       throw new Error("Could not record Runner approval resolution");
     }
-    const recorded = approvalStore.get(id) ?? claimed;
+    const recorded = approvalRepository.get(id) ?? claimed;
     return (dependencies.finalizeLocal ?? finalizeLocalApproval)(
       recorded,
       decision,
     );
   } catch (error) {
     if (dependencies.runnerRunNotFound(error)) {
-      return repository.transaction(() => {
-        const result = approvalStore.resolve(id, "denied");
+      return withImmediateTransaction(() => {
+        const result = approvalRepository.resolve(id, "denied");
         if (!result) throw new Error("Could not dismiss stale approval");
-        approvalStore.closeOpen(claimed.runId);
-        repository.addRunEvent(claimed.runId, "approval_dismissed", {
+        approvalRepository.closeOpen(claimed.runId);
+        runRepository.addRunEvent(claimed.runId, "approval_dismissed", {
           approvalId: id,
           reason: "runner_run_not_found",
         });
-        approvalStore.cancelRunIfActive(
+        runRepository.cancelIfActive(
           claimed.runId,
           "Runner run was not found; stale approval dismissed.",
         );
@@ -127,9 +130,9 @@ export async function resolveApprovalAction(
     }
     if (
       !runnerAccepted &&
-      approvalStore.get(id)?.details.runnerDecision !== decision
+      approvalRepository.get(id)?.details.runnerDecision !== decision
     ) {
-      approvalStore.release(id);
+      approvalRepository.release(id);
     }
     throw error;
   }

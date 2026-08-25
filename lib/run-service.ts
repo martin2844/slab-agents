@@ -1,11 +1,16 @@
 import "server-only";
 
+import { agentRepository } from "@/lib/repositories/agent-repository";
+import { automationRepository } from "@/lib/repositories/automation-repository";
+import { conversationRepository } from "@/lib/repositories/conversation-repository";
+import { runRepository } from "@/lib/repositories/run-repository";
+import { withImmediateTransaction } from "@/lib/db/transaction";
+
 import { OperationalError } from "@/lib/operational-error";
 
-import { durableRunQueue } from "@/lib/durable-run-state";
-import type { RunLease } from "@/lib/durable-run-queue";
-import { repository } from "@/lib/repository";
-import { approvalStore } from "@/lib/repositories/approval-store";
+import { durableRunQueue } from "@/lib/repositories/durable-run-queue-repository";
+import type { RunLease } from "@/lib/repositories/run-queue-repository";
+import { approvalRepository } from "@/lib/repositories/approval-repository";
 import {
   defineRunExecution,
   planRuntimeThread,
@@ -71,16 +76,16 @@ export function createRunExecution(input: {
   automationId?: string | null;
   eventInstructions?: string | null;
 }) {
-  const agent = repository.getAgent(input.agentId);
-  const thread = repository.getThread(input.threadId);
+  const agent = agentRepository.getAgent(input.agentId);
+  const thread = conversationRepository.getThread(input.threadId);
   if (!agent || !thread || thread.agentId !== agent.id) {
     throw new Error("Agent or thread not found.");
   }
   assertRuntimeSelectable(agent.runtime, agent.model);
   const model = resolveRuntimeModel(agent.runtime, agent.model);
   const execution = defineRunExecution(input);
-  return repository.transaction(() => {
-    const run = repository.createRun({
+  return withImmediateTransaction(() => {
+    const run = runRepository.createRun({
       id: input.runId,
       agentId: agent.id,
       threadId: thread.id,
@@ -92,8 +97,8 @@ export function createRunExecution(input: {
       issueKey: execution.issueKey,
       runInstructions: execution.policy,
     });
-    repository.addMessage(thread.id, run.id, "user", input.prompt);
-    repository.addRunEvent(run.id, "run_execution_created", {
+    conversationRepository.addMessage(thread.id, run.id, "user", input.prompt);
+    runRepository.addRunEvent(run.id, "run_execution_created", {
       trigger: execution.trigger,
       mode: execution.mode,
       issueKey: execution.issueKey,
@@ -130,11 +135,11 @@ export async function* executeRun(
   const releaseBudgetWithoutRuntime =
     dependencies.releaseBudgetWithoutRuntime ?? releaseRunBudgetWithoutRuntime;
   const cancelRunner = dependencies.cancelRunner ?? cancelRunnerRun;
-  const run = repository.getRun(input.runId);
+  const run = runRepository.getRun(input.runId);
   if (!run || !run.threadId) throw new Error("Run or thread not found.");
-  const agent = repository.getAgent(run.agentId);
-  const thread = repository.getThread(run.threadId);
-  const runInput = repository.getRunInput(run.id);
+  const agent = agentRepository.getAgent(run.agentId);
+  const thread = conversationRepository.getThread(run.threadId);
+  const runInput = conversationRepository.getRunInput(run.id);
   if (!agent || !thread) throw new Error("Agent or thread not found.");
   if (!runInput) throw new Error("Run input not found.");
   if (executingRuns.has(run.id)) return;
@@ -144,7 +149,7 @@ export async function* executeRun(
   try {
     const admission = queue.acquire(run.id);
     if (admission.queued) {
-      repository.addRunEvent(run.id, "run_queued", {
+      runRepository.addRunEvent(run.id, "run_queued", {
         agentId: agent.id,
         blockedByRunId: admission.blockedByRunId,
         reason: admission.reason,
@@ -170,10 +175,10 @@ export async function* executeRun(
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Work preflight failed.";
-      const persisted = repository.transaction(() => {
-        if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
-        repository.updateRun(run.id, "failed", { error: message });
-        repository.addRunEvent(run.id, "run_failed", {
+      const persisted = withImmediateTransaction(() => {
+        if (!runRepository.ownsRunLease(run.id, leaseOwner)) return false;
+        runRepository.updateRun(run.id, "failed", { error: message });
+        runRepository.addRunEvent(run.id, "run_failed", {
           error: message,
           phase: "work_preflight",
         });
@@ -184,10 +189,10 @@ export async function* executeRun(
       return;
     }
     if (preflightResult && !preflightResult.valid) {
-      const persisted = repository.transaction(() => {
-        if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
-        repository.updateRun(run.id, "skipped");
-        repository.addRunEvent(run.id, "run_skipped", {
+      const persisted = withImmediateTransaction(() => {
+        if (!runRepository.ownsRunLease(run.id, leaseOwner)) return false;
+        runRepository.updateRun(run.id, "skipped");
+        runRepository.addRunEvent(run.id, "run_skipped", {
           reason: preflightResult.reason,
           trigger: run.trigger,
           mode: run.mode,
@@ -210,7 +215,7 @@ export async function* executeRun(
 
     const leaseStart = lease.begin();
     if (leaseStart === "maintenance") {
-      repository.addRunEvent(run.id, "run_deferred", {
+      runRepository.addRunEvent(run.id, "run_deferred", {
         reason: "maintenance",
         phase: "after_preflight",
       });
@@ -224,10 +229,10 @@ export async function* executeRun(
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Budget admission failed.";
-      const persisted = repository.transaction(() => {
-        if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
-        repository.updateRun(run.id, "failed", { error: message });
-        repository.addRunEvent(run.id, "run_failed", {
+      const persisted = withImmediateTransaction(() => {
+        if (!runRepository.ownsRunLease(run.id, leaseOwner)) return false;
+        runRepository.updateRun(run.id, "failed", { error: message });
+        runRepository.addRunEvent(run.id, "run_failed", {
           error: message,
           phase: "budget_admission",
           runtimeStarted: false,
@@ -239,15 +244,15 @@ export async function* executeRun(
       return;
     }
     if (!budgetAdmission.allowed) {
-      const persisted = repository.transaction(() => {
-        if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
-        repository.updateRun(run.id, "skipped");
-        repository.addRunEvent(run.id, "run_budget_rejected", {
+      const persisted = withImmediateTransaction(() => {
+        if (!runRepository.ownsRunLease(run.id, leaseOwner)) return false;
+        runRepository.updateRun(run.id, "skipped");
+        runRepository.addRunEvent(run.id, "run_budget_rejected", {
           reason: budgetAdmission.reason,
           budget: budgetAdmission.snapshot,
           runtimeStarted: false,
         });
-        repository.addRunEvent(run.id, "run_skipped", {
+        runRepository.addRunEvent(run.id, "run_skipped", {
           reason: "budget_rejected",
           budgetReason: budgetAdmission.reason,
           runtimeStarted: false,
@@ -271,9 +276,9 @@ export async function* executeRun(
           error instanceof Error
             ? error.message
             : "Runner cancellation could not be confirmed.";
-        repository.transaction(() => {
-          if (!repository.ownsRunLease(run.id, leaseOwner)) return;
-          repository.addRunEvent(run.id, "run_budget_cancel_failed", {
+        withImmediateTransaction(() => {
+          if (!runRepository.ownsRunLease(run.id, leaseOwner)) return;
+          runRepository.addRunEvent(run.id, "run_budget_cancel_failed", {
             error: message,
             runnerRunId,
             retryable: true,
@@ -285,13 +290,13 @@ export async function* executeRun(
       }
     };
 
-    const startedPersisted = repository.transaction(() => {
-      if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
-      repository.updateRun(run.id, "running");
-      repository.addRunEvent(run.id, "run_budget_reserved", {
+    const startedPersisted = withImmediateTransaction(() => {
+      if (!runRepository.ownsRunLease(run.id, leaseOwner)) return false;
+      runRepository.updateRun(run.id, "running");
+      runRepository.addRunEvent(run.id, "run_budget_reserved", {
         budget: budgetAdmission.snapshot,
       });
-      repository.addRunEvent(run.id, "run_started", {
+      runRepository.addRunEvent(run.id, "run_started", {
         trigger: run.trigger,
         mode: run.mode,
         issueKey: run.issueKey,
@@ -308,9 +313,9 @@ export async function* executeRun(
       issueKey: run.issueKey,
     };
 
-    const leasedRun = repository.getRun(run.id);
+    const leasedRun = runRepository.getRun(run.id);
     if (!leasedRun) return;
-    const persistedRunEvents = repository.listRunEvents(run.id);
+    const persistedRunEvents = runRepository.listRunEvents(run.id);
     const persistedProgress = restoreRunProgress(persistedRunEvents);
     let assistantBody = persistedProgress.assistantBody;
     let runnerRunId = leasedRun.runnerRunId ?? run.id;
@@ -324,9 +329,9 @@ export async function* executeRun(
     let completed = false;
     const contextProfilePersistence: Promise<void>[] = [];
     let modelCallIndex = persistedProgress.modelCallIndex;
-    const runtimeSelectionPersisted = repository.transaction(() => {
-      if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
-      repository.addRunEvent(run.id, "runtime_thread_selected", {
+    const runtimeSelectionPersisted = withImmediateTransaction(() => {
+      if (!runRepository.ownsRunLease(run.id, leaseOwner)) return false;
+      runRepository.addRunEvent(run.id, "runtime_thread_selected", {
         runtimeThreadId,
         continuity: runtimeContinuity,
         reusable: runtimeThreadPlan.reusable,
@@ -337,16 +342,16 @@ export async function* executeRun(
     if (!runtimeSelectionPersisted) return;
 
     try {
-      const messages = repository.listMessages(thread.id);
+      const messages = conversationRepository.listMessages(thread.id);
       for (let attempt = 0; attempt < 2 && !completed; attempt += 1) {
         if (!lease.isCurrent()) return;
         const attemptRunnerRunId = runnerRunId;
-        const runnerIdentityPersisted = repository.transaction(() => {
-          if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
-          const currentRunner = repository.getRun(run.id);
+        const runnerIdentityPersisted = withImmediateTransaction(() => {
+          if (!runRepository.ownsRunLease(run.id, leaseOwner)) return false;
+          const currentRunner = runRepository.getRun(run.id);
           if (currentRunner?.runnerRunId === attemptRunnerRunId) return true;
           return (
-            repository.updateRunRunnerCursor(
+            runRepository.updateRunRunnerCursor(
               run.id,
               leaseOwner,
               attemptRunnerRunId,
@@ -376,15 +381,15 @@ export async function* executeRun(
         if (budgetAdmission.snapshot.status === "exceeded") {
           await requestBudgetCancellation(attemptRunnerRunId);
         }
-        const snapshotPersisted = repository.transaction(() => {
-          if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
-          const currentRunner = repository.getRun(run.id);
+        const snapshotPersisted = withImmediateTransaction(() => {
+          if (!runRepository.ownsRunLease(run.id, leaseOwner)) return false;
+          const currentRunner = runRepository.getRun(run.id);
           if (currentRunner?.runnerRunId !== attemptRunnerRunId) return false;
           if (runner.runnerStatus === "waiting_approval") {
-            repository.updateRun(run.id, "waiting_approval");
+            runRepository.updateRun(run.id, "waiting_approval");
           }
           if (runner.capabilitySnapshot) {
-            repository.addRunEvent(run.id, "run_capability_snapshot", {
+            runRepository.addRunEvent(run.id, "run_capability_snapshot", {
               ...runner.capabilitySnapshot,
               attempt: attempt + 1,
               runnerRunId: attemptRunnerRunId,
@@ -398,9 +403,9 @@ export async function* executeRun(
         if (runner.contextProfile) {
           contextProfilePersistence.push(
             runner.contextProfile.then((profile) => {
-              repository.transaction(() => {
-                if (!repository.ownsRunLease(run.id, leaseOwner)) return;
-                repository.addRunEvent(run.id, "run_context_profile", {
+              withImmediateTransaction(() => {
+                if (!runRepository.ownsRunLease(run.id, leaseOwner)) return;
+                runRepository.addRunEvent(run.id, "run_context_profile", {
                   ...profile,
                   attempt: attempt + 1,
                   runnerRunId: attemptRunnerRunId,
@@ -413,11 +418,11 @@ export async function* executeRun(
 
         for await (const event of runner.events) {
           const eventRunnerRunId = runnerRunId;
-          const outcome = repository.transaction(() => {
-            if (!repository.ownsRunLease(run.id, leaseOwner)) {
+          const outcome = withImmediateTransaction(() => {
+            if (!runRepository.ownsRunLease(run.id, leaseOwner)) {
               return { action: "lost" as const };
             }
-            const cursorRun = repository.getRun(run.id);
+            const cursorRun = runRepository.getRun(run.id);
             if (!cursorRun || cursorRun.runnerRunId !== eventRunnerRunId) {
               throw new Error(
                 "Runner event identity changed while applying an event.",
@@ -436,7 +441,7 @@ export async function* executeRun(
             }
             const { data } = event;
             const advance = <T extends Record<string, unknown>>(result: T) => {
-              const advanced = repository.updateRunRunnerCursor(
+              const advanced = runRepository.updateRunRunnerCursor(
                 run.id,
                 leaseOwner,
                 eventRunnerRunId,
@@ -448,14 +453,14 @@ export async function* executeRun(
               return result;
             };
             if (event.type === "run.started") {
-              repository.addRunEvent(run.id, "runner_run_started", {
+              runRepository.addRunEvent(run.id, "runner_run_started", {
                 ...data,
                 runnerRunId: event.runId,
               });
               return advance({ action: "next" as const });
             }
             if (event.type === "context.bootstrap") {
-              repository.addRunEvent(run.id, "runtime_context_bootstrap", {
+              runRepository.addRunEvent(run.id, "runtime_context_bootstrap", {
                 ...data,
                 attempt: attempt + 1,
                 runnerRunId: event.runId,
@@ -476,7 +481,7 @@ export async function* executeRun(
             }
             if (event.type === "assistant.completed") {
               const body = String(data.message ?? assistantBody);
-              repository.addRunEvent(run.id, "assistant_message", {
+              runRepository.addRunEvent(run.id, "assistant_message", {
                 body,
               });
               return advance({
@@ -493,14 +498,14 @@ export async function* executeRun(
               const createdThreadId = String(data.runtimeThreadId ?? "");
               if (createdThreadId) {
                 if (runtimeThreadPlan.reusable) {
-                  repository.setRuntimeThread(
+                  conversationRepository.setRuntimeThread(
                     thread.id,
                     createdThreadId,
                     run.runtime,
                   );
                 }
               }
-              repository.addRunEvent(run.id, "thread_created", {
+              runRepository.addRunEvent(run.id, "thread_created", {
                 runtimeThreadId: createdThreadId,
                 continuity: "fresh",
                 reusable: runtimeThreadPlan.reusable,
@@ -524,14 +529,14 @@ export async function* executeRun(
                   data.description ??
                   "Runtime action",
               );
-              const approval = approvalStore.create(
+              const approval = approvalRepository.create(
                 run.id,
                 runnerApprovalId,
                 command,
                 { ...data, runnerRunId: event.runId },
               );
-              repository.updateRun(run.id, "waiting_approval");
-              repository.addRunEvent(run.id, "approval_required", {
+              runRepository.updateRun(run.id, "waiting_approval");
+              runRepository.addRunEvent(run.id, "approval_required", {
                 ...data,
                 approvalId: approval.id,
                 runnerRunId: event.runId,
@@ -545,7 +550,7 @@ export async function* executeRun(
               });
             }
             if (event.type === "approval.resolved") {
-              repository.addRunEvent(run.id, "approval_resolved", data);
+              runRepository.addRunEvent(run.id, "approval_resolved", data);
               return advance({ action: "next" as const });
             }
             if (event.type === "usage.updated") {
@@ -557,16 +562,16 @@ export async function* executeRun(
                 runnerRunId: event.runId,
                 attempt: attempt + 1,
               };
-              const status = repository.getRun(run.id)?.status ?? "running";
-              repository.updateRun(run.id, status, { usage });
-              repository.addRunEvent(run.id, "usage_updated", usage);
+              const status = runRepository.getRun(run.id)?.status ?? "running";
+              runRepository.updateRun(run.id, status, { usage });
+              runRepository.addRunEvent(run.id, "usage_updated", usage);
               const budgetOutcome = observeBudget(
                 run.id,
                 `${event.runId}:${event.id}`,
                 data,
               );
               if (budgetOutcome?.newlyExceeded) {
-                repository.addRunEvent(run.id, "run_budget_exceeded", {
+                runRepository.addRunEvent(run.id, "run_budget_exceeded", {
                   reason: budgetOutcome.reason,
                   budget: budgetOutcome.snapshot,
                   runnerRunId: event.runId,
@@ -584,7 +589,7 @@ export async function* executeRun(
               event.type === "tool.failed"
             ) {
               const type = event.type.replace(".", "_");
-              repository.addRunEvent(run.id, type, {
+              runRepository.addRunEvent(run.id, type, {
                 ...data,
                 runnerRunId: event.runId,
                 attempt: attempt + 1,
@@ -595,7 +600,7 @@ export async function* executeRun(
               });
             }
             if (event.type === "runtime.warning") {
-              repository.addRunEvent(run.id, "runtime_warning", {
+              runRepository.addRunEvent(run.id, "runtime_warning", {
                 ...data,
                 runnerRunId: event.runId,
                 attempt: attempt + 1,
@@ -611,9 +616,9 @@ export async function* executeRun(
               ) {
                 const previousRuntimeThreadId = runtimeThreadId;
                 const rehydratedRunnerRunId = `${run.id}-rehydrated`;
-                repository.setRuntimeThread(thread.id, null);
+                conversationRepository.setRuntimeThread(thread.id, null);
                 if (
-                  repository.updateRunRunnerCursor(
+                  runRepository.updateRunRunnerCursor(
                     run.id,
                     leaseOwner,
                     rehydratedRunnerRunId,
@@ -625,7 +630,7 @@ export async function* executeRun(
                     "Runner identity could not be reset for thread rehydration.",
                   );
                 }
-                repository.addRunEvent(run.id, "runtime_thread_recreated", {
+                runRepository.addRunEvent(run.id, "runtime_thread_recreated", {
                   previousRuntimeThreadId,
                   runnerRunId: rehydratedRunnerRunId,
                 });
@@ -639,17 +644,17 @@ export async function* executeRun(
                   ? markBudgetExceeded(run.id)
                   : null;
               if (budgetOutcome?.newlyExceeded) {
-                repository.addRunEvent(run.id, "run_budget_exceeded", {
+                runRepository.addRunEvent(run.id, "run_budget_exceeded", {
                   reason: budgetOutcome.reason,
                   budget: budgetOutcome.snapshot,
                   runnerRunId: event.runId,
                 });
               }
-              const closedApprovals = approvalStore.closePending(run.id);
-              repository.updateRun(run.id, "failed", {
+              const closedApprovals = approvalRepository.closePending(run.id);
+              runRepository.updateRun(run.id, "failed", {
                 error: failure.message,
               });
-              repository.addRunEvent(run.id, "run_failed", {
+              runRepository.addRunEvent(run.id, "run_failed", {
                 error: failure.message,
                 closedApprovals,
               });
@@ -664,9 +669,9 @@ export async function* executeRun(
               });
             }
             if (event.type === "run.cancelled") {
-              approvalStore.closePending(run.id);
-              repository.updateRun(run.id, "cancelled");
-              repository.addRunEvent(run.id, "run_cancelled", data);
+              approvalRepository.closePending(run.id);
+              runRepository.updateRun(run.id, "cancelled");
+              runRepository.addRunEvent(run.id, "run_cancelled", data);
               settleBudget(run.id, "cancelled");
               return advance({
                 action: "cancelled" as const,
@@ -681,15 +686,15 @@ export async function* executeRun(
                 runtimeContinuity,
               };
               if (assistantBody) {
-                repository.addRunMessageOnce(
+                conversationRepository.addRunMessageOnce(
                   thread.id,
                   run.id,
                   "assistant",
                   assistantBody,
                 );
               }
-              repository.updateRun(run.id, "completed");
-              repository.addRunEvent(run.id, "run_completed", completedData);
+              runRepository.updateRun(run.id, "completed");
+              runRepository.addRunEvent(run.id, "run_completed", completedData);
               settleBudget(run.id, "completed");
               return advance({
                 action: "completed" as const,
@@ -757,11 +762,11 @@ export async function* executeRun(
       const message =
         error instanceof Error ? error.message : "Unknown runner error";
       if (error instanceof RunnerBudgetCompatibilityError) {
-        const persisted = repository.transaction(() => {
-          if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
-          const closedApprovals = approvalStore.closePending(run.id);
-          repository.updateRun(run.id, "failed", { error: message });
-          repository.addRunEvent(run.id, "run_failed", {
+        const persisted = withImmediateTransaction(() => {
+          if (!runRepository.ownsRunLease(run.id, leaseOwner)) return false;
+          const closedApprovals = approvalRepository.closePending(run.id);
+          runRepository.updateRun(run.id, "failed", { error: message });
+          runRepository.addRunEvent(run.id, "run_failed", {
             error: message,
             closedApprovals,
             phase: "runner_budget_compatibility",
@@ -775,10 +780,10 @@ export async function* executeRun(
         return;
       }
       if (error instanceof RunnerStreamInterruptedError) {
-        const requeued = repository.transaction(() => {
-          if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
+        const requeued = withImmediateTransaction(() => {
+          if (!runRepository.ownsRunLease(run.id, leaseOwner)) return false;
           if (
-            repository.requeueRunForRunnerReconnect(
+            runRepository.requeueRunForRunnerReconnect(
               run.id,
               leaseOwner,
               message,
@@ -786,7 +791,7 @@ export async function* executeRun(
           ) {
             return false;
           }
-          repository.addRunEvent(run.id, "runner_stream_interrupted", {
+          runRepository.addRunEvent(run.id, "runner_stream_interrupted", {
             error: message,
             runnerRunId,
             runnerEventCursor,
@@ -801,11 +806,11 @@ export async function* executeRun(
         };
         return;
       }
-      const persisted = repository.transaction(() => {
-        if (!repository.ownsRunLease(run.id, leaseOwner)) return false;
-        const closedApprovals = approvalStore.closePending(run.id);
-        repository.updateRun(run.id, "failed", { error: message });
-        repository.addRunEvent(run.id, "run_failed", {
+      const persisted = withImmediateTransaction(() => {
+        if (!runRepository.ownsRunLease(run.id, leaseOwner)) return false;
+        const closedApprovals = approvalRepository.closePending(run.id);
+        runRepository.updateRun(run.id, "failed", { error: message });
+        runRepository.addRunEvent(run.id, "run_failed", {
           error: message,
           closedApprovals,
         });
@@ -833,23 +838,27 @@ export function startAutomationRun(
   startedAt = new Date(),
   scheduledFor: Date | null = null,
 ) {
-  const automation = repository.getAutomation(automationId);
-  if (!automation) throw new OperationalError("Automation not found", "NOT_FOUND", 404);
-  const agent = repository.getAgent(automation.agentId);
+  const automation = automationRepository.getAutomation(automationId);
+  if (!automation)
+    throw new OperationalError("Automation not found", "NOT_FOUND", 404);
+  const agent = agentRepository.getAgent(automation.agentId);
   if (!agent) throw new OperationalError("Agent not found", "NOT_FOUND", 404);
   if (!agent.enabled) throw new OperationalError("This agent is disabled.");
 
   if (scheduledFor) {
     const scheduledForIso = scheduledFor.toISOString();
-    const occurrence = repository.claimAutomationOccurrence(
+    const occurrence = automationRepository.claimAutomationOccurrence(
       automation.id,
       scheduledForIso,
     );
     let created = false;
-    const run = repository.transaction(() => {
-      const existing = repository.getRun(occurrence.runId);
+    const run = withImmediateTransaction(() => {
+      const existing = runRepository.getRun(occurrence.runId);
       if (existing) return existing;
-      const thread = repository.createThread(agent.id, automation.name);
+      const thread = conversationRepository.createThread(
+        agent.id,
+        automation.name,
+      );
       const scheduledRun = createRunExecution({
         runId: occurrence.runId,
         agentId: agent.id,
@@ -859,12 +868,16 @@ export function startAutomationRun(
         mode: automation.mode,
         prompt: automation.prompt,
       });
-      repository.addRunEvent(scheduledRun.id, "automation_occurrence_claimed", {
-        automationId: automation.id,
-        scheduledFor: scheduledForIso,
-        missedRunPolicy: automation.missedRunPolicy,
-      });
-      const marked = repository.markAutomationOccurrenceDispatched(
+      runRepository.addRunEvent(
+        scheduledRun.id,
+        "automation_occurrence_claimed",
+        {
+          automationId: automation.id,
+          scheduledFor: scheduledForIso,
+          missedRunPolicy: automation.missedRunPolicy,
+        },
+      );
+      const marked = automationRepository.markAutomationOccurrenceDispatched(
         automation.id,
         scheduledForIso,
         scheduledRun.id,
@@ -872,7 +885,7 @@ export function startAutomationRun(
       if (marked !== 1) {
         throw new Error("Automation occurrence was already dispatched.");
       }
-      repository.updateAutomation(automation.id, {
+      automationRepository.updateAutomation(automation.id, {
         lastRunAt: startedAt.toISOString(),
         lastScheduledFor: scheduledForIso,
       });
@@ -883,7 +896,7 @@ export function startAutomationRun(
     return run;
   }
 
-  const thread = repository.createThread(agent.id, automation.name);
+  const thread = conversationRepository.createThread(agent.id, automation.name);
   const run = createRunExecution({
     agentId: agent.id,
     threadId: thread.id,
@@ -892,7 +905,7 @@ export function startAutomationRun(
     mode: automation.mode,
     prompt: automation.prompt,
   });
-  repository.updateAutomation(automation.id, {
+  automationRepository.updateAutomation(automation.id, {
     lastRunAt: startedAt.toISOString(),
   });
   void executeRunInBackground(run.id);

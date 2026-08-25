@@ -1,6 +1,7 @@
+import { agentRepository } from "@/lib/repositories/agent-repository";
+import { conversationRepository } from "@/lib/repositories/conversation-repository";
 import { z } from "zod";
 import { apiError, conflict, notFound } from "@/lib/api";
-import { repository } from "@/lib/repository";
 import { getRuntimeConfig, runtimeIds } from "@/lib/runtime-config";
 import { listRuntimeCatalog } from "@/lib/runtime-service";
 import { createRunExecution, executeRunInBackground } from "@/lib/run-service";
@@ -18,7 +19,7 @@ const schema = z.object({
 });
 
 async function ensureCoo() {
-  const current = repository.getAgent("coo");
+  const current = agentRepository.getAgent("coo");
   if (current) return current;
   const runtime =
     (await listRuntimeCatalog()).find(
@@ -26,7 +27,7 @@ async function ensureCoo() {
     )?.id ??
     runtimeIds.find((runtimeId) => getRuntimeConfig(runtimeId).enabled) ??
     "codex";
-  return repository.createAgent({
+  return agentRepository.createAgent({
     name: "COO",
     slug: "coo",
     role: "Chief Operating Officer",
@@ -43,13 +44,13 @@ export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
     const agent = input.agentId
-      ? repository.getAgent(input.agentId)
+      ? agentRepository.getAgent(input.agentId)
       : await ensureCoo();
     if (!agent) throw notFound("Agent not found");
     if (!agent.enabled)
       throw conflict("This agent is disabled.", "AGENT_DISABLED");
 
-    const thread = repository.createThread(agent.id, input.title);
+    const thread = conversationRepository.createThread(agent.id, input.title);
     const run = createRunExecution({
       agentId: agent.id,
       threadId: thread.id,
