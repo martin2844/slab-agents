@@ -173,6 +173,48 @@ test("approval completion never overwrites terminal state or bypasses another ap
   assert.ok(runRepository.getRun(run.id)?.completedAt);
 });
 
+test("the server refuses an Email send approval without a verified sender", async () => {
+  const [
+    { repository },
+    { createRunExecution },
+    ,
+    ,
+    { approvalRepository },
+    { resolveApprovalAction },
+  ] = modules;
+  const agent = createAgent(repository, "email-approval-guard");
+  const thread = conversationRepository.createThread(
+    agent.id,
+    "Email approval guard",
+  );
+  const run = createRunExecution({
+    agentId: agent.id,
+    threadId: thread.id,
+    trigger: "manual",
+    mode: "task",
+    prompt: "Send an email",
+  });
+  runRepository.updateRun(run.id, "waiting_approval");
+  const approval = approvalRepository.create(
+    run.id,
+    "email-without-sender",
+    "Allow email_send?",
+    {
+      server: "email",
+      message: 'Allow the email MCP server to run tool "email_send"?',
+    },
+  );
+
+  await assert.rejects(
+    resolveApprovalAction(approval.id, "approve", {
+      resolveRunner: async () => assert.fail("Runner must not be called"),
+      runnerRunNotFound: () => false,
+    }),
+    (error) => error?.code === "EMAIL_APPROVAL_INCOMPLETE",
+  );
+  assert.equal(approvalRepository.get(approval.id)?.status, "pending");
+});
+
 test("a missing Runner run dismisses every stale approval and cancels the local run", async () => {
   const [
     { repository },

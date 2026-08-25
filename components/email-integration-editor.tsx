@@ -166,6 +166,18 @@ export function EmailIntegrationEditor({
   const [editingProviderAccountId, setEditingProviderAccountId] = useState<
     string | null
   >(null);
+  const managedProtonGroups = useMemo(() => {
+    const groups = new Map<string, EmailIntegrationState["accounts"][number]>();
+    for (const account of state.accounts) {
+      if (!account.managed) continue;
+      const login = (account.managedBridgeLogin ?? account.emailAddress).toLowerCase();
+      const current = groups.get(login);
+      if (!current || account.emailAddress.toLowerCase() === login) {
+        groups.set(login, account);
+      }
+    }
+    return [...groups.values()];
+  }, [state.accounts]);
 
   function update(next: EmailIntegrationState) {
     setState(next);
@@ -367,6 +379,32 @@ export function EmailIntegrationEditor({
       );
     } catch {
       // The setup expires server-side; closing the dialog must remain responsive.
+    }
+  }
+
+  async function syncProtonAddresses(accountId: string) {
+    setBusy(`proton-addresses:${accountId}`);
+    try {
+      const result = await api<{
+        mode: "combined" | "split";
+        accounts: EmailIntegrationState["accounts"];
+        state: EmailIntegrationState;
+      }>("/api/integrations/email/proton/addresses", {
+        method: "POST",
+        body: JSON.stringify({ accountId }),
+      });
+      update(result.state);
+      toast.success(
+        `${result.accounts.length} Proton sender${result.accounts.length === 1 ? "" : "s"} synchronized`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Proton addresses could not be synchronized",
+      );
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -830,8 +868,33 @@ export function EmailIntegrationEditor({
                     ? `${state.protonBridge.state}${state.protonBridge.version ? ` · v${state.protonBridge.version}` : ""}`
                     : "unavailable on this installation"}
                 </p>
+                {state.accounts.some(({ managed }) => managed) && (
+                  <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
+                    Sync enables Proton split-address mode and adds every
+                    verified Proton or custom-domain address as a separate
+                    mailbox. Assign the intended address to each agent below;
+                    Bridge may resync mail while changing mode.
+                  </p>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
+                {managedProtonGroups.map((account) => {
+                  const busyKey = `proton-addresses:${account.id}`;
+                  return (
+                    <Button
+                      key={account.id}
+                      variant="outline"
+                      onClick={() => syncProtonAddresses(account.id)}
+                      disabled={busy !== null}
+                      title="Enable Proton split-address mode and discover verified custom-domain senders"
+                    >
+                      <RefreshCw
+                        className={busy === busyKey ? "animate-spin" : ""}
+                      />
+                      Sync {account.managedBridgeLogin ?? account.emailAddress}
+                    </Button>
+                  );
+                })}
                 <Button variant="outline" onClick={startCreateProton}>
                   <KeyRound /> Proton Bridge
                 </Button>
@@ -1185,9 +1248,27 @@ export function EmailIntegrationEditor({
                         variant="ghost"
                         aria-label="Delete account"
                         onClick={() => {
+                          const isManagedPrimary =
+                            account.managed &&
+                            account.managedBridgeLogin?.toLowerCase() ===
+                              account.emailAddress.toLowerCase();
+                          const impacted = isManagedPrimary
+                            ? state.accounts.filter(
+                                (candidate) =>
+                                  candidate.managedBridgeLogin?.toLowerCase() ===
+                                  account.managedBridgeLogin?.toLowerCase(),
+                              )
+                            : [account];
+                          const suffix =
+                            impacted.length > 1
+                              ? ` This also removes ${impacted.length - 1} synchronized sender${impacted.length === 2 ? "" : "s"}: ${impacted
+                                  .filter(({ id }) => id !== account.id)
+                                  .map(({ emailAddress }) => emailAddress)
+                                  .join(", ")}.`
+                              : "";
                           if (
                             window.confirm(
-                              `Delete ${account.displayName}? This removes its credentials from slab-email.`,
+                              `Delete ${account.displayName}? This removes its credentials from slab-email.${suffix}`,
                             )
                           ) {
                             void accountAction(account.id, "delete");
@@ -1355,11 +1436,11 @@ function AgentAccessRow({
   const [accountIds, setAccountIds] = useState(access?.accountIds ?? []);
   const [readEnabled, setReadEnabled] = useState(access?.readEnabled ?? true);
   const [draftEnabled, setDraftEnabled] = useState(
-    access?.draftEnabled ?? true,
+    access?.draftEnabled ?? false,
   );
-  const [sendEnabled, setSendEnabled] = useState(access?.sendEnabled ?? true);
+  const [sendEnabled, setSendEnabled] = useState(access?.sendEnabled ?? false);
   const [sendPolicy, setSendPolicy] = useState<EmailSendPolicy>(
-    access?.sendPolicy ?? "approval_required",
+    access?.sendPolicy ?? "disabled",
   );
   const [saving, setSaving] = useState(false);
   const summary = useMemo(
@@ -1464,10 +1545,29 @@ function AgentAccessRow({
                 )
               }
             />
-            {account.displayName}
+            <span className="min-w-0">
+              <span className="block truncate">{account.displayName}</span>
+              <span className="block truncate font-mono text-[11px] font-normal text-muted-foreground">
+                {account.emailAddress}
+              </span>
+            </span>
           </label>
         ))}
       </div>
+      {selectedAccounts.length > 0 && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Actual sender{selectedAccounts.length === 1 ? "" : "s"}:{" "}
+          <span className="font-mono text-foreground">
+            {selectedAccounts
+              .map(({ displayName, emailAddress }) =>
+                `${displayName} <${emailAddress}>`,
+              )
+              .join(", ")}
+          </span>
+          . Agent instructions and message signatures do not change the SMTP
+          sender.
+        </p>
+      )}
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="flex items-center justify-between rounded-lg bg-muted/50 p-3 text-sm font-semibold">
           Read{" "}

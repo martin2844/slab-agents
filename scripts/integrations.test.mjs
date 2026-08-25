@@ -23,6 +23,11 @@ test("Integrations stays focused on external tools while Email is an optional Se
   assert.match(emailEditor, /Email service/);
   assert.match(emailEditor, /Proton Bridge/);
   assert.match(emailEditor, /Managed Proton Bridge/);
+  assert.match(emailEditor, /managedProtonGroups/);
+  assert.match(emailEditor, /Sync \{account\.managedBridgeLogin/);
+  assert.match(emailEditor, /split-address mode/);
+  assert.match(emailEditor, /Actual sender/);
+  assert.match(emailEditor, /signatures do not change the SMTP/);
   assert.match(emailEditor, /Proton\s+password is used for this login only/);
   assert.match(emailEditor, /Connect an existing Bridge instead/);
   assert.match(emailEditor, /Two-factor code/);
@@ -78,26 +83,45 @@ test("Integrations stays focused on external tools while Email is an optional Se
 });
 
 test("managed Proton Bridge stays behind the Next.js server boundary", async () => {
-  const [client, service, connectRoute, challengeRoute, abortRoute] =
+  const [client, service, connectRoute, challengeRoute, abortRoute, addressesRoute] =
     await Promise.all([
       read("lib/integrations/email-client.ts"),
       read("lib/integrations/email-service.ts"),
       read("app/api/integrations/email/proton/route.ts"),
       read("app/api/integrations/email/proton/challenge/route.ts"),
       read("app/api/integrations/email/proton/abort/route.ts"),
+      read("app/api/integrations/email/proton/addresses/route.ts"),
     ]);
   assert.match(client, /import "server-only"/);
   assert.match(client, /\/api\/proton-bridge\/connect/);
   assert.match(client, /\/api\/proton-bridge\/challenge/);
+  assert.match(
+    client,
+    /\/api\/proton-bridge\/accounts\/\$\{encodeURIComponent\(accountId\)\}\/sync-addresses/,
+  );
   assert.match(service, /connectManagedProtonBridge/);
   assert.match(service, /account\.managed/);
   assert.match(connectRoute, /connectManagedProtonBridge/);
   assert.match(challengeRoute, /continueManagedProtonBridge/);
   assert.match(abortRoute, /abortManagedProtonBridge/);
-  for (const source of [connectRoute, challengeRoute, abortRoute]) {
+  assert.match(addressesRoute, /syncManagedProtonBridgeAddresses/);
+  for (const source of [connectRoute, challengeRoute, abortRoute, addressesRoute]) {
     assert.doesNotMatch(source, /process\.env/);
     assert.doesNotMatch(source, /SLAB_EMAIL_ADMIN_KEY/);
   }
+});
+
+test("managed Proton aliases are synchronized and deleted as account groups", async () => {
+  const [service, client, editor] = await Promise.all([
+    readFile("lib/integrations/email-service.ts", "utf8"),
+    readFile("lib/integrations/email-client.ts", "utf8"),
+    readFile("components/email-integration-editor.tsx", "utf8"),
+  ]);
+  assert.match(client, /managedBridgeLogin/);
+  assert.match(service, /impactedAccountIds/);
+  assert.match(service, /affected Proton sender/);
+  assert.match(editor, /managedProtonGroups/);
+  assert.match(editor, /synchronized sender/);
 });
 
 test("Email credentials and one-time connector tokens stay outside browser payloads and SQLite", async () => {

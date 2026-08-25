@@ -47,6 +47,7 @@ export const INTEGRATION_CATALOG: IntegrationCatalogItem[] = [
 export const EMAIL_AGENT_PROMPT = `Email is available through a scoped MCP server.
 
 - Use email_list_accounts to discover only the accounts available to this agent.
+- For email_send and email_reply, pass the exact sender address returned by the latest email_list_accounts call. Agent identity or signature text never overrides the connected sender.
 - Use email_search and email_get_message to read relevant correspondence; avoid retrieving unrelated mail.
 - Create drafts or send only when the corresponding tool is available.
 - Sending may require a control-plane approval. Never claim a message was sent unless the tool confirms it.

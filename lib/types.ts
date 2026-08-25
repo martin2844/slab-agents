@@ -539,6 +539,7 @@ export type EmailAccount = {
   displayName: string;
   enabled: boolean;
   managed: boolean;
+  managedBridgeLogin: string | null;
   capabilities: {
     read: boolean;
     search: boolean;

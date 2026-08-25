@@ -7,6 +7,7 @@ import { conflict, notFound } from "@/lib/api";
 import { approvalRepository } from "@/lib/repositories/approval-repository";
 import { resolveRunnerApproval } from "@/lib/runner";
 import { isRunnerRunNotFound } from "@/lib/runner-errors";
+import { approvalCanBeApproved } from "@/lib/approval-presentation";
 
 type Decision = "approve" | "deny";
 
@@ -67,6 +68,14 @@ export async function resolveApprovalAction(
       : notFound("Approval not found");
   }
   const claimed = approval;
+
+  if (decision === "approve" && !approvalCanBeApproved(claimed.details)) {
+    approvalRepository.release(id);
+    throw conflict(
+      "Email approval is missing an exact sender, recipient, subject, or body. Deny it and retry from the latest Email state.",
+      "EMAIL_APPROVAL_INCOMPLETE",
+    );
+  }
 
   const run = runRepository.getRun(claimed.runId);
   if (

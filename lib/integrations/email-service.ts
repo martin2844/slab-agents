@@ -173,19 +173,36 @@ export async function setEmailAccountEnabled(
 }
 
 export async function deleteEmailAccount(accountId: string) {
+  const accounts = await client().listAccounts();
+  const account = accounts.find(({ id }) => id === accountId);
+  if (!account) throw new OperationalError("Email account not found.");
+  const isManagedPrimary =
+    account.managed &&
+    account.managedBridgeLogin?.toLowerCase() ===
+      account.emailAddress.toLowerCase();
+  const impactedAccountIds = new Set(
+    isManagedPrimary
+      ? accounts
+          .filter(
+            (candidate) =>
+              candidate.managed &&
+              candidate.managedBridgeLogin?.toLowerCase() ===
+                account.managedBridgeLogin?.toLowerCase(),
+          )
+          .map(({ id }) => id)
+      : [accountId],
+  );
   if (
     emailAccessRepository
       .listAgentEmailAccess()
-      .some(({ accountIds }) => accountIds.includes(accountId))
+      .some(({ accountIds }) =>
+        accountIds.some((id) => impactedAccountIds.has(id)),
+      )
   ) {
     throw new OperationalError(
-      "Remove this account from every agent profile before deleting it.",
+      "Remove every affected Proton sender from agent profiles before deleting this account.",
     );
   }
-  const account = (await client().listAccounts()).find(
-    ({ id }) => id === accountId,
-  );
-  if (!account) throw new OperationalError("Email account not found.");
   if (account.managed)
     await client().deleteManagedProtonBridgeAccount(accountId);
   else await client().deleteAccount(accountId);
@@ -212,6 +229,11 @@ export async function continueManagedProtonBridge(input: {
 export async function abortManagedProtonBridge(challengeId: string) {
   await client().abortManagedProtonBridge(challengeId);
   return getEmailIntegrationState();
+}
+
+export async function syncManagedProtonBridgeAddresses(accountId: string) {
+  const result = await client().syncManagedProtonBridgeAddresses(accountId);
+  return { ...result, state: await getEmailIntegrationState() };
 }
 
 export function connectGmail(returnUrl: string) {

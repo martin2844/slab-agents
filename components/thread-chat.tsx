@@ -13,10 +13,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ApprovalActionDetails } from "@/components/approval-action-details";
 import { Textarea } from "@/components/ui/textarea";
 import { api, apiClientError } from "@/lib/client-api";
 import { buildReplyDurations } from "@/lib/chat-metrics";
 import { buildRunProgress } from "@/lib/run-progress";
+import { approvalCanBeApproved } from "@/lib/approval-presentation";
 import type {
   Approval,
   RunDetailData,
@@ -24,7 +26,12 @@ import type {
   RunStatus,
   ThreadData,
 } from "@/lib/types";
-type PendingApproval = { approvalId: string; command: string; runId?: string };
+type PendingApproval = {
+  approvalId: string;
+  command: string;
+  details: Record<string, unknown>;
+  runId?: string;
+};
 
 function liveEvent(type: string, payload: Record<string, unknown>): RunEvent {
   return {
@@ -96,6 +103,7 @@ export function ThreadChat({
             ? {
                 approvalId: pending.id,
                 command: pending.command,
+                details: pending.details,
                 runId: pending.runId,
               }
             : null,
@@ -190,6 +198,7 @@ export function ThreadChat({
               command: String(
                 event.command ?? event.description ?? "Runtime action",
               ),
+              details: event,
               runId: event.runId,
             });
           } else if (event.type === "run_queued") {
@@ -423,13 +432,16 @@ export function ThreadChat({
                       <p className="mt-1 text-sm text-muted-foreground">
                         {data.agent.name} wants to execute:
                       </p>
-                      <pre className="mt-3 overflow-auto rounded-md bg-petrol-deep p-3 font-mono text-xs text-white">
-                        {approval.command}
-                      </pre>
+                      <div className="mt-3">
+                        <ApprovalActionDetails approval={approval} />
+                      </div>
                       <div className="mt-4 flex gap-2">
                         <Button
                           size="sm"
-                          disabled={approvalResolving}
+                          disabled={
+                            approvalResolving ||
+                            !approvalCanBeApproved(approval.details)
+                          }
                           onClick={() => decide("approve")}
                         >
                           {approvalResolving ? (

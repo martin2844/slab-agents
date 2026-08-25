@@ -18,6 +18,7 @@ import {
   denseTableHead,
 } from "@/components/operational-ui";
 import { Button } from "@/components/ui/button";
+import { ApprovalActionDetails } from "@/components/approval-action-details";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
@@ -25,6 +26,7 @@ import { api } from "@/lib/client-api";
 import type { Approval, Run, RunsData } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
 import { useOperationalPolling } from "@/components/use-operational-polling";
+import { approvalCanBeApproved } from "@/lib/approval-presentation";
 
 function duration(run: Run) {
   if (!run.startedAt) return "—";
@@ -65,7 +67,9 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
       setError("");
     } catch (cause) {
       if (generation === loadGeneration.current) {
-        setError(cause instanceof Error ? cause.message : "Could not load runs");
+        setError(
+          cause instanceof Error ? cause.message : "Could not load runs",
+        );
       }
     }
   };
@@ -136,9 +140,7 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
                       className="grid min-h-14 gap-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                     >
                       <div className="min-w-0">
-                        <p className="truncate font-mono text-xs">
-                          {approval.command}
-                        </p>
+                        <ApprovalActionDetails approval={approval} />
                         <p className="mt-1 text-xs text-muted-foreground">
                           Run {approval.runId.slice(0, 12)}
                         </p>
@@ -153,7 +155,10 @@ export function RunsView({ initialData }: { initialData: RunsData }) {
                         )}
                         <Button
                           size="sm"
-                          disabled={resolvingId === approval.id}
+                          disabled={
+                            resolvingId === approval.id ||
+                            !approvalCanBeApproved(approval.details)
+                          }
                           onClick={() => decide(approval.id, "approve")}
                         >
                           {resolvingId === approval.id ? (

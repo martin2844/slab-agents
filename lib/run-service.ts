@@ -7,6 +7,7 @@ import { runRepository } from "@/lib/repositories/run-repository";
 import { withImmediateTransaction } from "@/lib/db/transaction";
 
 import { OperationalError } from "@/lib/operational-error";
+import { presentApproval } from "@/lib/approval-presentation";
 
 import { durableRunQueue } from "@/lib/repositories/durable-run-queue-repository";
 import type { RunLease } from "@/lib/repositories/run-queue-repository";
@@ -519,32 +520,30 @@ export async function* executeRun(
               });
             }
             if (event.type === "approval.required") {
+              const presentation = presentApproval(data);
               const runnerApprovalId = String(
                 data.approvalId ?? crypto.randomUUID(),
-              );
-              const command = String(
-                data.command ??
-                  data.reason ??
-                  data.message ??
-                  data.description ??
-                  "Runtime action",
               );
               const approval = approvalRepository.create(
                 run.id,
                 runnerApprovalId,
-                command,
-                { ...data, runnerRunId: event.runId },
+                presentation.command,
+                { ...presentation.details, runnerRunId: event.runId },
               );
               runRepository.updateRun(run.id, "waiting_approval");
               runRepository.addRunEvent(run.id, "approval_required", {
-                ...data,
+                ...presentation.details,
+                command: presentation.command,
                 approvalId: approval.id,
                 runnerRunId: event.runId,
               });
               return advance({
                 action: "next" as const,
                 browser: {
-                  ...browserEvent("approval_required", event),
+                  ...browserEvent("approval_required", event, {
+                    ...presentation.details,
+                    command: presentation.command,
+                  }),
                   approvalId: approval.id,
                 },
               });

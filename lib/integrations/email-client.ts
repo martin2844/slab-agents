@@ -28,6 +28,7 @@ type RemoteEmailAccount = Omit<EmailAccount, "connection"> & {
     smtpPort?: number;
     smtpTlsMode?: "ssl" | "starttls" | "none";
     managedBridge?: boolean;
+    managedBridgeLogin?: string;
     inboxId?: string;
     baseUrl?: string;
     inboundEnabled?: boolean;
@@ -84,6 +85,7 @@ function safeAccount(account: RemoteEmailAccount): EmailAccount {
     displayName: account.displayName,
     enabled: account.enabled,
     managed: account.config?.managedBridge === true,
+    managedBridgeLogin: account.config?.managedBridgeLogin ?? null,
     capabilities: account.capabilities,
     createdAt: account.createdAt,
     updatedAt: account.updatedAt,
@@ -202,6 +204,20 @@ export class EmailAdminClient {
       `/api/proton-bridge/accounts/${encodeURIComponent(accountId)}`,
       { method: "DELETE" },
     );
+  }
+
+  async syncManagedProtonBridgeAddresses(accountId: string) {
+    const result = await this.request<{
+      mode: "combined" | "split";
+      accounts: RemoteEmailAccount[];
+    }>(
+      `/api/proton-bridge/accounts/${encodeURIComponent(accountId)}/sync-addresses`,
+      { method: "POST", timeoutMs: 200_000 },
+    );
+    return {
+      mode: result.mode,
+      accounts: result.accounts.map(safeAccount),
+    };
   }
 
   async listAccounts() {
