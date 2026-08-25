@@ -6,7 +6,7 @@ export function StatusBadge({ status }: { status: string }) {
     <Badge
       variant="outline"
       className={cn(
-        "h-5 rounded-full px-2 text-[0.68rem] capitalize",
+        "h-5 rounded-full px-2 font-mono text-[0.68rem] font-medium tracking-[0.02em] capitalize",
         [
           "completed",
           "done",
@@ -15,10 +15,10 @@ export function StatusBadge({ status }: { status: string }) {
           "installed",
           "passed",
         ].includes(status) &&
-          "border-emerald-600/25 bg-emerald-500/10 text-emerald-800",
+          "border-accent bg-accent-muted text-success",
         ["running", "in_progress", "installing", "evaluating"].includes(
           status,
-        ) && "border-primary/25 bg-primary/10 text-primary",
+        ) && "border-accent bg-accent text-accent-foreground",
         ["failed", "denied", "partial_failure"].includes(status) &&
           "border-destructive/25 bg-destructive/10 text-destructive",
         [
@@ -29,14 +29,14 @@ export function StatusBadge({ status }: { status: string }) {
         ].includes(status) &&
           "border-amber-600/25 bg-amber-500/10 text-amber-800",
         ["queued", "idle"].includes(status) &&
-          "border-stone-500/25 bg-stone-500/10 text-stone-700",
+          "border-border bg-muted text-muted-foreground",
         ["blocked"].includes(status) &&
           "border-amber-700/25 bg-amber-500/10 text-amber-900",
         ["review"].includes(status) &&
           "border-violet-600/25 bg-violet-500/10 text-violet-800",
         ["disabled", "cancelled"].includes(status) && "opacity-60",
         status === "skipped" &&
-          "border-stone-500/25 bg-stone-500/10 text-stone-700",
+          "border-border bg-muted text-muted-foreground",
       )}
     >
       {normalized}

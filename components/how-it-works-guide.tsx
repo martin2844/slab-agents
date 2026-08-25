@@ -77,17 +77,17 @@ function DiagramNode({
         tone === "default" && "bg-card",
         tone === "muted" && "bg-muted/50",
         tone === "accent" && "border-primary/40 bg-primary/8",
-        tone === "dark" && "border-foreground bg-foreground text-background",
+        tone === "dark" && "border-petrol-deep bg-petrol-deep text-white",
         tone === "success" &&
-          "border-emerald-700/25 bg-emerald-700/8 dark:border-emerald-500/30",
+          "border-accent bg-accent-muted/60",
         className,
       )}
     >
       <div className="flex items-center justify-between gap-3">
         <span
           className={cn(
-            "text-[0.68rem] font-semibold uppercase tracking-[.09em]",
-            tone === "dark" ? "text-background/60" : "text-muted-foreground",
+            "font-mono text-[0.68rem] font-medium uppercase tracking-[0.02em]",
+            tone === "dark" ? "text-white/60" : "text-muted-foreground",
           )}
         >
           {label}
@@ -98,7 +98,7 @@ function DiagramNode({
       <p
         className={cn(
           "mt-1.5 text-xs leading-5",
-          tone === "dark" ? "text-background/70" : "text-muted-foreground",
+          tone === "dark" ? "text-white/70" : "text-muted-foreground",
         )}
       >
         {detail}
@@ -113,7 +113,7 @@ function FlowArrow({ label }: { label?: string }) {
       <ArrowDown className="size-4 lg:hidden" aria-hidden />
       <ArrowRight className="hidden size-4 lg:block" aria-hidden />
       {label ? (
-        <span className="text-[0.62rem] font-medium uppercase tracking-[.08em]">
+        <span className="font-mono text-[0.62rem] font-medium uppercase tracking-[0.02em]">
           {label}
         </span>
       ) : null}
@@ -145,7 +145,7 @@ function GuideSection({
         <div>
           <div className="flex items-center gap-2">
             <IconComponent className="size-4 text-primary" />
-            <h2 className="font-heading text-3xl font-semibold tracking-[-.025em] sm:text-4xl">
+            <h2 className="font-heading text-3xl font-[675] tracking-[-.035em] sm:text-4xl">
               {title}
             </h2>
           </div>
@@ -178,7 +178,7 @@ function Step({
         {children}
         {result ? (
           <p className="mt-2 flex items-start gap-2 text-xs font-medium text-foreground">
-            <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-700" />
+            <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
             {result}
           </p>
         ) : null}
@@ -226,14 +226,14 @@ function Callout({
         "min-w-0 grid gap-3 rounded-lg border p-4 sm:grid-cols-[auto_1fr]",
         tone === "default" && "bg-muted/35",
         tone === "warning" && "border-amber-700/25 bg-amber-500/10",
-        tone === "success" && "border-emerald-700/25 bg-emerald-700/8",
+        tone === "success" && "border-accent bg-accent-muted/60",
       )}
     >
       <IconComponent
         className={cn(
           "mt-0.5 size-4",
           tone === "warning" && "text-amber-800",
-          tone === "success" && "text-emerald-700",
+          tone === "success" && "text-success",
           tone === "default" && "text-primary",
         )}
       />
@@ -249,7 +249,7 @@ function Callout({
 
 function CodeBlock({ children }: { children: React.ReactNode }) {
   return (
-    <pre className="min-w-0 max-w-full overflow-x-auto rounded-lg border bg-foreground px-4 py-3 font-mono text-xs leading-5 text-background">
+    <pre className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-sidebar-border bg-petrol-deep px-4 py-3 font-mono text-xs leading-5 text-white">
       <code>{children}</code>
     </pre>
   );
@@ -305,7 +305,7 @@ export function HowItWorksGuide() {
       <div className="mb-10 grid overflow-hidden rounded-lg border bg-card md:grid-cols-[1.25fr_.75fr]">
         <div className="p-5 sm:p-7">
           <Badge variant="outline">Operator handbook</Badge>
-          <p className="mt-4 max-w-3xl font-heading text-[clamp(2.1rem,5vw,4.4rem)] font-semibold leading-[.98] tracking-[-.04em]">
+          <p className="mt-4 max-w-5xl font-heading text-[clamp(4rem,6vw,6rem)] font-[700] leading-[0.98] tracking-[-0.055em]">
             Connect the company. Give agents a job. Keep every action visible.
           </p>
           <p className="mt-5 max-w-2xl text-sm leading-6 text-muted-foreground">
@@ -1668,13 +1668,13 @@ chat message B
               ))}
             </div>
 
-            <div className="mt-8 rounded-lg border bg-foreground p-5 text-background sm:p-7">
-              <ShieldCheck className="size-5 text-primary" />
-              <h3 className="mt-5 max-w-3xl font-heading text-3xl font-semibold tracking-[-.03em] sm:text-4xl">
+            <div className="mt-8 rounded-lg border border-sidebar-border bg-petrol-deep p-5 text-white sm:p-7">
+              <ShieldCheck className="size-5 text-accent" />
+              <h3 className="mt-5 max-w-3xl font-heading text-3xl font-[675] tracking-[-.04em] sm:text-4xl">
                 Work is the operating ledger. Docs is durable knowledge. Tools
                 add reach. Runs make every action inspectable.
               </h3>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-background/65">
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">
                 Start small: connect the core, create one agent, give it the
                 minimum capabilities required, run one real task, and inspect
                 the result.

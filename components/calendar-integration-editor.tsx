@@ -340,7 +340,7 @@ export function CalendarIntegrationEditor({
                 <div
                   className={
                     oauthResult === "connected"
-                      ? "rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100"
+                      ? "rounded-lg border border-accent bg-accent-muted p-3 text-sm text-success"
                       : "rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
                   }
                   role={oauthResult === "failed" ? "alert" : "status"}
@@ -428,7 +428,7 @@ export function CalendarIntegrationEditor({
                 </div>
               )}
               <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[.08em] text-muted-foreground">
+                <p className="mb-2 font-mono text-xs font-medium uppercase tracking-[0.02em] text-muted-foreground">
                   Add provider
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -829,7 +829,7 @@ function HealthBadge({ integration }: { integration: Integration }) {
   if (!integration.enabled) return <Badge variant="secondary">Disabled</Badge>;
   if (integration.status === "connected")
     return (
-      <Badge className="gap-1 border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+      <Badge className="gap-1 border-accent bg-accent-muted text-success">
         <Check className="size-3" /> Connected
       </Badge>
     );

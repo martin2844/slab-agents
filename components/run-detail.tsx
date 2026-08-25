@@ -112,7 +112,7 @@ export function RunDetail({ data }: { data: RunDetailData }) {
                 key={String(label)}
                 className="min-h-20 border-b p-3 sm:odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0"
               >
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[.08em] text-muted-foreground">
+                <p className="font-mono text-[0.68rem] font-medium uppercase tracking-[0.02em] text-muted-foreground">
                   {label}
                 </p>
                 <div className="mt-2 text-sm font-semibold capitalize">

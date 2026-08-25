@@ -34,7 +34,7 @@ export default async function LoginPage({
     <div className="flex min-h-dvh items-center justify-center bg-background px-4 py-10">
       <div className="w-full max-w-sm rounded-lg border bg-card p-6">
         <div className="mb-6">
-          <p className="font-heading text-2xl font-semibold tracking-tight">
+          <p className="font-heading text-2xl font-[675] tracking-[-0.035em]">
             Slab
           </p>
           <h1 className="mt-4 text-lg font-semibold">Agent Workspace</h1>

@@ -454,7 +454,7 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
                     <p className="font-mono text-[0.68rem] text-muted-foreground">
                       /{detail.document.slug}
                     </p>
-                    <h2 className="truncate font-heading text-2xl font-semibold tracking-tight">
+                    <h2 className="truncate font-heading text-2xl font-[675] tracking-[-0.035em]">
                       {detail.document.title}
                     </h2>
                   </div>
@@ -530,7 +530,7 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
                         <Input
                           value={title}
                           onChange={(e) => setTitle(e.target.value)}
-                          className="font-heading text-lg font-semibold"
+                          className="font-heading text-lg font-[650] tracking-[-0.02em]"
                         />
                         <Textarea
                           value={body}

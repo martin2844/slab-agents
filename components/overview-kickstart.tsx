@@ -67,7 +67,9 @@ function CheckRow({ check }: { check: SetupCheck }) {
       <Badge
         variant={check.state === "failed" ? "destructive" : "outline"}
         className={
-          check.state === "connected" ? "bg-emerald-700 text-white" : ""
+          check.state === "connected"
+            ? "border-accent bg-accent-muted text-success"
+            : ""
         }
       >
         <StateIcon state={check.state} />
@@ -201,7 +203,7 @@ export function OverviewKickstart({
               <p className="text-xs font-semibold text-muted-foreground">
                 Setup checklist · {setup.connected}/{setup.total}
               </p>
-              <h2 className="mt-1 font-heading text-2xl font-semibold tracking-tight">
+              <h2 className="mt-1 font-heading text-2xl font-[675] tracking-[-0.035em]">
                 Connect the operating system
               </h2>
             </div>
@@ -225,7 +227,7 @@ export function OverviewKickstart({
             <p className="text-xs font-semibold text-muted-foreground">
               First outcome
             </p>
-            <p className="mt-3 font-heading text-2xl font-semibold leading-tight tracking-tight">
+            <p className="mt-3 font-heading text-2xl font-[675] leading-tight tracking-[-0.035em]">
               Turn current work into a short list of next actions.
             </p>
             <p className="mt-4 text-sm leading-6 text-muted-foreground">

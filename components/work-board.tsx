@@ -359,7 +359,7 @@ function IssueDialog({
     >
       <DialogContent className="flex max-h-[calc(100vh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="shrink-0 border-b px-6 py-5 pr-14">
-          <DialogDescription className="font-mono text-xs font-semibold uppercase tracking-[.14em]">
+          <DialogDescription className="font-mono text-xs font-medium uppercase tracking-[0.02em]">
             {issueKey}
           </DialogDescription>
           <div className="flex items-start justify-between gap-5">
@@ -578,7 +578,7 @@ function IssueDialog({
                 },
               ].map((item) => (
                 <div key={item.label} className="min-w-0 bg-card p-4">
-                  <p className="text-[0.68rem] font-bold uppercase tracking-[.16em] text-muted-foreground">
+                  <p className="font-mono text-[0.68rem] font-medium uppercase tracking-[0.02em] text-muted-foreground">
                     {item.label}
                   </p>
                   <p className="mt-2 truncate text-sm font-semibold capitalize">
@@ -617,7 +617,7 @@ function IssueDialog({
             <section>
               <div className="flex items-center gap-2">
                 <MessageSquare className="size-4" />
-                <h3 className="font-heading text-2xl font-semibold">
+                <h3 className="font-heading text-2xl font-[675] tracking-[-0.035em]">
                   Comments
                 </h3>
               </div>
@@ -830,7 +830,7 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
         }
       />
       <div className="mb-3 flex flex-wrap items-center gap-3">
-        <span className="text-xs font-bold uppercase tracking-[.16em] text-muted-foreground">
+        <span className="font-mono text-xs font-medium uppercase tracking-[0.02em] text-muted-foreground">
           Project
         </span>
         <Select value={projectKey} onValueChange={setProjectKey}>

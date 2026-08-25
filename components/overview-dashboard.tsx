@@ -132,7 +132,7 @@ export function OverviewDashboard({
               ))}
               {!data.activeRuns.length && (
                 <div className="flex min-h-28 items-center gap-3 text-sm text-muted-foreground">
-                  <CheckCircle2 className="size-5 text-emerald-700" />
+                  <CheckCircle2 className="size-5 text-success" />
                   No agents are running. The queue is clear.
                 </div>
               )}
@@ -172,7 +172,7 @@ export function OverviewDashboard({
                 ))}
               {attentionTotal === 0 && (
                 <div className="flex min-h-20 items-center gap-2 text-sm text-muted-foreground">
-                  <CheckCircle2 className="size-4 text-emerald-700" /> No
+                  <CheckCircle2 className="size-4 text-success" /> No
                   exceptions need attention.
                 </div>
               )}

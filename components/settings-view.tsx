@@ -500,7 +500,7 @@ export function SettingsView({
         <TabsContent value="security">
           <section className="max-w-3xl rounded-lg border bg-card p-4 sm:p-5">
             <div className="flex gap-3">
-              <ShieldCheck className="mt-0.5 size-4 text-emerald-700" />
+              <ShieldCheck className="mt-0.5 size-4 text-success" />
               <div>
                 <h2 className="text-sm font-semibold">
                   Server-side security boundary
@@ -707,7 +707,7 @@ function EmailConnectionBadge({ state }: { state: EmailIntegrationState }) {
     );
   if (state.status === "connected")
     return (
-      <Badge className="bg-emerald-700 text-white">
+      <Badge className="border border-accent bg-accent-muted text-success">
         <Check /> Connected
       </Badge>
     );
@@ -730,7 +730,7 @@ function ConnectionBadge({ state }: { state: State }) {
     );
   if (state === "connected")
     return (
-      <Badge className="bg-emerald-700 text-white">
+      <Badge className="border border-accent bg-accent-muted text-success">
         <Check /> Connected
       </Badge>
     );

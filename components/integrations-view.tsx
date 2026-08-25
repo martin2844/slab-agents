@@ -134,10 +134,10 @@ export function IntegrationsView({
             })}
           </div>
         ) : (
-          <div className="grid min-h-44 place-items-center rounded-xl border border-dashed p-8 text-center">
+          <div className="grid min-h-44 place-items-center rounded-lg border border-dashed p-8 text-center">
             <div>
               <PlugZap className="mx-auto size-6 text-muted-foreground" />
-              <h3 className="mt-3 font-heading text-xl font-semibold">
+              <h3 className="mt-3 font-heading text-xl font-[675] tracking-[-0.025em]">
                 No tools connected yet
               </h3>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -302,7 +302,7 @@ function ActiveCard({
         )}
         <div className="min-w-0">
           <h3 className="truncate text-sm font-semibold">{integration.name}</h3>
-          <p className="text-[0.68rem] uppercase tracking-[.08em] text-muted-foreground">
+          <p className="font-mono text-[0.68rem] font-medium uppercase tracking-[0.02em] text-muted-foreground">
             {integration.provider === "posthog"
               ? integration.datacenter === "us"
                 ? "US Cloud"
@@ -370,7 +370,9 @@ function AvailableCard({
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="font-heading text-xl font-semibold">{item.name}</h3>
+            <h3 className="font-heading text-xl font-[675] tracking-[-0.025em]">
+              {item.name}
+            </h3>
             {!item.available && <Badge variant="outline">Unavailable</Badge>}
           </div>
           <p className="mt-1 text-[0.82rem] leading-5 text-muted-foreground">
@@ -580,7 +582,7 @@ function PostHogEditor({
               </div>
               <Badge variant="outline">{enabledAgentCount} enabled</Badge>
             </div>
-            <div className="mt-4 divide-y rounded-xl border">
+            <div className="mt-4 divide-y rounded-lg border">
               {agents.length ? (
                 agents.map((agent) => {
                   const agentTools = permissions[agent.id] ?? [];
@@ -1417,7 +1419,7 @@ function CustomHttpEditor({
             <div className="mb-3 flex items-center justify-between">
               <h3 className="font-semibold">Agent tool access</h3>
             </div>
-            <div className="mt-4 divide-y rounded-xl border">
+            <div className="mt-4 divide-y rounded-lg border">
               {agents.length ? (
                 agents.map((agent) => {
                   const agentTools = permissions[agent.id] ?? [];
@@ -1743,7 +1745,7 @@ function CustomMcpEditor({
                 enabled
               </Badge>
             </div>
-            <div className="mt-4 divide-y rounded-xl border">
+            <div className="mt-4 divide-y rounded-lg border">
               {agents.length ? (
                 agents.map((agent) => {
                   const availableTools = integration?.mcpTools ?? [];
@@ -1911,7 +1913,7 @@ function DeleteIntegrationButton({
 function StatusBadge({ status }: { status: Integration["status"] }) {
   if (status === "connected") {
     return (
-      <Badge className="bg-emerald-700 text-white">
+      <Badge className="border border-accent bg-accent-muted text-success">
         <Check /> Connected
       </Badge>
     );

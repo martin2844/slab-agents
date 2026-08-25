@@ -1,4 +1,9 @@
 import type { Metadata } from "next";
+import "@fontsource-variable/instrument-sans/wght.css";
+import "@fontsource-variable/instrument-sans/wght-italic.css";
+import "@fontsource/commit-mono/400.css";
+import "@fontsource/commit-mono/500.css";
+import "@fontsource/commit-mono/600.css";
 import "./globals.css";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";

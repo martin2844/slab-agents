@@ -83,7 +83,7 @@ function acceptanceLabel(acceptance: OperatorPackAcceptance | null) {
 }
 
 function acceptanceTone(status: OperatorPackAcceptance["status"] | null) {
-  if (status === "passed") return "text-emerald-800";
+  if (status === "passed") return "text-success";
   if (status === "failed") return "text-destructive";
   return "text-muted-foreground";
 }
@@ -127,7 +127,7 @@ function PackRow({
               variant="outline"
               className={
                 capability.available
-                  ? "border-emerald-600/25 bg-emerald-500/10 text-emerald-800"
+                  ? "border-accent bg-accent-muted text-success"
                   : capability.required
                     ? "border-amber-600/25 bg-amber-500/10 text-amber-900"
                     : "text-muted-foreground"
@@ -185,7 +185,7 @@ function ChangeIcon({
     return <ShieldCheck className="size-3.5 text-violet-700" />;
   if (action === "detach")
     return <Pause className="size-3.5 text-muted-foreground" />;
-  return <Check className="size-3.5 text-emerald-700" />;
+  return <Check className="size-3.5 text-success" />;
 }
 
 function ResourceSnapshot({
@@ -622,7 +622,7 @@ export function PacksView({
                             className="flex min-h-12 items-center gap-3 px-3 py-2"
                           >
                             {capability.available ? (
-                              <Check className="size-4 text-emerald-700" />
+                              <Check className="size-4 text-success" />
                             ) : (
                               <X className="size-4 text-muted-foreground" />
                             )}

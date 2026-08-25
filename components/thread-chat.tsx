@@ -296,11 +296,11 @@ export function ThreadChat({
             <ArrowLeft />
           </Link>
         </Button>
-        <div className="grid size-10 place-items-center rounded-full bg-foreground font-heading text-lg text-background">
+        <div className="grid size-10 place-items-center rounded-full bg-primary font-heading text-lg font-[675] text-primary-foreground">
           {data.agent.name.slice(0, 1)}
         </div>
         <div>
-          <h1 className="font-heading text-xl font-semibold">
+          <h1 className="font-heading text-xl font-[675] tracking-[-0.025em]">
             {data.thread.title}
           </h1>
           <p className="text-xs text-muted-foreground">
@@ -312,10 +312,10 @@ export function ThreadChat({
         <div className="mx-auto flex min-h-full max-w-3xl flex-col px-4 py-8 sm:px-8">
           {!data.messages.length && !partial ? (
             <div className="my-auto py-16">
-              <p className="text-xs font-bold uppercase tracking-[.18em] text-primary">
+              <p className="font-mono text-xs font-medium uppercase tracking-[0.02em] text-primary">
                 New conversation
               </p>
-              <h2 className="mt-3 max-w-xl font-heading text-4xl font-semibold leading-tight tracking-tight">
+              <h2 className="mt-3 max-w-xl font-heading text-4xl font-[700] leading-[1.02] tracking-[-0.045em]">
                 What should {data.agent.name} move forward?
               </h2>
               <p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">
@@ -334,7 +334,7 @@ export function ThreadChat({
                       : "max-w-full"
                   }
                 >
-                  <p className="mb-2 text-[0.65rem] font-bold uppercase tracking-[.16em] text-muted-foreground">
+                  <p className="mb-2 font-mono text-[0.65rem] font-medium uppercase tracking-[0.02em] text-muted-foreground">
                     {message.role === "user" ? "You" : data.agent.name}
                   </p>
                   {message.role === "assistant" ? (
@@ -359,7 +359,7 @@ export function ThreadChat({
               ))}
               {(partial || backgroundRunId || streaming) && (
                 <article>
-                  <p className="mb-2 text-[0.65rem] font-bold uppercase tracking-[.16em] text-muted-foreground">
+                  <p className="mb-2 font-mono text-[0.65rem] font-medium uppercase tracking-[0.02em] text-muted-foreground">
                     {data.agent.name}
                   </p>
                   {partial && (
@@ -401,7 +401,7 @@ export function ThreadChat({
                             ) : item.status === "failed" ? (
                               <X className="size-3.5 text-destructive" />
                             ) : (
-                              <Check className="size-3.5 text-emerald-700" />
+                              <Check className="size-3.5 text-success" />
                             )}
                             <span>{item.label}</span>
                           </li>
@@ -423,7 +423,7 @@ export function ThreadChat({
                       <p className="mt-1 text-sm text-muted-foreground">
                         {data.agent.name} wants to execute:
                       </p>
-                      <pre className="mt-3 overflow-auto bg-foreground p-3 font-mono text-xs text-background">
+                      <pre className="mt-3 overflow-auto rounded-md bg-petrol-deep p-3 font-mono text-xs text-white">
                         {approval.command}
                       </pre>
                       <div className="mt-4 flex gap-2">

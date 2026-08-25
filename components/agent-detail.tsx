@@ -167,7 +167,7 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
                 key={item.label}
                 className="min-h-20 border-b p-3 sm:odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0"
               >
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[.08em] text-muted-foreground">
+                <p className="font-mono text-[0.68rem] font-medium uppercase tracking-[0.02em] text-muted-foreground">
                   {item.label}
                 </p>
                 <p className="mt-2 truncate text-sm font-semibold capitalize">
@@ -351,7 +351,7 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
                 </div>
               </div>
               <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
-                <span className="text-xs font-bold uppercase tracking-[.14em] text-muted-foreground">
+                <span className="font-mono text-xs font-medium uppercase tracking-[0.02em] text-muted-foreground">
                   {savingAccess
                     ? "Saving…"
                     : fullAccess

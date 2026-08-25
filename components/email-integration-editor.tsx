@@ -116,7 +116,7 @@ const emptyManagedProton: ManagedProtonForm = {
 
 export function EmailMark() {
   return (
-    <div className="grid size-12 place-items-center rounded-xl border bg-background shadow-sm">
+    <div className="grid size-12 place-items-center rounded-lg border bg-background">
       <Mail className="size-6 text-primary" />
     </div>
   );
@@ -969,7 +969,7 @@ export function EmailIntegrationEditor({
             )}
 
             {showProton && (
-              <div className="mt-4 rounded-xl border bg-muted/25 p-4">
+              <div className="mt-4 rounded-lg border bg-muted/25 p-4">
                 <div className="mb-4">
                   <h4 className="font-semibold">
                     {editingAccountId
@@ -1119,7 +1119,7 @@ export function EmailIntegrationEditor({
               </div>
             )}
 
-            <div className="mt-4 divide-y rounded-xl border">
+            <div className="mt-4 divide-y rounded-lg border">
               {state.accounts.length ? (
                 state.accounts.map((account) => (
                   <div
@@ -1229,7 +1229,7 @@ export function EmailIntegrationEditor({
               Each agent receives only a scoped connector token. Raw tokens
               never enter the control-plane database or browser.
             </p>
-            <div className="mt-4 divide-y rounded-xl border">
+            <div className="mt-4 divide-y rounded-lg border">
               {agents.map((agent) => (
                 <AgentAccessRow
                   key={agent.id}
@@ -1272,7 +1272,7 @@ export function EmailIntegrationEditor({
 function MailboxConnectionBadge({ status }: { status: string | null }) {
   if (status === "ok")
     return (
-      <Badge className="bg-emerald-700 text-white">
+      <Badge className="border border-accent bg-accent-muted text-success">
         <Check /> Connected
       </Badge>
     );

@@ -169,7 +169,7 @@ export function AgentsView({
                           href={`/agents/${agent.id}`}
                           className="flex min-w-48 items-center gap-3"
                         >
-                          <span className="grid size-7 place-items-center rounded-md bg-foreground text-xs font-semibold text-background">
+                          <span className="grid size-7 place-items-center rounded-md bg-primary text-xs font-[650] text-primary-foreground">
                             {agent.name.slice(0, 1).toUpperCase()}
                           </span>
                           <span className="min-w-0">
@@ -269,7 +269,7 @@ export function AgentsView({
                       href={`/agents/${agent.id}`}
                       className="flex min-w-0 items-center gap-3"
                     >
-                      <span className="grid size-8 place-items-center rounded-md bg-foreground text-sm text-background">
+                      <span className="grid size-8 place-items-center rounded-md bg-primary text-sm text-primary-foreground">
                         {agent.name.slice(0, 1).toUpperCase()}
                       </span>
                       <span className="min-w-0">

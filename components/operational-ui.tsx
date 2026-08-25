@@ -20,7 +20,7 @@ export function SectionHeader({
       )}
     >
       <div className="flex min-w-0 items-baseline gap-2">
-        <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
+        <h2 className="text-sm font-[650] tracking-[-0.015em]">{title}</h2>
         {meta && (
           <span className="truncate text-xs text-muted-foreground">{meta}</span>
         )}
@@ -50,14 +50,15 @@ export function MetricStrip({ items }: { items: MetricStripItem[] }) {
               "flex min-h-20 items-center gap-3 border-b px-4 py-3 sm:odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0",
               index === items.length - 1 && "sm:border-b-0",
               item.tone === "attention" && "bg-amber-500/[0.055]",
-              item.tone === "running" && "bg-primary/[0.045]",
+              item.tone === "running" && "bg-accent-muted/60",
             )}
           >
             {Icon && (
               <span
                 className={cn(
                   "grid size-8 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground",
-                  item.tone === "running" && "bg-primary/10 text-primary",
+                  item.tone === "running" &&
+                    "bg-accent text-accent-foreground",
                   item.tone === "attention" && "bg-amber-500/10 text-amber-800",
                 )}
               >
@@ -66,10 +67,10 @@ export function MetricStrip({ items }: { items: MetricStripItem[] }) {
             )}
             <div className="min-w-0">
               <div className="flex items-baseline gap-2">
-                <span className="text-xl font-semibold tabular-nums">
+                <span className="text-xl font-[675] tabular-nums tracking-[-0.025em]">
                   {item.value}
                 </span>
-                <span className="truncate text-sm font-medium">
+                <span className="truncate text-sm font-[550]">
                   {item.label}
                 </span>
               </div>
@@ -113,5 +114,5 @@ export function DenseTable({
 }
 
 export const denseTableHead =
-  "h-9 border-b bg-muted/45 px-3 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground";
+  "h-9 border-b bg-muted/65 px-3 font-mono text-[0.66rem] font-medium uppercase tracking-[0.02em] text-muted-foreground";
 export const denseTableCell = "h-11 border-b px-3 align-middle last:border-b-0";

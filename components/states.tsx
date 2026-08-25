@@ -28,7 +28,7 @@ export function EmptyState({
     <div className="grid min-h-56 place-items-center border border-dashed p-8 text-center">
       <div className="max-w-sm">
         <Inbox className="mx-auto mb-4 size-6 text-muted-foreground" />
-        <h2 className="font-heading text-2xl font-semibold tracking-tight">
+        <h2 className="font-heading text-2xl font-[675] tracking-[-0.035em]">
           {title}
         </h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
