@@ -31,6 +31,7 @@ import {
   TerminalSquare,
   TestTube2,
   UserRoundPlus,
+  Users,
   Workflow,
   Wrench,
 } from "lucide-react";
@@ -682,6 +683,12 @@ export function HowItWorksGuide() {
                   carry separate execution semantics. Keep permanent
                   instructions about identity; keep the immediate objective in
                   the task, automation, or Work item.
+                </Callout>
+                <Callout title="Agent directory is automatic" icon={Users}>
+                  Every enabled agent is added to the run-time directory with
+                  its exact assignee slug, role, and safe capability summary.
+                  New agents appear on the next run without maintaining a
+                  second index. Delegation must use one of those exact slugs.
                 </Callout>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" asChild>

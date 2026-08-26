@@ -44,6 +44,7 @@ test("every entry point uses the same persisted execution contract", async () =>
   assert.match(automationRun, /startAutomationRun\(id, "manual"\)/);
   for (const key of [
     "agent_instructions",
+    "agent_directory",
     "work_coordination_instructions",
     "run_policy",
     "execution_metadata",

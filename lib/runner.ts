@@ -1,4 +1,6 @@
 import { agentRepository } from "@/lib/repositories/agent-repository";
+import { emailAccessRepository } from "@/lib/repositories/email-access-repository";
+import { integrationRepository } from "@/lib/repositories/integration-repository";
 import "server-only";
 
 import { randomUUID } from "node:crypto";
@@ -41,6 +43,7 @@ import {
   type ContextComponent,
   type ControlPlaneContextProfile,
 } from "@/lib/run-context-profile";
+import { createWorkCoordinationContext } from "@/lib/agent-directory";
 
 export type { RunnerEvent } from "@/lib/runner-transport";
 
@@ -117,22 +120,6 @@ export type RunnerRuntimeSummary = {
   authentication: { status: string; mode: string | null };
   checkedAt: string;
 };
-
-function workCoordinationContext() {
-  const agents = agentRepository
-    .listAgents()
-    .filter((agent) => agent.enabled)
-    .map((agent) => `- ${agent.name}: assignee slug \`${agent.slug}\``)
-    .join("\n");
-  return [
-    "Work coordination in this local control plane:",
-    agents || "- No other enabled agents are currently registered.",
-    "Assigning a Work item to an enabled agent slug starts that agent automatically.",
-    "Work comments can mention an agent by slug (for example @coo or @sales) to request its input.",
-    "Use Work items and comments—not direct agent messages—for delegation, execution, review, and operational decisions.",
-    'Slab supports new, in_progress, and done natively. Represent review as in_progress + label "status:review", and blocked as in_progress + label "status:blocked". Remove those labels when leaving the semantic state.',
-  ].join("\n");
-}
 
 function runnerHeaders(headers: Record<string, string> = {}) {
   const token = readSecret("RUNNER_TOKEN", "RUNNER_TOKEN_FILE");
@@ -225,7 +212,15 @@ export async function startRunnerRun(
     input.controlPlaneRunId ?? input.runId,
   );
   const calendarMcpServers = calendarIntegrations.map(({ server }) => server);
-  const workInstructions = workCoordinationContext();
+  const workCoordination = createWorkCoordinationContext({
+    agents: agentRepository.listAgents(),
+    integrations: integrationRepository.listIntegrations(),
+    emailAccess: emailAccessRepository.listAgentEmailAccess(),
+    emailConnected:
+      emailAccessRepository.getEmailIntegrationRecord()?.status ===
+      "connected",
+  });
+  const workInstructions = workCoordination.instructions;
   const integrationInstructions = [
     ...(posthogMcp ? [POSTHOG_AGENT_PROMPT] : []),
     ...(emailMcp ? [EMAIL_AGENT_PROMPT] : []),
@@ -270,9 +265,14 @@ export async function startRunnerRun(
       ...measureText(input.agent.instructions),
     },
     {
+      key: "agent_directory",
+      label: `Enabled agent directory (${workCoordination.directory.entries.length} agents)`,
+      ...measureText(workCoordination.directoryInstructions),
+    },
+    {
       key: "work_coordination_instructions",
       label: "Control-plane Work coordination instructions",
-      ...measureText(workInstructions),
+      ...measureText(workCoordination.coordinationInstructions),
     },
     {
       key: "run_policy",
@@ -377,6 +377,7 @@ export async function startRunnerRun(
       calendarIntegrations: calendarIntegrations.map(
         ({ snapshot }) => snapshot,
       ),
+      agentDirectory: workCoordination.directory,
       changesApplyTo: "next_run",
       runtime: {
         id: input.agent.runtime,
