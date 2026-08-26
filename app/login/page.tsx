@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
+import { SlabBrandMark } from "@/components/slab-brand-mark";
 import {
   AUTH_COOKIE_NAME,
   authStatus,
@@ -34,9 +35,12 @@ export default async function LoginPage({
     <div className="flex min-h-dvh items-center justify-center bg-background px-4 py-10">
       <div className="w-full max-w-sm rounded-lg border bg-card p-6">
         <div className="mb-6">
-          <p className="font-heading text-2xl font-[675] tracking-[-0.035em]">
-            Slab
-          </p>
+          <div className="flex items-center gap-3">
+            <SlabBrandMark className="size-9" />
+            <p className="font-heading text-2xl font-[675] tracking-[-0.035em]">
+              Slab
+            </p>
+          </div>
           <h1 className="mt-4 text-lg font-semibold">Agent Workspace</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Sign in to your local control plane.

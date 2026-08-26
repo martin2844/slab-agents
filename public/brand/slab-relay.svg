@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 320 480"
+     color="#032D30"
+     role="img"
+     aria-labelledby="slab-relay-title slab-relay-desc">
+  <title id="slab-relay-title">Slab Relay</title>
+  <desc id="slab-relay-desc">Two coordinated slabs form an abstract letter S.</desc>
+  <g fill="currentColor" shape-rendering="geometricPrecision">
+    <path d="
+      M 188 16
+      C 163 12 141 18 121 34
+      L 46 96
+      C 24 114 13 139 17 166
+      C 21 204 51 235 83 248
+      C 99 254 115 257 138 257
+      L 171 257
+      C 175 257 177 253 175 250
+      L 91 179
+      C 76 166 77 147 90 135
+      L 153 80
+      C 161 73 172 73 180 80
+      L 210 106
+      C 217 112 227 113 235 107
+      L 250 95
+      C 258 89 259 78 251 71
+      L 206 31
+      C 201 26 195 21 188 16
+      Z"/>
+    <path d="
+      M 158 208
+      L 215 209
+      C 234 209 253 216 269 226
+      C 293 242 305 267 305 293
+      L 305 322
+      C 305 347 295 368 276 384
+      L 189 450
+      C 178 458 163 461 149 459
+      L 132 457
+      C 125 456 118 452 112 447
+      L 65 404
+      C 56 396 56 383 66 375
+      L 84 360
+      C 91 354 101 354 108 360
+      L 137 385
+      C 144 391 154 393 162 386
+      L 229 331
+      C 240 322 246 312 244 299
+      C 243 291 238 283 231 277
+      L 158 216
+      C 153 212 154 208 158 208
+      Z"/>
+  </g>
+</svg>

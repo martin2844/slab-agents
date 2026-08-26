@@ -15,10 +15,10 @@ import {
   PackageOpen,
   Plug,
   Settings,
-  Workflow,
   CircleCheck,
   LogOut,
 } from "lucide-react";
+import { SlabBrandMark } from "@/components/slab-brand-mark";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -56,9 +56,7 @@ function Brand() {
       href="/"
       className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
     >
-      <span className="grid size-8 place-items-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-        <Workflow className="size-4" />
-      </span>
+      <SlabBrandMark />
       <span>
         <span className="block font-heading text-base font-[675] leading-none tracking-[-0.025em]">
           Slab
