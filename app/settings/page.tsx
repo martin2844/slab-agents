@@ -26,9 +26,11 @@ export default async function SettingsPage({
       ? "runtime"
       : query.tab === "email"
         ? "email"
-        : query.tab === "calendar"
-          ? "calendar"
-          : "sources";
+      : query.tab === "calendar"
+        ? "calendar"
+        : query.tab === "memory"
+          ? "memory"
+        : "sources";
   const initialEmailOpen =
     query.email === "connected" || query.email === "oauth_failed";
   return (

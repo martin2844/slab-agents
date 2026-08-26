@@ -312,6 +312,11 @@ export type WorkspaceSettings = {
   runnerUrl: string;
   operatorDisplayName: string;
   coordinationReviewer: string;
+  memoryProvider: "disabled" | "honcho";
+  honchoUrl: string;
+  honchoApiKeyConfigured: boolean;
+  honchoWorkspaceId: string;
+  memoryMaxContextTokens: number;
 };
 
 export type RuntimeCatalogItem = {

@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Check,
+  BrainCircuit,
   CalendarDays,
   EyeOff,
   LoaderCircle,
@@ -26,6 +27,13 @@ import { ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/client-api";
 import type {
@@ -62,7 +70,7 @@ export function SettingsView({
   initialCalendars: Integration[];
   auth: { required: boolean; configured: boolean };
   agents: Agent[];
-  initialTab: "sources" | "runtime" | "email" | "calendar";
+  initialTab: "sources" | "runtime" | "email" | "calendar" | "memory";
   initialEmailOpen: boolean;
   initialCalendarOpen: boolean;
   initialCalendarResult: "connected" | "failed" | null;
@@ -85,6 +93,8 @@ export function SettingsView({
   const [error] = useState("");
   const [workKey, setWorkKey] = useState("");
   const [docsKey, setDocsKey] = useState("");
+  const [honchoKey, setHonchoKey] = useState("");
+  const [memoryState, setMemoryState] = useState<State>("idle");
   const [email, setEmail] = useState(initialEmail);
   const [emailOpen, setEmailOpen] = useState(initialEmailOpen);
   const [calendars, setCalendars] = useState(initialCalendars);
@@ -119,12 +129,43 @@ export function SettingsView({
         runnerUrl: settings.runnerUrl,
         operatorDisplayName: settings.operatorDisplayName,
         coordinationReviewer: settings.coordinationReviewer,
+        memoryProvider: settings.memoryProvider,
+        honchoUrl: settings.honchoUrl,
+        honchoApiKey: honchoKey || undefined,
+        honchoWorkspaceId: settings.honchoWorkspaceId,
+        memoryMaxContextTokens: settings.memoryMaxContextTokens,
       }),
     });
     setSettings(updated);
     setWorkKey("");
     setDocsKey("");
+    setHonchoKey("");
     return updated;
+  }
+
+  async function testMemory() {
+    if (!settings) return;
+    if (settings.memoryProvider === "disabled") {
+      setMemoryState("idle");
+      toast.message("Persistent memory is disabled");
+      return;
+    }
+    setMemoryState("testing");
+    try {
+      await persistSettings();
+      const result = await api<{
+        status: "connected" | "disabled" | "unavailable";
+        detail: string;
+      }>("/api/settings/memory/test", { method: "POST" });
+      if (result.status !== "connected") throw new Error(result.detail);
+      setMemoryState("connected");
+      toast.success(result.detail);
+    } catch (cause) {
+      setMemoryState("error");
+      toast.error(
+        cause instanceof Error ? cause.message : "Honcho is unavailable",
+      );
+    }
   }
 
   async function save() {
@@ -214,6 +255,7 @@ export function SettingsView({
           <TabsTrigger value="runtime">Runtime</TabsTrigger>
           <TabsTrigger value="email">Email</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
+          <TabsTrigger value="memory">Memory</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
         </TabsList>
 
@@ -494,6 +536,141 @@ export function SettingsView({
                 </Button>
               </div>
             ) : null}
+          </section>
+        </TabsContent>
+
+        <TabsContent value="memory">
+          <section className="max-w-4xl rounded-lg border bg-card p-4 sm:p-5">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+              <div className="flex gap-3">
+                <BrainCircuit className="mt-0.5 size-4" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-semibold">
+                      Persistent agent memory
+                    </h2>
+                    <Badge variant="secondary">Optional</Badge>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Honcho remembers operator preferences and corrections across
+                    conversations. Work, Docs, Email, and integrations remain the
+                    sources of truth. Disabling recall does not delete data already
+                    stored by the provider.
+                  </p>
+                </div>
+              </div>
+              {settings.memoryProvider === "disabled" ? (
+                <Badge variant="outline">Disabled</Badge>
+              ) : (
+                <ConnectionBadge state={memoryState} />
+              )}
+            </div>
+
+            <div className="mt-4 grid gap-3 border-y py-4 sm:grid-cols-2">
+              <label className="grid gap-1.5 text-xs font-semibold">
+                Provider
+                <Select
+                  value={settings.memoryProvider}
+                  onValueChange={(value) => {
+                    if (value !== "disabled" && value !== "honcho") return;
+                    setSettings({ ...settings, memoryProvider: value });
+                    setMemoryState("idle");
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="disabled">Disabled</SelectItem>
+                    <SelectItem value="honcho">Honcho</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
+              <label className="grid gap-1.5 text-xs font-semibold">
+                Workspace ID
+                <Input
+                  value={settings.honchoWorkspaceId}
+                  onChange={(event) =>
+                    setSettings({
+                      ...settings,
+                      honchoWorkspaceId: event.target.value,
+                    })
+                  }
+                  disabled={settings.memoryProvider === "disabled"}
+                />
+              </label>
+              <label className="grid gap-1.5 text-xs font-semibold sm:col-span-2">
+                Honcho URL
+                <Input
+                  value={settings.honchoUrl}
+                  onChange={(event) =>
+                    setSettings({ ...settings, honchoUrl: event.target.value })
+                  }
+                  type="url"
+                  disabled={settings.memoryProvider === "disabled"}
+                />
+              </label>
+              <label className="grid gap-1.5 text-xs font-semibold">
+                API key
+                <div className="relative">
+                  <Input
+                    value={honchoKey}
+                    onChange={(event) => setHonchoKey(event.target.value)}
+                    type="password"
+                    placeholder={
+                      settings.honchoApiKeyConfigured
+                        ? "Configured · enter to replace"
+                        : "Optional for unauthenticated self-hosting"
+                    }
+                    disabled={settings.memoryProvider === "disabled"}
+                  />
+                  <EyeOff className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                </div>
+              </label>
+              <label className="grid gap-1.5 text-xs font-semibold">
+                Maximum recalled context
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={settings.memoryMaxContextTokens}
+                    onChange={(event) =>
+                      setSettings({
+                        ...settings,
+                        memoryMaxContextTokens: Number(event.target.value),
+                      })
+                    }
+                    type="number"
+                    min={200}
+                    max={4000}
+                    disabled={settings.memoryProvider === "disabled"}
+                  />
+                  <span className="whitespace-nowrap text-xs text-muted-foreground">
+                    tokens
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            <div className="mt-4 flex flex-col justify-between gap-3 text-xs text-muted-foreground sm:flex-row sm:items-center">
+              <p>
+                Only operator-authored chat messages are recorded. Raw tool
+                outputs and generated Work events are excluded.
+              </p>
+              <Button
+                variant="outline"
+                onClick={testMemory}
+                disabled={
+                  settings.memoryProvider === "disabled" ||
+                  memoryState === "testing"
+                }
+              >
+                {memoryState === "testing" ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <PlugZap />
+                )}
+                Test connection
+              </Button>
+            </div>
           </section>
         </TabsContent>
 

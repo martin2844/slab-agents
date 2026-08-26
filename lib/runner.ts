@@ -44,6 +44,7 @@ import {
   type ControlPlaneContextProfile,
 } from "@/lib/run-context-profile";
 import { createWorkCoordinationContext } from "@/lib/agent-directory";
+import type { MemoryRecall } from "@/lib/memory/service";
 
 export type { RunnerEvent } from "@/lib/runner-transport";
 
@@ -152,6 +153,7 @@ export async function startRunnerRun(
     messages: Message[];
     prompt: string;
     execution: RunExecution;
+    memory?: MemoryRecall | null;
     budget?: RuntimeBudget | null;
     attachOnly?: boolean;
     runnerEventCursor?: number;
@@ -230,6 +232,7 @@ export async function startRunnerRun(
     input.agent.instructions,
     workInstructions,
     input.execution.policy,
+    ...(input.memory?.context ? [input.memory.context] : []),
     ...(integrationInstructions ? [integrationInstructions] : []),
   ];
   const combinedInstructions = instructionParts.join("\n\n");
@@ -287,6 +290,11 @@ export async function startRunnerRun(
         mode: input.execution.mode,
         issueKey: input.execution.issueKey,
       }),
+    },
+    {
+      key: "long_term_memory",
+      label: `Long-term memory (${input.memory?.provider ?? "disabled"}: ${input.memory?.status ?? "disabled"})`,
+      ...measureText(input.memory?.context ?? ""),
     },
     {
       key: "integration_instructions",
@@ -378,6 +386,12 @@ export async function startRunnerRun(
         ({ snapshot }) => snapshot,
       ),
       agentDirectory: workCoordination.directory,
+      memory: {
+        provider: input.memory?.provider ?? "disabled",
+        status: input.memory?.status ?? "disabled",
+        approxTokens: input.memory?.approxTokens ?? 0,
+        truncated: input.memory?.truncated ?? false,
+      },
       changesApplyTo: "next_run",
       runtime: {
         id: input.agent.runtime,

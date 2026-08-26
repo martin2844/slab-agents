@@ -12,6 +12,11 @@ export const settingKeys = [
   "runner_url",
   "operator_display_name",
   "coordination_reviewer",
+  "memory_provider",
+  "honcho_url",
+  "honcho_api_key",
+  "honcho_workspace_id",
+  "memory_max_context_tokens",
 ] as const;
 export type SettingKey = (typeof settingKeys)[number];
 
@@ -23,9 +28,19 @@ const defaults: Record<SettingKey, string> = {
   runner_url: process.env.RUNNER_URL ?? "http://127.0.0.1:6990",
   operator_display_name: process.env.SLAB_OPERATOR_NAME ?? "Operator",
   coordination_reviewer: process.env.SLAB_COORDINATION_REVIEWER ?? "coo",
+  memory_provider: process.env.MEMORY_PROVIDER ?? "disabled",
+  honcho_url: process.env.HONCHO_URL ?? "https://api.honcho.dev",
+  honcho_api_key: readSecret("HONCHO_API_KEY", "HONCHO_API_KEY_FILE"),
+  honcho_workspace_id: process.env.HONCHO_WORKSPACE_ID ?? "slab",
+  memory_max_context_tokens:
+    process.env.MEMORY_MAX_CONTEXT_TOKENS ?? "900",
 };
 
-const secretSettingKeys = new Set<SettingKey>(["work_api_key", "docs_api_key"]);
+const secretSettingKeys = new Set<SettingKey>([
+  "work_api_key",
+  "docs_api_key",
+  "honcho_api_key",
+]);
 
 const SETTING_SECRET_PREFIX = "encrypted:";
 
@@ -82,6 +97,14 @@ export function setSetting(key: SettingKey, value: string) {
 }
 
 export function getPublicSettings() {
+  const provider = getSetting("memory_provider");
+  const configuredMemoryTokens = Number(getSetting("memory_max_context_tokens"));
+  const memoryMaxContextTokens =
+    Number.isInteger(configuredMemoryTokens) &&
+    configuredMemoryTokens >= 200 &&
+    configuredMemoryTokens <= 4_000
+      ? configuredMemoryTokens
+      : 900;
   return {
     workMcpUrl: getSetting("work_mcp_url"),
     workApiKeyConfigured: Boolean(getSetting("work_api_key")),
@@ -90,7 +113,40 @@ export function getPublicSettings() {
     runnerUrl: getSetting("runner_url"),
     operatorDisplayName: getSetting("operator_display_name"),
     coordinationReviewer: getSetting("coordination_reviewer"),
+    memoryProvider:
+      provider === "honcho" ? ("honcho" as const) : ("disabled" as const),
+    honchoUrl: getSetting("honcho_url"),
+    honchoApiKeyConfigured: Boolean(getSetting("honcho_api_key")),
+    honchoWorkspaceId: getSetting("honcho_workspace_id"),
+    memoryMaxContextTokens,
   };
+}
+
+export function getMemoryConfiguration() {
+  const settings = getPublicSettings();
+  return {
+    provider: settings.memoryProvider,
+    baseUrl: settings.honchoUrl,
+    apiKey: getSetting("honcho_api_key"),
+    workspaceId: settings.honchoWorkspaceId,
+    maxContextTokens: settings.memoryMaxContextTokens,
+  };
+}
+
+export function isAllowedHonchoUrl(value: string) {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  return (
+    new Set(["http:", "https:"]).has(url.protocol) &&
+    !url.username &&
+    !url.password &&
+    !url.search &&
+    !url.hash
+  );
 }
 
 export function isAllowedRunnerUrl(value: string) {

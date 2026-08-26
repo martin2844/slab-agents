@@ -220,6 +220,16 @@ test("custom integration saves and tests cannot overwrite a newer version", asyn
     settingsRepository.compareAndSet = originalCompareAndSet;
   }
 
+  settings.setSetting("honcho_api_key", "honcho-secret-value");
+  assert.equal(settings.getSetting("honcho_api_key"), "honcho-secret-value");
+  assert.match(settingsRepository.get("honcho_api_key"), /^encrypted:v1\./);
+  assert.doesNotMatch(
+    settingsRepository.get("honcho_api_key"),
+    /honcho-secret-value/,
+  );
+  assert.equal(settings.getPublicSettings().honchoApiKeyConfigured, true);
+  assert.equal("honchoApiKey" in settings.getPublicSettings(), false);
+
   const rawSecret = "mcp-super-secret";
   globalThis.fetch = async () => {
     throw new Error(`upstream echoed Authorization: Bearer ${rawSecret}`);

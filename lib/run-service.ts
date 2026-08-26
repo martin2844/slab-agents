@@ -39,6 +39,11 @@ import {
   releaseRunBudgetWithoutRuntime,
   type BudgetAdmission,
 } from "@/lib/budget-control";
+import {
+  memoryModule,
+  type MemoryRecall,
+  type MemoryRecordInput,
+} from "@/lib/memory/service";
 
 const state = globalThis as unknown as { slabExecutingRuns?: Set<string> };
 const executingRuns = (state.slabExecutingRuns ??= new Set<string>());
@@ -119,7 +124,54 @@ type RunExecutionDependencies = {
   settleBudget?: typeof settleRunBudget;
   releaseBudgetWithoutRuntime?: typeof releaseRunBudgetWithoutRuntime;
   cancelRunner?: typeof cancelRunnerRun;
+  loadMemoryConfiguration?: typeof memoryModule.configuration;
+  recallMemory?: typeof memoryModule.recall;
+  recordMemory?: typeof memoryModule.record;
 };
+
+function scheduleMemoryRecording(
+  input: MemoryRecordInput,
+  recordMemory: typeof memoryModule.record,
+  configuration: ReturnType<typeof memoryModule.configuration>,
+) {
+  const queued = withImmediateTransaction(() => {
+    if (runRepository.hasRunEvent(input.runId, "memory_recording_queued")) {
+      return false;
+    }
+    runRepository.addRunEvent(input.runId, "memory_recording_queued", {
+      provider: "honcho",
+      source: "operator_chat_message",
+    });
+    return true;
+  });
+  if (!queued) return;
+
+  void recordMemory(input, configuration)
+    .then((result) => {
+      runRepository.addRunEvent(
+        input.runId,
+        result.status === "recorded"
+          ? "memory_recorded"
+          : result.status === "unavailable"
+            ? "memory_recording_failed"
+            : "memory_recording_skipped",
+        {
+          provider: result.provider,
+          status: result.status,
+          characters: result.characters,
+          durationMs: result.durationMs,
+          ...(result.error ? { error: result.error } : {}),
+        },
+      );
+    })
+    .catch(() => {
+      runRepository.addRunEvent(input.runId, "memory_recording_failed", {
+        provider: "honcho",
+        status: "unavailable",
+        error: "Memory recording failed before returning a result.",
+      });
+    });
+}
 
 export async function* executeRun(
   input: { runId: string },
@@ -136,6 +188,10 @@ export async function* executeRun(
   const releaseBudgetWithoutRuntime =
     dependencies.releaseBudgetWithoutRuntime ?? releaseRunBudgetWithoutRuntime;
   const cancelRunner = dependencies.cancelRunner ?? cancelRunnerRun;
+  const loadMemoryConfiguration =
+    dependencies.loadMemoryConfiguration ?? memoryModule.configuration;
+  const recallMemory = dependencies.recallMemory ?? memoryModule.recall;
+  const recordMemory = dependencies.recordMemory ?? memoryModule.record;
   const run = runRepository.getRun(input.runId);
   if (!run || !run.threadId) throw new Error("Run or thread not found.");
   const agent = agentRepository.getAgent(run.agentId);
@@ -314,6 +370,53 @@ export async function* executeRun(
       issueKey: run.issueKey,
     };
 
+    const memoryConfiguration = loadMemoryConfiguration();
+    let memoryRecall: MemoryRecall;
+    try {
+      memoryRecall = await recallMemory(
+        {
+          agentId: agent.id,
+          agentName: agent.name,
+          agentRole: agent.role,
+          prompt: runInput.body,
+          mode: run.mode,
+          issueKey: run.issueKey,
+        },
+        memoryConfiguration,
+      );
+    } catch {
+      memoryRecall = {
+        provider: "honcho",
+        status: "unavailable",
+        context: "",
+        characters: 0,
+        approxTokens: 0,
+        truncated: false,
+        durationMs: 0,
+        error: "Memory recall failed before returning a result.",
+      };
+    }
+    const memoryRecallPersisted = withImmediateTransaction(() => {
+      if (!runRepository.ownsRunLease(run.id, leaseOwner)) return false;
+      runRepository.addRunEvent(
+        run.id,
+        memoryRecall.status === "unavailable"
+          ? "memory_recall_failed"
+          : "memory_recall_completed",
+        {
+          provider: memoryRecall.provider,
+          status: memoryRecall.status,
+          characters: memoryRecall.characters,
+          approxTokens: memoryRecall.approxTokens,
+          truncated: memoryRecall.truncated,
+          durationMs: memoryRecall.durationMs,
+          ...(memoryRecall.error ? { error: memoryRecall.error } : {}),
+        },
+      );
+      return true;
+    });
+    if (!memoryRecallPersisted) return;
+
     const leasedRun = runRepository.getRun(run.id);
     if (!leasedRun) return;
     const persistedRunEvents = runRepository.listRunEvents(run.id);
@@ -375,6 +478,7 @@ export async function* executeRun(
             issueKey: run.issueKey,
             policy: run.runInstructions,
           },
+          memory: memoryRecall,
           budget: budgetAdmission.runtimeBudget,
           attachOnly: budgetAdmission.snapshot.status === "exceeded",
           runnerEventCursor,
@@ -744,6 +848,24 @@ export async function* executeRun(
           }
           if (outcome.action === "completed") {
             completed = true;
+            if (
+              run.mode === "chat" &&
+              memoryRecall.provider === "honcho"
+            ) {
+              scheduleMemoryRecording(
+                {
+                  runId: run.id,
+                  threadId: thread.id,
+                  agentId: agent.id,
+                  agentName: agent.name,
+                  agentRole: agent.role,
+                  userMessage: runInput.body,
+                  createdAt: runInput.createdAt,
+                },
+                recordMemory,
+                memoryConfiguration,
+              );
+            }
           }
         }
 

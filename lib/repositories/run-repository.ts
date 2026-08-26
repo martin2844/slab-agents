@@ -257,4 +257,13 @@ export const runRepository = {
       createdAt: String(row.created_at),
     }));
   },
+  hasRunEvent(runId: string, type: string) {
+    return Boolean(
+      db
+        .prepare(
+          "SELECT 1 AS found FROM run_events WHERE run_id=? AND type=? LIMIT 1",
+        )
+        .get(runId, type),
+    );
+  },
 };

@@ -49,6 +49,7 @@ test("every entry point uses the same persisted execution contract", async () =>
     "run_policy",
     "execution_metadata",
     "integration_instructions",
+    "long_term_memory",
     "initial_user_input",
     "mcp_server_configuration",
   ]) {
@@ -56,6 +57,9 @@ test("every entry point uses the same persisted execution contract", async () =>
   }
   assert.match(runner, /inspectMcpDefinitions/);
   assert.match(service, /planRuntimeThread\(/);
+  assert.match(service, /memory_recall_completed/);
+  assert.match(service, /memory_recording_queued/);
+  assert.match(service, /run\.mode === "chat"/);
   assert.match(service, /if \(runtimeThreadPlan\.reusable\)/);
   assert.match(runner, /input\.execution\.mode === "chat"/);
   assert.match(runner, /shouldRehydrateConversation/);

@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Bot,
   Boxes,
+  BrainCircuit,
   CalendarDays,
   Check,
   ChevronRight,
@@ -44,13 +45,14 @@ const chapters = [
   ["01", "Ecosystem", "#ecosystem"],
   ["02", "Bring it online", "#setup"],
   ["03", "Create agents", "#agents"],
-  ["04", "Create tools", "#tools"],
-  ["05", "Email", "#email"],
-  ["06", "Gmail", "#gmail"],
-  ["07", "Proton Bridge", "#proton"],
-  ["08", "Calendar", "#calendar"],
-  ["09", "Run lifecycle", "#runs"],
-  ["10", "Troubleshooting", "#troubleshooting"],
+  ["04", "Memory", "#memory"],
+  ["05", "Create tools", "#tools"],
+  ["06", "Email", "#email"],
+  ["07", "Gmail", "#gmail"],
+  ["08", "Proton Bridge", "#proton"],
+  ["09", "Calendar", "#calendar"],
+  ["10", "Run lifecycle", "#runs"],
+  ["11", "Troubleshooting", "#troubleshooting"],
 ] as const;
 
 type Icon = React.ComponentType<{ className?: string }>;
@@ -703,8 +705,72 @@ export function HowItWorksGuide() {
           </GuideSection>
 
           <GuideSection
-            id="tools"
+            id="memory"
             number="04"
+            title="Optional long-term memory"
+            description="Honcho can retain operator preferences and corrections across chat threads. It is supporting context—not a source of operational truth—and every run continues if memory is unavailable."
+            icon={BrainCircuit}
+          >
+            <div className="grid gap-5 lg:grid-cols-[1fr_.9fr]">
+              <ol className="rounded-lg border bg-card px-4">
+                <Step number="01" title="Choose a deployment">
+                  The stack installer offers disabled, managed Honcho, or a
+                  self-hosted Honcho profile. Existing workspaces remain
+                  disabled until an operator opts in.
+                </Step>
+                <Step number="02" title="Configure the provider">
+                  Open <strong className="text-foreground">Settings → Memory</strong>
+                  . Set the Honcho URL, workspace ID, write-only API key when
+                  required, and a bounded recall budget. Test the connection
+                  before enabling regular use.
+                </Step>
+                <Step number="03" title="Recall at run start">
+                  Slab requests a compact representation when the run reaches
+                  the queue head. Recalled text is marked non-authoritative and
+                  cannot override the current Work, Docs, Email, or API state.
+                </Step>
+                <Step
+                  number="04"
+                  title="Learn from operator chat"
+                  result="Later runs can retrieve the relevant preference or correction"
+                >
+                  After a successful chat run, Slab sends only the
+                  operator-authored message to Honcho. Agent responses, tool
+                  payloads, automated Work events, and credentials are not
+                  stored as memory input.
+                </Step>
+              </ol>
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <p className="text-sm font-semibold">Truth precedence</p>
+                  <dl className="mt-3 divide-y border-y">
+                    <FieldRow field="Work" enter="Current execution state and ownership" />
+                    <FieldRow field="Docs" enter="Durable company knowledge" />
+                    <FieldRow field="Integrations" enter="Current external facts" />
+                    <FieldRow field="Memory" enter="Potentially relevant preferences and prior corrections" />
+                  </dl>
+                </div>
+                <Callout title="Memory failure is non-blocking" icon={ShieldCheck}>
+                  Honcho is called with a short timeout. An outage is recorded
+                  in the run audit trail, injects no memory context, and never
+                  prevents the runtime from starting.
+                </Callout>
+                <Callout title="Self-hosted still needs a model provider" icon={Cloud}>
+                  The self-hosted profile keeps Honcho&apos;s database on your VPS,
+                  but its derivation and embedding workers use the OpenAI API
+                  key supplied during installation. Managed Honcho sends memory
+                  input to the configured Honcho service.
+                </Callout>
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/settings?tab=memory">Configure memory</Link>
+                </Button>
+              </div>
+            </div>
+          </GuideSection>
+
+          <GuideSection
+            id="tools"
+            number="05"
             title="Create tools from an API or MCP server"
             description="Custom Integrations turns curated external capabilities into named agent tools. The model never receives a generic HTTP client and never chooses an arbitrary host or header."
             icon={Wrench}
@@ -830,7 +896,7 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
 
           <GuideSection
             id="email"
-            number="05"
+            number="06"
             title="Email architecture and permissions"
             description="Email is optional and deliberately split: Slab Agents owns agent policy; slab-email owns mailbox credentials, provider tokens, and MCP execution."
             icon={Mail}
@@ -936,7 +1002,7 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
 
           <GuideSection
             id="gmail"
-            number="06"
+            number="07"
             title="Connect Gmail with Google OAuth"
             description="Gmail uses the official Gmail API and OAuth 2.0. You create the OAuth client in Google Cloud, save it in Settings, and explicitly add test users while the app remains in Testing."
             icon={Cloud}
@@ -1072,7 +1138,7 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
 
           <GuideSection
             id="proton"
-            number="07"
+            number="08"
             title="Connect Proton with managed Bridge"
             description="On supported self-hosted images, Proton Bridge is already built into slab-email. You do not install a second service: connect your Proton account and let slab-email manage the private Bridge lifecycle."
             icon={KeyRound}
@@ -1214,7 +1280,7 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
 
           <GuideSection
             id="calendar"
-            number="08"
+            number="09"
             title="Connect calendars"
             description="Calendar is an optional Slab Agents capability. Provider credentials stay encrypted in the control plane; agents receive only semantic, account-scoped tools through an opaque run token."
             icon={CalendarDays}
@@ -1436,7 +1502,7 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
 
           <GuideSection
             id="runs"
-            number="09"
+            number="10"
             title="From intent to auditable run"
             description="Every execution is durable and typed. Agent identity, trigger, execution mode, optional Work scope, run policy, capabilities, and runtime continuity are separate concepts."
             icon={Activity}
@@ -1537,7 +1603,7 @@ chat message B
 
           <GuideSection
             id="troubleshooting"
-            number="10"
+            number="11"
             title="Troubleshooting"
             description="Start with the visible status and test action closest to the failing boundary. Do not compensate for a missing capability by expanding an agent prompt."
             icon={TestTube2}
