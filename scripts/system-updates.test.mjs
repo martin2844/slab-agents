@@ -227,6 +227,14 @@ test("system updates use the constrained bridge and schedule only safe stable re
   assert.equal(scheduledEnvelope.target, null);
 
   await writeStatus(bridgePaths, scheduledCheck, inventory());
+  await service.reconcileSystemUpdateRequests({ paths: bridgePaths });
+  await assert.rejects(
+    service.requestSystemUpdate(
+      { action: "apply", channel: "stable", target: "1.1.0" },
+      { paths: bridgePaths, clock: () => scheduledTime },
+    ),
+    (error) => error.code === "UPDATE_CHECK_REQUIRED",
+  );
   await service.tickSystemUpdates({
     paths: bridgePaths,
     currentTime: new Date("2026-08-28T04:01:00Z"),
@@ -319,6 +327,19 @@ test("system updates use the constrained bridge and schedule only safe stable re
     "automatic updates must not apply a release without rollback compatibility",
   );
 
+  const uncertainCheck = await service.requestSystemUpdate(
+    { action: "check", channel: "stable" },
+    {
+      paths: bridgePaths,
+      clock: () => new Date("2026-08-29T04:01:30Z"),
+    },
+  );
+  await writeStatus(
+    bridgePaths,
+    uncertainCheck,
+    inventory({ checkedAt: "2026-08-29T04:01:35Z" }),
+  );
+  await service.reconcileSystemUpdateRequests({ paths: bridgePaths });
   const uncertainApply = await service.requestSystemUpdate(
     { action: "apply", channel: "stable", target: "1.1.0" },
     {

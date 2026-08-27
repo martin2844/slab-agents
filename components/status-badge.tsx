@@ -14,8 +14,10 @@ export function StatusBadge({ status }: { status: string }) {
           "approved",
           "installed",
           "passed",
-        ].includes(status) &&
-          "border-accent bg-accent-muted text-success",
+          "succeeded",
+          "up_to_date",
+          "channel_equivalent",
+        ].includes(status) && "border-accent bg-accent-muted text-success",
         ["running", "in_progress", "installing", "evaluating"].includes(
           status,
         ) && "border-accent bg-accent text-accent-foreground",
@@ -26,17 +28,18 @@ export function StatusBadge({ status }: { status: string }) {
           "pending",
           "needs setup",
           "update available",
+          "update_available",
+          "recovery_required",
         ].includes(status) &&
           "border-amber-600/25 bg-amber-500/10 text-amber-800",
-        ["queued", "idle"].includes(status) &&
+        ["queued", "idle", "submitted", "channel_older"].includes(status) &&
           "border-border bg-muted text-muted-foreground",
         ["blocked"].includes(status) &&
           "border-amber-700/25 bg-amber-500/10 text-amber-900",
         ["review"].includes(status) &&
           "border-violet-600/25 bg-violet-500/10 text-violet-800",
         ["disabled", "cancelled"].includes(status) && "opacity-60",
-        status === "skipped" &&
-          "border-border bg-muted text-muted-foreground",
+        status === "skipped" && "border-border bg-muted text-muted-foreground",
       )}
     >
       {normalized}

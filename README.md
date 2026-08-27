@@ -78,6 +78,29 @@ surrogate before the Claude SDK child starts. OpenRouter calls stay inside the
 Runner process. Both paths keep the real provider key out of the model context,
 runtime environment, MCP definitions, events, and profiling.
 
+## Managed system updates
+
+The System page compares Agents, Work, Docs, Email, and Runner with a signed
+`slab-stack` release. It reports each component's installed revision and digest,
+but applies the release as one atomic stack target. Slab does not mix component
+versions or pull moving tags independently.
+
+Manual checks may inspect the stable or candidate channel. Applying a release
+requires an exact target copied from a completed host check and a confirmation
+that names every affected component. Automatic updates are opt-in, run in one
+daily UTC window, and use the stable channel only. They stop when the signed
+inventory reports recovery is required or when the release cannot automatically
+roll back to the installed version. A lost or stale apply result is treated as
+uncertain and requires a fresh check before another apply.
+
+The control plane never receives the Docker socket or a host shell. It submits a
+small, fixed JSON request to the constrained `slab-stack` host bridge; the
+root-owned worker validates the request, signed release manifest, exact target,
+installed state, and rollback path before invoking the stack updater. Upgrade
+`slab-stack` on the host to install that bridge. If the System page says the
+bridge is unavailable, update management remains read-only and no request is
+executed.
+
 ## Agent tool policy
 
 Each agent can carry a versioned policy for every assigned MCP server. Policies
@@ -210,7 +233,10 @@ Knex migrations run automatically before dev, build, and start.
 
 ## Database lifecycle
 
-The workspace DB contains orchestration state only: agents, threads, messages, runs, run events, approvals, automations, settings, and Knex migration metadata. It does not mirror Slab issues or Slab Docs documents.
+The workspace DB contains orchestration state only: agents, threads, messages,
+runs, run events, approvals, automations, settings, system-update policy and
+request history, and Knex migration metadata. It does not mirror Slab issues or
+Slab Docs documents.
 
 ## Concurrency semantics
 

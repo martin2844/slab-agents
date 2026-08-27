@@ -395,6 +395,7 @@ export async function requestSystemUpdate(
     const latestApply = systemUpdateRepository.getLatestApply(input.channel);
     if (
       !inventory?.result ||
+      inventory.source !== "manual" ||
       inventory.result.status !== "update_available" ||
       inventory.result.availableStackVersion !== target ||
       latestApply?.parentRequestId === inventory.id
