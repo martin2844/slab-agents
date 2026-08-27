@@ -103,6 +103,16 @@ function mapSnapshot(row: Row): RunToolPolicySnapshot {
 }
 
 export const agentToolPolicyRepository = {
+  listAll() {
+    return (
+      db
+        .prepare(
+          "SELECT * FROM agent_tool_policies ORDER BY agent_id, server_name",
+        )
+        .all() as Row[]
+    ).map(mapPolicy);
+  },
+
   listForAgent(agentId: string) {
     return (
       db

@@ -2,17 +2,21 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile(
+const detailSource = await readFile(
   new URL("../components/agent-detail.tsx", import.meta.url),
   "utf8",
 );
+const editorSource = await readFile(
+  new URL("../components/agent-tool-policy-editor.tsx", import.meta.url),
+  "utf8",
+);
 
-test("full access control is discoverable in the agent capabilities tab", () => {
-  const capabilitiesTab = source.indexOf(
+test("granular tool permissions are discoverable in the capabilities tab", () => {
+  const capabilitiesTab = detailSource.indexOf(
     '<TabsTrigger value="capabilities">Capabilities</TabsTrigger>',
   );
-  const accessControl = source.indexOf("Full access to Work & Docs");
-  const runsTab = source.indexOf(
+  const accessControl = detailSource.indexOf("AgentToolPolicyEditor");
+  const runsTab = detailSource.indexOf(
     '<TabsTrigger value="runs">Runs</TabsTrigger>',
   );
 
@@ -24,11 +28,19 @@ test("full access control is discoverable in the agent capabilities tab", () => 
   assert.notEqual(
     accessControl,
     -1,
-    "full access control should have a visible label",
+    "the capabilities tab should render the policy editor",
   );
   assert.ok(
     capabilitiesTab < runsTab,
     "capabilities should remain a primary tab before run history",
   );
-  assert.match(source, /Enable full access/);
+  assert.match(editorSource, /Tool permissions/);
+  assert.match(editorSource, /No access/);
+  assert.match(editorSource, /Ask/);
+  assert.match(editorSource, /Allow/);
+  assert.match(editorSource, /expectedVersion/);
+  assert.match(editorSource, /\/tool-policies/);
+  assert.match(editorSource, /type="radio"/);
+  assert.doesNotMatch(editorSource, /role="radio"/);
+  assert.doesNotMatch(detailSource, /Full access to Work & Docs/);
 });

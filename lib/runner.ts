@@ -1,6 +1,7 @@
 import { agentRepository } from "@/lib/repositories/agent-repository";
 import { emailAccessRepository } from "@/lib/repositories/email-access-repository";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
+import { agentToolPolicyRepository } from "@/lib/repositories/agent-tool-policy-repository";
 import "server-only";
 
 import { randomUUID } from "node:crypto";
@@ -46,9 +47,15 @@ import {
 import { createWorkCoordinationContext } from "@/lib/agent-directory";
 import type { MemoryRecall } from "@/lib/memory/service";
 import {
+  filterExposedToolsByPolicy,
   snapshotAgentToolPolicies,
   type PolicyAwareMcpServer,
 } from "@/lib/agent-tool-policy";
+import {
+  buildAgentToolCatalog,
+  coreToolDefinitions,
+  integrationServerName,
+} from "@/lib/agent-tool-catalog";
 
 export type { RunnerEvent } from "@/lib/runner-transport";
 
@@ -206,6 +213,10 @@ export async function startRunnerRun(
       : input.messages;
   const workApiKey = getSetting("work_api_key");
   const docsApiKey = getSetting("docs_api_key");
+  const configuredIntegrations = integrationRepository.listIntegrations();
+  const configuredEmailAccess = emailAccessRepository.getAgentEmailAccess(
+    input.agent.id,
+  );
   const posthogMcp = getAgentPostHogMcp(input.agent.id);
   const emailMcp = getAgentEmailMcp(input.agent.id);
   const customIntegrations = getAgentCustomIntegrationsMcp(
@@ -218,37 +229,36 @@ export async function startRunnerRun(
     input.controlPlaneRunId ?? input.runId,
   );
   const calendarMcpServers = calendarIntegrations.map(({ server }) => server);
-  const workCoordination = createWorkCoordinationContext({
-    agents: agentRepository.listAgents(),
-    integrations: integrationRepository.listIntegrations(),
-    emailAccess: emailAccessRepository.listAgentEmailAccess(),
-    emailConnected:
-      emailAccessRepository.getEmailIntegrationRecord()?.status ===
-      "connected",
-  });
-  const workInstructions = workCoordination.instructions;
-  const integrationInstructions = [
-    ...(posthogMcp ? [POSTHOG_AGENT_PROMPT] : []),
-    ...(emailMcp ? [EMAIL_AGENT_PROMPT] : []),
-    ...(calendarIntegrations.length ? [CALENDAR_AGENT_PROMPT] : []),
-  ].join("\n\n");
-  const instructionParts = [
-    input.agent.instructions,
-    workInstructions,
-    input.execution.policy,
-    ...(input.memory?.context ? [input.memory.context] : []),
-    ...(integrationInstructions ? [integrationInstructions] : []),
-  ];
-  const combinedInstructions = instructionParts.join("\n\n");
-  const shouldRehydrateConversation =
-    input.execution.mode === "chat" &&
-    (!input.thread.runtimeThreadId || input.agent.runtime === "direct_api");
-  const context = shouldRehydrateConversation
-    ? contextMessages
-        .filter(({ role }) => role === "user" || role === "assistant")
-        .slice(-12)
-        .map(({ role, body }) => ({ role, body }))
-    : [];
+  const exposedToolsByServer = new Map(
+    buildAgentToolCatalog({
+      agent: input.agent,
+      integrations: configuredIntegrations,
+      emailAccess: configuredEmailAccess,
+    }).map((server) => {
+      if (!server.integrationId) {
+        return [
+          server.serverName,
+          server.tools.map(({ name }) => name),
+        ] as const;
+      }
+      const integration = configuredIntegrations.find(
+        ({ id }) => id === server.integrationId,
+      );
+      const assigned = new Set(integration?.permissions[input.agent.id] ?? []);
+      return [
+        server.serverName,
+        server.tools
+          .map(({ name }) => name)
+          .filter((tool) => assigned.has(tool)),
+      ] as const;
+    }),
+  );
+  for (const { server, snapshot } of [
+    ...calendarIntegrations,
+    ...customIntegrations,
+  ]) {
+    exposedToolsByServer.set(server.name, snapshot.tools);
+  }
   const liveMcpServers: PolicyAwareMcpServer[] = [
     {
       name: "work" as const,
@@ -272,6 +282,75 @@ export async function startRunnerRun(
       agent: input.agent,
       servers: liveMcpServers,
     });
+  const effectiveToolsByServer = new Map(
+    mcpServers.map(({ name }) => [
+      name,
+      filterExposedToolsByPolicy(
+        toolPolicySnapshot.policies[name],
+        exposedToolsByServer.get(name) ?? [],
+      ),
+    ]),
+  );
+  const availableServerNames = new Set(
+    mcpServers
+      .filter(({ name }) => (effectiveToolsByServer.get(name)?.length ?? 0) > 0)
+      .map(({ name }) => name),
+  );
+  const currentPolicies = agentToolPolicyRepository.listAll();
+  const directoryPolicies = [
+    ...currentPolicies.filter(({ agentId }) => agentId !== input.agent.id),
+    ...Object.entries(toolPolicySnapshot.policies).map(
+      ([serverName, policy]) => ({
+        agentId: input.agent.id,
+        serverName,
+        ...policy,
+      }),
+    ),
+  ];
+  const workCoordination = createWorkCoordinationContext({
+    agents: agentRepository.listAgents(),
+    integrations: configuredIntegrations.map((integration) => ({
+      ...integration,
+      serverName: integrationServerName(integration),
+    })),
+    emailAccess: emailAccessRepository.listAgentEmailAccess(),
+    toolPolicies: directoryPolicies,
+    coreTools: coreToolDefinitions(),
+    currentAgentId: input.agent.id,
+    currentRunToolsByServer: Object.fromEntries(effectiveToolsByServer),
+    currentRunWorkTools: effectiveToolsByServer.get("work") ?? [],
+    emailConnected:
+      emailAccessRepository.getEmailIntegrationRecord()?.status === "connected",
+  });
+  const workInstructions = workCoordination.instructions;
+  const integrationInstructions = [
+    ...(posthogMcp && availableServerNames.has(posthogMcp.name)
+      ? [POSTHOG_AGENT_PROMPT]
+      : []),
+    ...(emailMcp && availableServerNames.has(emailMcp.name)
+      ? [EMAIL_AGENT_PROMPT]
+      : []),
+    ...(calendarMcpServers.some(({ name }) => availableServerNames.has(name))
+      ? [CALENDAR_AGENT_PROMPT]
+      : []),
+  ].join("\n\n");
+  const instructionParts = [
+    input.agent.instructions,
+    workInstructions,
+    input.execution.policy,
+    ...(input.memory?.context ? [input.memory.context] : []),
+    ...(integrationInstructions ? [integrationInstructions] : []),
+  ];
+  const combinedInstructions = instructionParts.join("\n\n");
+  const shouldRehydrateConversation =
+    input.execution.mode === "chat" &&
+    (!input.thread.runtimeThreadId || input.agent.runtime === "direct_api");
+  const context = shouldRehydrateConversation
+    ? contextMessages
+        .filter(({ role }) => role === "user" || role === "assistant")
+        .slice(-12)
+        .map(({ role, body }) => ({ role, body }))
+    : [];
   const components: ContextComponent[] = [
     {
       key: "agent_instructions",

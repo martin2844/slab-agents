@@ -1,11 +1,7 @@
 import "server-only";
 
 import { agentToolPolicyRepository } from "@/lib/repositories/agent-tool-policy-repository";
-import type {
-  Agent,
-  RunToolPolicySnapshot,
-  ToolPolicyMode,
-} from "@/lib/types";
+import type { Agent, RunToolPolicySnapshot, ToolPolicyMode } from "@/lib/types";
 
 export type McpToolPolicy = {
   defaultMode: ToolPolicyMode;
@@ -56,6 +52,21 @@ function modeFor(policy: McpToolPolicy, tool: string) {
     : policy.defaultMode;
 }
 
+export function policyExposesAnyTool(
+  policy: McpToolPolicy | undefined,
+  exposedTools: readonly string[],
+) {
+  return filterExposedToolsByPolicy(policy, exposedTools).length > 0;
+}
+
+export function filterExposedToolsByPolicy(
+  policy: McpToolPolicy | undefined,
+  exposedTools: readonly string[],
+) {
+  if (!policy) return [];
+  return exposedTools.filter((tool) => modeFor(policy, tool) !== "deny");
+}
+
 function combinePolicies(
   agentPolicy: McpToolPolicy,
   connectorPolicy: McpToolPolicy,
@@ -65,10 +76,7 @@ function combinePolicies(
     ...Object.keys(connectorPolicy.tools),
   ]);
   return {
-    defaultMode: stricter(
-      agentPolicy.defaultMode,
-      connectorPolicy.defaultMode,
-    ),
+    defaultMode: stricter(agentPolicy.defaultMode, connectorPolicy.defaultMode),
     tools: Object.fromEntries(
       [...tools].map((tool) => [
         tool,
@@ -78,7 +86,10 @@ function combinePolicies(
   };
 }
 
-function legacyPolicy(agent: Agent, server: PolicyAwareMcpServer): McpToolPolicy {
+function legacyPolicy(
+  agent: Agent,
+  server: PolicyAwareMcpServer,
+): McpToolPolicy {
   if (server.approval) return server.approval;
   if (agent.fullAccess) return { defaultMode: "approve", tools: {} };
   return {

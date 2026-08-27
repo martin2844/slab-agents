@@ -103,7 +103,8 @@ test("Calendar is managed in Settings and assignable from Agent capabilities", a
   assert.doesNotMatch(editor, /Promise\.all\([\s\S]*\/api\/agents\//);
   assert.match(
     pageData,
-    /integrations: integrationRepository\.listIntegrations\(\)/,
+    /const integrations = integrationRepository\.listIntegrations\(\)/,
   );
+  assert.match(pageData, /toolCatalog: buildAgentToolCatalog/);
   assert.match(agentDetail, /integration\.provider\.startsWith\("calendar_"\)/);
 });

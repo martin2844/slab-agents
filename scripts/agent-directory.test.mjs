@@ -116,3 +116,187 @@ test("email capabilities disappear when the connector is unavailable", () => {
   assert.equal(context.directory.entries[0].email, null);
   assert.doesNotMatch(context.directoryInstructions, /Email/);
 });
+
+test("the directory reports granular Work and Docs policies truthfully", () => {
+  const context = createWorkCoordinationContext({
+    agents: [agent({ fullAccess: false })],
+    toolPolicies: [
+      {
+        agentId: "agent-clara",
+        serverName: "work",
+        defaultMode: "deny",
+        tools: { assign_issue: "approve" },
+      },
+      {
+        agentId: "someone-else",
+        serverName: "docs",
+        defaultMode: "deny",
+        tools: {},
+      },
+    ],
+  });
+
+  assert.equal(context.directory.entries[0].workDocsWrites, "custom_per_tool");
+  assert.match(context.directoryInstructions, /writes custom per tool/);
+});
+
+test("deny-all policies remove unavailable connector capabilities", () => {
+  const context = createWorkCoordinationContext({
+    agents: [agent()],
+    integrations: [
+      {
+        name: "Operations calendar",
+        serverName: "calendar_operations",
+        enabled: true,
+        status: "connected",
+        permissions: {
+          "agent-clara": ["calendar_list_events", "calendar_create_event"],
+        },
+      },
+    ],
+    emailAccess: [
+      {
+        agentId: "agent-clara",
+        readEnabled: true,
+        draftEnabled: true,
+        sendEnabled: true,
+        sendPolicy: "autonomous",
+      },
+    ],
+    toolPolicies: [
+      {
+        agentId: "agent-clara",
+        serverName: "email",
+        defaultMode: "deny",
+        tools: {},
+      },
+      {
+        agentId: "agent-clara",
+        serverName: "calendar_operations",
+        defaultMode: "deny",
+        tools: {},
+      },
+    ],
+  });
+
+  assert.doesNotMatch(
+    context.directoryInstructions,
+    /Email|Operations calendar/,
+  );
+});
+
+test("an Email Ask override is not advertised as autonomous sending", () => {
+  const context = createWorkCoordinationContext({
+    agents: [agent()],
+    emailAccess: [
+      {
+        agentId: "agent-clara",
+        readEnabled: false,
+        draftEnabled: false,
+        sendEnabled: true,
+        sendPolicy: "autonomous",
+      },
+    ],
+    toolPolicies: [
+      {
+        agentId: "agent-clara",
+        serverName: "email",
+        defaultMode: "deny",
+        tools: { email_send: "prompt" },
+      },
+    ],
+  });
+
+  assert.match(
+    context.directoryInstructions,
+    /Email \(send; approval required\)/,
+  );
+  assert.doesNotMatch(context.directoryInstructions, /send; autonomous/);
+});
+
+test("deny-all Work and Docs policies suppress coordination claims", () => {
+  const context = createWorkCoordinationContext({
+    agents: [agent()],
+    coreTools: {
+      work: [
+        { name: "get_issue", readOnly: true },
+        { name: "assign_issue", readOnly: false },
+      ],
+      docs: [
+        { name: "get_doc", readOnly: true },
+        { name: "update_doc", readOnly: false },
+      ],
+    },
+    currentRunWorkTools: [],
+    toolPolicies: [
+      {
+        agentId: "agent-clara",
+        serverName: "work",
+        defaultMode: "deny",
+        tools: {},
+      },
+      {
+        agentId: "agent-clara",
+        serverName: "docs",
+        defaultMode: "deny",
+        tools: {},
+      },
+    ],
+  });
+
+  assert.match(context.directoryInstructions, /No granted tools/);
+  assert.doesNotMatch(context.directoryInstructions, /Work \+ Docs/);
+  assert.match(context.coordinationInstructions, /unavailable in this run/);
+  assert.doesNotMatch(
+    context.coordinationInstructions,
+    /Assigning a Work item.*starts/i,
+  );
+});
+
+test("legacy guarded writes remain approval-required with the core catalog", () => {
+  const context = createWorkCoordinationContext({
+    agents: [agent({ fullAccess: false })],
+    coreTools: {
+      work: [{ name: "assign_issue", readOnly: false }],
+      docs: [{ name: "update_doc", readOnly: false }],
+    },
+  });
+
+  assert.equal(
+    context.directory.entries[0].workDocsWrites,
+    "approval_required",
+  );
+});
+
+test("run-scoped tools hide connectors added after the snapshot", () => {
+  const context = createWorkCoordinationContext({
+    agents: [agent()],
+    currentAgentId: "agent-clara",
+    currentRunToolsByServer: {
+      work: ["get_issue"],
+      docs: ["get_doc"],
+    },
+    integrations: [
+      {
+        name: "New calendar",
+        serverName: "calendar_new",
+        enabled: true,
+        status: "connected",
+        permissions: { "agent-clara": ["calendar_list_events"] },
+      },
+    ],
+    emailAccess: [
+      {
+        agentId: "agent-clara",
+        readEnabled: true,
+        draftEnabled: true,
+        sendEnabled: true,
+        sendPolicy: "autonomous",
+      },
+    ],
+  });
+
+  assert.deepEqual(context.directory.entries[0].integrations, []);
+  assert.equal(context.directory.entries[0].email, null);
+  assert.doesNotMatch(context.directoryInstructions, /New calendar|Email/);
+});

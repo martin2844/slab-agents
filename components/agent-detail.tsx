@@ -8,7 +8,6 @@ import {
   ListTodo,
   MessageSquare,
   Play,
-  ShieldCheck,
   Sparkles,
   Puzzle,
 } from "lucide-react";
@@ -16,6 +15,7 @@ import { toast } from "sonner";
 import { AgentChatDialog } from "@/components/agent-chat-dialog";
 import { AgentRunDialog } from "@/components/agent-run-dialog";
 import { AgentQuickActionsEditor } from "@/components/agent-quick-actions-editor";
+import { AgentToolPolicyEditor } from "@/components/agent-tool-policy-editor";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,14 +32,15 @@ import { api } from "@/lib/client-api";
 import type { AgentDetailData, Integration } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
 export function AgentDetail({ data }: { data: AgentDetailData }) {
-  const [fullAccess, setFullAccess] = useState(data.agent.fullAccess),
-    [savingAccess, setSavingAccess] = useState(false),
-    [quickActions, setQuickActions] = useState(data.quickActions),
+  const [quickActions, setQuickActions] = useState(data.quickActions),
     [integrations, setIntegrations] = useState(data.integrations),
     [savingIntegration, setSavingIntegration] = useState<string | null>(null);
   const [runtime, setRuntime] = useState(data.agent.runtime);
   const [model, setModel] = useState(data.agent.model);
   const [savingRuntime, setSavingRuntime] = useState(false);
+  const [hasCustomPolicy, setHasCustomPolicy] = useState(
+    data.toolPolicies.length > 0,
+  );
 
   async function saveRuntime() {
     setSavingRuntime(true);
@@ -93,30 +94,6 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
     }
   }
 
-  async function changeFullAccess(next: boolean) {
-    if (savingAccess) return;
-    const previous = fullAccess;
-    setFullAccess(next);
-    setSavingAccess(true);
-    try {
-      await api(`/api/agents/${data.agent.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ fullAccess: next }),
-      });
-      toast.success(
-        next
-          ? "Full Work and Docs access enabled"
-          : "Approval guardrails restored",
-      );
-    } catch (error) {
-      setFullAccess(previous);
-      toast.error(
-        error instanceof Error ? error.message : "Could not update tool access",
-      );
-    } finally {
-      setSavingAccess(false);
-    }
-  }
   const { agent } = data;
   const activeRun = data.runs.find((run) =>
     ["running", "waiting_approval", "queued"].includes(run.status),
@@ -161,7 +138,14 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
               },
               { label: "Queue", value: queued ? `${queued} queued` : "Clear" },
               { label: "Runtime", value: runtime },
-              { label: "Tool access", value: fullAccess ? "Full" : "Guarded" },
+              {
+                label: "Tool access",
+                value: hasCustomPolicy
+                  ? "Custom policy"
+                  : agent.fullAccess
+                    ? "Legacy full"
+                    : "Guarded",
+              },
             ].map((item) => (
               <div
                 key={item.label}
@@ -329,45 +313,13 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
         </TabsContent>
 
         <TabsContent value="capabilities" className="space-y-5">
-          <section className="rounded-lg border bg-card p-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex gap-3">
-                <ShieldCheck className="mt-0.5 size-4 shrink-0" />
-                <div>
-                  <p
-                    id="agent-full-access-label"
-                    className="text-sm font-semibold"
-                  >
-                    Full access to Work & Docs
-                  </p>
-                  <p
-                    id="agent-full-access-description"
-                    className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground"
-                  >
-                    {fullAccess
-                      ? "Enabled. This agent can read and change Work and Docs without approval. Runtime commands remain guarded."
-                      : "Disabled. Reads run automatically, but changes to Work or Docs require approval."}
-                  </p>
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
-                <span className="font-mono text-xs font-medium uppercase tracking-[0.02em] text-muted-foreground">
-                  {savingAccess
-                    ? "Saving…"
-                    : fullAccess
-                      ? "Enabled"
-                      : "Enable full access"}
-                </span>
-                <Switch
-                  checked={fullAccess}
-                  onCheckedChange={changeFullAccess}
-                  disabled={savingAccess}
-                  aria-describedby="agent-full-access-description"
-                  aria-labelledby="agent-full-access-label"
-                />
-              </div>
-            </div>
-          </section>
+          <AgentToolPolicyEditor
+            agent={agent}
+            initialPolicies={data.toolPolicies}
+            catalog={data.toolCatalog}
+            integrations={integrations}
+            onPolicySaved={() => setHasCustomPolicy(true)}
+          />
           <section className="rounded-lg border bg-card p-4">
             <div>
               <h2 className="text-sm font-semibold">Integrations</h2>

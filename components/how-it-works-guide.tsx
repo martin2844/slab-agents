@@ -631,11 +631,11 @@ export function HowItWorksGuide() {
                   Anthropic API key. Enabled agents can receive new work.
                   Disabled agents keep their history but do not start new runs.
                 </Step>
-                <Step number="03" title="Set Work and Docs access">
-                  Guarded access auto-runs reads and asks before protected
-                  writes. Full access lets the agent create and modify Work and
-                  Docs without repeated MCP approvals. Local shell approvals
-                  remain separate.
+                <Step number="03" title="Set tool permissions">
+                  In the agent&apos;s Capabilities tab, set each Work, Docs,
+                  Email, and assigned integration action to No access, Ask, or
+                  Allow. Connector-level safety ceilings still apply, and each
+                  new run freezes its permission snapshot.
                 </Step>
                 <Step number="04" title="Assign capabilities">
                   Open the agent&apos;s{" "}
@@ -1704,9 +1704,9 @@ chat message B
                 symptom="Run status is waiting_approval"
               >
                 Open the waiting item or Run detail and approve or deny the
-                exact action. Work/Docs full access does not automatically
-                approve shell commands. Email send policy is enforced separately
-                from Work/Docs access.
+                exact action. Allowing an MCP tool does not approve local shell
+                commands, and connector-level Email or Calendar safety ceilings
+                can still require approval.
               </TroubleshootingItem>
               <TroubleshootingItem
                 title="A Work-triggered run was skipped"

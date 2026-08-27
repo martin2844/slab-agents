@@ -5,6 +5,10 @@ import { conversationRepository } from "@/lib/repositories/conversation-reposito
 import { z } from "zod";
 import { apiError, notFound } from "@/lib/api";
 import { assertRuntimeSelectable } from "@/lib/runtime-config";
+import { integrationRepository } from "@/lib/repositories/integration-repository";
+import { agentToolPolicyRepository } from "@/lib/repositories/agent-tool-policy-repository";
+import { emailAccessRepository } from "@/lib/repositories/email-access-repository";
+import { buildAgentToolCatalog } from "@/lib/agent-tool-catalog";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -23,9 +27,17 @@ export async function GET(
   const { id } = await ctx.params;
   const agent = agentRepository.getAgent(id);
   if (!agent) return apiError(notFound("Agent not found"));
+  const integrations = integrationRepository.listIntegrations();
   return Response.json({
     data: {
       agent,
+      integrations,
+      toolPolicies: agentToolPolicyRepository.listForAgent(agent.id),
+      toolCatalog: buildAgentToolCatalog({
+        agent,
+        integrations,
+        emailAccess: emailAccessRepository.getAgentEmailAccess(agent.id),
+      }),
       quickActions: agentRepository.listAgentQuickActions(agent.id),
       threads: conversationRepository.listThreads(agent.id),
       automations: automationRepository

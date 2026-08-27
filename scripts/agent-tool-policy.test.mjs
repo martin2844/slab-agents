@@ -29,9 +29,10 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
     { runRepository },
     { conversationRepository },
     { agentToolPolicyRepository },
-    { snapshotAgentToolPolicies, filterToolsByRunPolicy },
+    { snapshotAgentToolPolicies, filterToolsByRunPolicy, policyExposesAnyTool },
     { settingsRepository },
     { startRunnerRun },
+    { buildAgentToolCatalog },
     { db },
     toolPolicyRoute,
   ] = await Promise.all([
@@ -42,6 +43,7 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
     import("../lib/agent-tool-policy.ts"),
     import("../lib/repositories/settings-repository.ts"),
     import("../lib/runner.ts"),
+    import("../lib/agent-tool-catalog.ts"),
     import("../lib/db/database.ts"),
     import("../app/api/agents/[id]/tool-policies/route.ts"),
   ]);
@@ -56,6 +58,32 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
     enabled: true,
     fullAccess: false,
   });
+  assert.equal(
+    policyExposesAnyTool({ defaultMode: "deny", tools: {} }, [
+      "calendar_list_events",
+    ]),
+    false,
+  );
+  assert.equal(
+    policyExposesAnyTool(
+      {
+        defaultMode: "deny",
+        tools: { calendar_list_events: "approve" },
+      },
+      ["calendar_list_events"],
+    ),
+    true,
+  );
+  assert.equal(
+    policyExposesAnyTool(
+      {
+        defaultMode: "deny",
+        tools: { calendar_create_event: "approve" },
+      },
+      ["calendar_list_events"],
+    ),
+    false,
+  );
   const full = agentRepository.createAgent({
     name: "Founder",
     slug: "founder-policy",
@@ -66,6 +94,82 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
     enabled: true,
     fullAccess: true,
   });
+
+  const emailAccess = {
+    agentId: guarded.id,
+    profileId: "profile-test",
+    profileName: "Test email",
+    accountIds: ["account-test"],
+    readEnabled: true,
+    draftEnabled: true,
+    sendEnabled: true,
+    sendPolicy: "approval_required",
+    tokenId: "token-test",
+    tokenPrefix: "slab_test",
+    tokenCreatedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  const guardedCatalog = buildAgentToolCatalog({
+    agent: guarded,
+    integrations: [],
+    emailAccess,
+  });
+  const catalogTool = (serverName, toolName) =>
+    guardedCatalog
+      .find(({ serverName: name }) => name === serverName)
+      ?.tools.find(({ name }) => name === toolName);
+  assert.equal(catalogTool("work", "get_issue")?.legacyMode, "approve");
+  assert.equal(catalogTool("work", "assign_issue")?.legacyMode, "prompt");
+  assert.equal(catalogTool("email", "email_search")?.legacyMode, "approve");
+  assert.deepEqual(
+    {
+      mode: catalogTool("email", "email_send")?.legacyMode,
+      maximum: catalogTool("email", "email_send")?.maximumMode,
+    },
+    { mode: "prompt", maximum: "prompt" },
+  );
+  const sendOnlyEmail = buildAgentToolCatalog({
+    agent: guarded,
+    integrations: [],
+    emailAccess: { ...emailAccess, readEnabled: false },
+  }).find(({ serverName }) => serverName === "email");
+  assert.ok(sendOnlyEmail?.tools.some(({ name }) => name === "email_send"));
+  assert.ok(!sendOnlyEmail?.tools.some(({ name }) => name === "email_reply"));
+  const calendarCatalog = buildAgentToolCatalog({
+    agent: guarded,
+    emailAccess: null,
+    integrations: [
+      {
+        id: "calendar-test",
+        provider: "calendar_google",
+        name: "Operations calendar",
+        slug: "operations-calendar",
+        status: "connected",
+        writePolicy: "disabled",
+        tools: [
+          {
+            key: "calendar_list_events",
+            name: "List events",
+            description: "Read events.",
+            readOnly: true,
+          },
+          {
+            key: "calendar_create_event",
+            name: "Create event",
+            description: "Create an event.",
+            readOnly: false,
+          },
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(
+    calendarCatalog
+      .find(({ serverName }) => serverName === "calendar_operations-calendar")
+      ?.tools.map(({ name }) => name),
+    ["calendar_list_events"],
+  );
 
   const work = agentToolPolicyRepository.save({
     agentId: guarded.id,
@@ -293,7 +397,10 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
     {
       fetcher: async (url, init = {}) => {
         if (String(url).endsWith("/attach")) {
-          return Response.json({ error: { message: "not found" } }, { status: 404 });
+          return Response.json(
+            { error: { message: "not found" } },
+            { status: 404 },
+          );
         }
         if (String(url).endsWith("/runs")) {
           runnerBody = JSON.parse(String(init.body));
@@ -311,9 +418,48 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
       tools: { get_issue: "approve", assign_issue: "deny" },
     },
   );
-  assert.equal(
-    runner.capabilitySnapshot.toolPolicies.snapshotId,
-    runnerRun.id,
+  assert.equal(runner.capabilitySnapshot.toolPolicies.snapshotId, runnerRun.id);
+
+  let retryBody;
+  const retry = await startRunnerRun(
+    {
+      runId: runA.id,
+      controlPlaneRunId: runA.id,
+      agent: guarded,
+      thread,
+      messages: [],
+      prompt: "Retry the frozen assignment policy.",
+      execution: {
+        trigger: "manual",
+        mode: "task",
+        issueKey: null,
+        policy: "Use the frozen tools only.",
+      },
+    },
+    {
+      fetcher: async (url, init = {}) => {
+        if (String(url).endsWith("/attach")) {
+          return Response.json(
+            { error: { message: "not found" } },
+            { status: 404 },
+          );
+        }
+        if (String(url).endsWith("/runs")) {
+          retryBody = JSON.parse(String(init.body));
+          return Response.json({ runId: runA.id, status: "running" });
+        }
+        throw new Error(`Unexpected Runner request: ${url}`);
+      },
+    },
+  );
+  await retry.contextProfile;
+  assert.match(
+    retryBody.agent.instructions,
+    /Work tools available in this run:.*assign_issue/,
+  );
+  assert.doesNotMatch(
+    retryBody.agent.instructions,
+    /This run cannot assign Work items/,
   );
 
   agentToolPolicyRepository.save({

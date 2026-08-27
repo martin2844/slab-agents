@@ -31,6 +31,23 @@ export type AgentToolPolicy = {
   updatedAt: string;
 };
 
+export type AgentToolCatalogTool = {
+  name: string;
+  label: string;
+  description: string;
+  readOnly: boolean;
+  legacyMode: ToolPolicyMode;
+  maximumMode: "approve" | "prompt";
+};
+
+export type AgentToolCatalogServer = {
+  serverName: string;
+  label: string;
+  description: string;
+  integrationId: string | null;
+  tools: AgentToolCatalogTool[];
+};
+
 export type RunToolPolicySnapshot = {
   runId: string;
   agentId: string;
@@ -277,6 +294,8 @@ export type SetupStatus = {
 export type AgentDetailData = {
   agent: Agent;
   integrations: Integration[];
+  toolPolicies: AgentToolPolicy[];
+  toolCatalog: AgentToolCatalogServer[];
   quickActions: AgentQuickAction[];
   threads: Thread[];
   automations: Automation[];

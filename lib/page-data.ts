@@ -4,6 +4,8 @@ import { agentRepository } from "@/lib/repositories/agent-repository";
 import { automationRepository } from "@/lib/repositories/automation-repository";
 import { conversationRepository } from "@/lib/repositories/conversation-repository";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
+import { agentToolPolicyRepository } from "@/lib/repositories/agent-tool-policy-repository";
+import { emailAccessRepository } from "@/lib/repositories/email-access-repository";
 import { runRepository } from "@/lib/repositories/run-repository";
 
 import { DocsClient } from "@/lib/mcp/docs-client";
@@ -31,6 +33,7 @@ import {
   operatorPackMetrics,
 } from "@/lib/packs/service";
 import { mapWithConcurrency } from "@/lib/async";
+import { buildAgentToolCatalog } from "@/lib/agent-tool-catalog";
 
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Request failed";
@@ -148,9 +151,16 @@ export function getAgentDetailPageData(
 ): Omit<AgentDetailData, "runtimes"> | null {
   const agent = agentRepository.getAgent(id);
   if (!agent) return null;
+  const integrations = integrationRepository.listIntegrations();
   return {
     agent,
-    integrations: integrationRepository.listIntegrations(),
+    integrations,
+    toolPolicies: agentToolPolicyRepository.listForAgent(agent.id),
+    toolCatalog: buildAgentToolCatalog({
+      agent,
+      integrations,
+      emailAccess: emailAccessRepository.getAgentEmailAccess(agent.id),
+    }),
     quickActions: agentRepository.listAgentQuickActions(agent.id),
     threads: conversationRepository.listThreads(agent.id),
     automations: automationRepository
