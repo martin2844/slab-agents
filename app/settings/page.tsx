@@ -30,7 +30,9 @@ export default async function SettingsPage({
         ? "calendar"
         : query.tab === "memory"
           ? "memory"
-        : "sources";
+          : query.tab === "security"
+            ? "security"
+            : "connections";
   const initialEmailOpen =
     query.email === "connected" || query.email === "oauth_failed";
   return (

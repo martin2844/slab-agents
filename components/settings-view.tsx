@@ -70,7 +70,13 @@ export function SettingsView({
   initialCalendars: Integration[];
   auth: { required: boolean; configured: boolean };
   agents: Agent[];
-  initialTab: "sources" | "runtime" | "email" | "calendar" | "memory";
+  initialTab:
+    | "connections"
+    | "runtime"
+    | "email"
+    | "calendar"
+    | "memory"
+    | "security";
   initialEmailOpen: boolean;
   initialCalendarOpen: boolean;
   initialCalendarResult: "connected" | "failed" | null;
@@ -251,7 +257,7 @@ export function SettingsView({
       />
       <Tabs defaultValue={initialTab} className="space-y-5">
         <TabsList className="h-9 w-full justify-start overflow-x-auto rounded-lg border bg-card p-1 sm:w-auto">
-          <TabsTrigger value="sources">Sources</TabsTrigger>
+          <TabsTrigger value="connections">Connections</TabsTrigger>
           <TabsTrigger value="runtime">Runtime</TabsTrigger>
           <TabsTrigger value="email">Email</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
@@ -259,7 +265,7 @@ export function SettingsView({
           <TabsTrigger value="security">Security</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="sources" className="space-y-4">
+        <TabsContent value="connections" className="space-y-4">
           <section className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 sm:p-5">
             <label className="grid gap-1.5 text-xs font-semibold">
               Operator display name

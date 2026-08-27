@@ -524,7 +524,7 @@ export function HowItWorksGuide() {
                 <Step number="02" title="Connect Work">
                   Go to{" "}
                   <strong className="text-foreground">
-                    Settings → Sources
+                    Settings → Connections
                   </strong>
                   . Enter the Slab Work MCP URL and API key, save, then run the
                   connection test.

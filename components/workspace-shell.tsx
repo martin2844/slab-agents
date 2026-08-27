@@ -7,6 +7,7 @@ import {
   Activity,
   Bot,
   CalendarClock,
+  Database,
   FileText,
   BookOpenText,
   LayoutDashboard,
@@ -39,12 +40,18 @@ const nav = [
     ],
   },
   {
+    label: "Context",
+    items: [
+      { href: "/docs", label: "Docs", icon: FileText },
+      { href: "/sources", label: "Sources", icon: Database },
+    ],
+  },
+  {
     label: "Configure",
     items: [
       { href: "/packs", label: "Operator Packs", icon: PackageOpen },
       { href: "/automations", label: "Automations", icon: CalendarClock },
       { href: "/integrations", label: "Integrations", icon: Plug },
-      { href: "/docs", label: "Docs", icon: FileText },
       { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
@@ -173,10 +180,10 @@ export function WorkspaceShell({
       </a>
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground lg:flex lg:flex-col">
         <Brand />
-        <div className="mt-6">
+        <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
           <Navigation />
         </div>
-        <div className="mt-auto px-1 py-1">
+        <div className="shrink-0 px-1 py-1">
           <span className="mb-2 block h-px bg-sidebar-border" />
           <SystemState />
           <HowItWorksLink />
@@ -212,10 +219,10 @@ export function WorkspaceShell({
           >
             <SheetTitle className="sr-only">Navigation</SheetTitle>
             <Brand />
-            <div className="mt-8">
+            <div className="mt-8 min-h-0 flex-1 overflow-y-auto">
               <Navigation onNavigate={() => setMobileOpen(false)} />
             </div>
-            <div className="mt-auto px-3 pb-2">
+            <div className="shrink-0 px-3 pb-2">
               <span className="mb-3 block h-px bg-sidebar-border" />
               <HowItWorksLink onNavigate={() => setMobileOpen(false)} />
               {authEnabled ? (
