@@ -10,6 +10,7 @@ import type {
   MicrosoftOAuthSettings,
   ManagedProtonBridgeState,
   ManagedProtonChallenge,
+  InboundEmailEvent,
 } from "@/lib/types";
 
 type RequestOptions = {
@@ -223,6 +224,17 @@ export class EmailAdminClient {
   async listAccounts() {
     const accounts = await this.request<RemoteEmailAccount[]>("/api/accounts");
     return accounts.map(safeAccount);
+  }
+
+  listInboundEvents(input: { after: number; limit?: number }) {
+    const query = new URLSearchParams({
+      after: String(Math.max(0, input.after)),
+      limit: String(Math.max(1, Math.min(input.limit ?? 100, 100))),
+    });
+    return this.request<{
+      items: InboundEmailEvent[];
+      nextCursor: string | null;
+    }>(`/api/inbound/events?${query.toString()}`);
   }
 
   async getAccount(accountId: string) {

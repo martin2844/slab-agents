@@ -4,6 +4,7 @@ import { automationRepository } from "@/lib/repositories/automation-repository";
 
 import { startAutomationRun } from "@/lib/run-service";
 import { dueAutomation } from "@/lib/automation-schedule";
+import { tickEmailAutomations } from "@/lib/email-automation-dispatcher";
 
 const state = globalThis as unknown as {
   slabScheduler?: NodeJS.Timeout;
@@ -15,6 +16,9 @@ export async function tickScheduler() {
   if (state.slabSchedulerBusy) return;
   state.slabSchedulerBusy = true;
   try {
+    void tickEmailAutomations().catch((error) => {
+      console.error("[scheduler] Email automation tick:", error);
+    });
     const current = new Date();
     for (const occurrence of automationRepository.listPendingAutomationOccurrences()) {
       try {

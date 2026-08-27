@@ -12,19 +12,45 @@ export const cronExpressionSchema = z
     }
   });
 
-export const automationCreateSchema = z.object({
-  name: z.string().min(2),
-  agentId: z.string().uuid(),
-  cronExpression: cronExpressionSchema.nullable(),
-  prompt: z.string().min(2),
-  mode: z.enum(["review", "task"]).default("review"),
-  enabled: z.boolean().default(true),
-});
+export const automationCreateSchema = z
+  .object({
+    name: z.string().trim().min(2).max(120),
+    agentId: z.string().uuid(),
+    triggerType: z.enum(["schedule", "email"]).default("schedule"),
+    cronExpression: cronExpressionSchema.nullable(),
+    emailAccountId: z.string().min(1).max(200).nullable().default(null),
+    prompt: z.string().trim().min(2).max(20_000),
+    mode: z.enum(["review", "task"]).default("review"),
+    enabled: z.boolean().default(true),
+  })
+  .superRefine((input, ctx) => {
+    if (input.triggerType === "email" && !input.emailAccountId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["emailAccountId"],
+        message: "Choose the Email account that receives this message.",
+      });
+    }
+    if (input.triggerType === "email" && input.cronExpression) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["cronExpression"],
+        message: "Email automations cannot also use a cron schedule.",
+      });
+    }
+    if (input.triggerType === "schedule" && input.emailAccountId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["emailAccountId"],
+        message: "Scheduled automations cannot select an Email account.",
+      });
+    }
+  });
 
 export const automationUpdateSchema = z.object({
   enabled: z.boolean().optional(),
-  name: z.string().min(2).optional(),
+  name: z.string().trim().min(2).max(120).optional(),
   cronExpression: cronExpressionSchema.nullable().optional(),
-  prompt: z.string().min(2).optional(),
+  prompt: z.string().trim().min(2).max(20_000).optional(),
   mode: z.enum(["review", "task"]).optional(),
 });

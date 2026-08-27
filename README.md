@@ -114,6 +114,16 @@ Email send policy is enforced independently of the connector:
   `email_send` and `email_reply`;
 - `autonomous` uses the scoped profile without an additional send approval.
 
+Email automations consume the metadata-only inbound event feed from
+`slab-email`. The feed cursor and one dispatch intent per
+`(automation, inbound event)` are committed atomically before a run starts, so
+restarts neither lose the cursor nor create duplicate runs. An automation only
+matches events discovered after it was created. Its agent must have read access
+to the selected account and must not have `email_get_message` set to No access.
+The generated task identifies the account and message, instructs the agent to
+fetch the full message through its scoped Email tools, and treats message
+content as untrusted external input.
+
 ## Calendar integrations
 
 Calendar is another optional workspace capability managed directly by
@@ -196,7 +206,7 @@ The workspace DB contains orchestration state only: agents, threads, messages, r
 ## Concurrency semantics
 
 Work-triggered runs (`assignment`, `resumed`, `review_requested`, `blocked`,
-and `mention`) enter the existing per-agent FIFO queue. Immediately after a
+and `mention`) and inbound Email runs enter the existing per-agent FIFO queue. Immediately after a
 run reaches the queue head, the control plane re-reads its associated Work
 item before contacting Runner. Stateful triggers that are no longer true are
 persisted as `skipped`; they produce no runtime thread, model calls, agent tool
@@ -215,7 +225,7 @@ to the next run.
 Runs persist execution semantics separately from agent identity:
 
 - `trigger` records what initiated execution, such as chat, manual action,
-  automation, assignment, or mention;
+  automation, inbound Email, assignment, or mention;
 - `mode` records how the run should operate, such as chat, task, review,
   assignment, or another Work-item event;
 - `issue_key` is present only for deliberately Work-scoped runs;
@@ -225,6 +235,12 @@ Manual and scheduled automations share the same execution path and automation
 mode. Runs for one agent are serialized through the durable SQLite-backed FIFO;
 different agents may execute concurrently. Work event idempotency remains
 persisted in SQLite.
+
+Inbound Email automations use the same task/review modes, but require one
+durably captured Email event and cannot be started manually without message
+context. Pending Email occurrences are revalidated against the automation,
+agent, mailbox access, and granular Email tool policy immediately before the
+run is created.
 
 ```bash
 npm run migrate:latest
@@ -311,5 +327,5 @@ npm run build:check
 ## MVP limits
 
 - Automations run only while the Next.js process is alive.
-- No login, multi-tenancy, RBAC, durable jobs, missed-job recovery, or agent-to-agent chat.
+- No multi-tenancy, organization RBAC, or agent-to-agent chat.
 - Runner is restricted to `localhost`, `127.0.0.1`, or `::1`.

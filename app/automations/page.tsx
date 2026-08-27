@@ -3,6 +3,6 @@ import { AutomationsView } from "@/components/automations-view";
 import { getAutomationsPageData } from "@/lib/page-data";
 export const metadata: Metadata = { title: "Automations" };
 export const dynamic = "force-dynamic";
-export default function AutomationsPage() {
-  return <AutomationsView initialData={getAutomationsPageData()} />;
+export default async function AutomationsPage() {
+  return <AutomationsView initialData={await getAutomationsPageData()} />;
 }

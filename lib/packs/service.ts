@@ -759,7 +759,9 @@ function applyLocalPackResources(
       automation = automationRepository.createAutomation({
         name: template.name,
         agentId: agent.id,
+        triggerType: "schedule",
         cronExpression: template.cronExpression,
+        emailAccountId: null,
         prompt: template.prompt,
         mode: template.mode,
         enabled: template.enabled,

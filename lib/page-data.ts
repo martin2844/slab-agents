@@ -34,6 +34,8 @@ import {
 } from "@/lib/packs/service";
 import { mapWithConcurrency } from "@/lib/async";
 import { buildAgentToolCatalog } from "@/lib/agent-tool-catalog";
+import { getEmailIntegrationState } from "@/lib/integrations/email-service";
+import { emailAutomationBlockReason } from "@/lib/email-automation-policy";
 
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Request failed";
@@ -215,10 +217,26 @@ export function getRunDetailPageData(id: string): RunDetailData | null {
   };
 }
 
-export function getAutomationsPageData(): AutomationsData {
+export async function getAutomationsPageData(): Promise<AutomationsData> {
+  const email = await getEmailIntegrationState();
   return {
     automations: automationRepository.listAutomations(),
     agents: agentRepository.listAgents(),
+    emailAccounts: email.accounts.filter(
+      (account) => account.enabled && account.capabilities.read,
+    ),
+    emailAccess: email.assignments.map((access) => ({
+      agentId: access.agentId,
+      accountIds: access.accountIds.filter(
+        (accountId) =>
+          emailAutomationBlockReason(access.agentId, accountId) === null,
+      ),
+      readEnabled: access.readEnabled,
+    })),
+    emailConfigured:
+      email.configured && email.adminConfigured && email.status === "connected",
+    emailError:
+      automationRepository.getEmailFeedState()?.lastError ?? email.lastError,
   };
 }
 

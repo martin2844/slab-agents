@@ -132,7 +132,9 @@ export type Automation = {
   name: string;
   agentId: string;
   agentName?: string;
+  triggerType: "schedule" | "email";
   cronExpression: string | null;
+  emailAccountId: string | null;
   prompt: string;
   mode: AutomationMode;
   enabled: boolean;
@@ -322,6 +324,14 @@ export type RunDetailData = {
 export type AutomationsData = {
   automations: Automation[];
   agents: Agent[];
+  emailAccounts: EmailAccount[];
+  emailAccess: Array<{
+    agentId: string;
+    accountIds: string[];
+    readEnabled: boolean;
+  }>;
+  emailConfigured: boolean;
+  emailError: string | null;
 };
 
 export type WorkPageData = {
@@ -663,6 +673,34 @@ export type EmailIntegrationState = {
   protonBridge: ManagedProtonBridgeState;
   accounts: EmailAccount[];
   assignments: AgentEmailAccess[];
+};
+
+export type InboundEmailEvent = {
+  id: number;
+  accountId: string;
+  provider: EmailAccount["provider"];
+  messageId: string;
+  threadId: string | null;
+  from: { name?: string; address: string };
+  to: Array<{ name?: string; address: string }>;
+  omittedRecipientCount?: number;
+  subject: string;
+  receivedAt: string;
+  discoveredAt: string;
+};
+
+export type EmailAutomationOccurrence = {
+  automationId: string;
+  inboundEventId: number;
+  runId: string;
+  event: InboundEmailEvent;
+  status: "pending" | "dispatched" | "skipped";
+  skipReason: string | null;
+  attemptCount: number;
+  lastError: string | null;
+  nextAttemptAt: string | null;
+  createdAt: string;
+  dispatchedAt: string | null;
 };
 
 export type OperatorPackInstallationStatus =

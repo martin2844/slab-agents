@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   Clock3,
   LoaderCircle,
+  Mail,
   Play,
   Plus,
   Sparkles,
@@ -39,14 +40,26 @@ import {
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { api } from "@/lib/client-api";
-import type { Agent, Automation, AutomationsData, Run } from "@/lib/types";
+import type {
+  Agent,
+  Automation,
+  AutomationsData,
+  EmailAccount,
+  Run,
+} from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
 function CreateAutomation({
   agents,
+  emailAccounts,
+  emailAccess,
+  emailConfigured,
   onCreated,
   template,
 }: {
   agents: Agent[];
+  emailAccounts: EmailAccount[];
+  emailAccess: AutomationsData["emailAccess"];
+  emailConfigured: boolean;
   onCreated: (a: Automation) => void;
   template?: { name: string; cron: string; prompt: string };
 }) {
@@ -57,7 +70,41 @@ function CreateAutomation({
     [saving, setSaving] = useState(false),
     [enabled, setEnabled] = useState(true),
     [mode, setMode] = useState<Automation["mode"]>("review"),
+    [triggerType, setTriggerType] =
+      useState<Automation["triggerType"]>("schedule"),
+    [emailAccountId, setEmailAccountId] = useState(emailAccounts[0]?.id ?? ""),
     [scheduleType, setScheduleType] = useState<"cron" | "manual">("cron");
+  const eligibleEmailAgents = agents.filter((agent) =>
+    emailAccess.some(
+      (access) =>
+        access.agentId === agent.id &&
+        access.readEnabled &&
+        access.accountIds.includes(emailAccountId),
+    ),
+  );
+  const availableAgents =
+    triggerType === "email" ? eligibleEmailAgents : agents;
+  const selectTrigger = (value: Automation["triggerType"]) => {
+    setTriggerType(value);
+    const choices = value === "email" ? eligibleEmailAgents : agents;
+    if (!choices.some((agent) => agent.id === agentId)) {
+      setAgentId(choices[0]?.id ?? "");
+    }
+  };
+  const selectEmailAccount = (value: string) => {
+    setEmailAccountId(value);
+    const choices = agents.filter((agent) =>
+      emailAccess.some(
+        (access) =>
+          access.agentId === agent.id &&
+          access.readEnabled &&
+          access.accountIds.includes(value),
+      ),
+    );
+    if (!choices.some((agent) => agent.id === agentId)) {
+      setAgentId(choices[0]?.id ?? "");
+    }
+  };
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
@@ -68,7 +115,12 @@ function CreateAutomation({
         body: JSON.stringify({
           name: form.get("name"),
           agentId,
-          cronExpression: scheduleType === "cron" ? form.get("cron") : null,
+          triggerType,
+          cronExpression:
+            triggerType === "schedule" && scheduleType === "cron"
+              ? form.get("cron")
+              : null,
+          emailAccountId: triggerType === "email" ? emailAccountId : null,
           prompt: form.get("prompt"),
           mode,
           enabled,
@@ -76,7 +128,11 @@ function CreateAutomation({
       });
       onCreated(result);
       setOpen(false);
-      toast.success("Automation scheduled");
+      toast.success(
+        triggerType === "email"
+          ? "Email automation created"
+          : "Automation scheduled",
+      );
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Could not create automation",
@@ -85,7 +141,7 @@ function CreateAutomation({
       setSaving(false);
     }
   }
-  const selectedAgent = agents.find((agent) => agent.id === agentId);
+  const selectedAgent = availableAgents.find((agent) => agent.id === agentId);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -101,11 +157,11 @@ function CreateAutomation({
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle className="font-heading text-3xl">
-              Schedule an agent
+              Create an automation
             </DialogTitle>
             <DialogDescription>
-              Schedules run only while this local Next.js application is
-              running.
+              Turn a schedule or a newly received email into a focused agent
+              run.
             </DialogDescription>
           </DialogHeader>
           <div className="mt-6 grid gap-5">
@@ -120,6 +176,59 @@ function CreateAutomation({
               />
             </label>
             <label className="grid gap-2 text-sm font-semibold">
+              Trigger
+              <Select
+                value={triggerType}
+                onValueChange={(value) =>
+                  selectTrigger(value as Automation["triggerType"])
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="schedule">Schedule or manual</SelectItem>
+                  <SelectItem
+                    value="email"
+                    disabled={!emailConfigured || !emailAccounts.length}
+                  >
+                    Incoming email
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {!emailConfigured && (
+                <span className="text-xs font-normal text-muted-foreground">
+                  Connect the Email service in Integrations to use inbox
+                  triggers.
+                </span>
+              )}
+            </label>
+            {triggerType === "email" && (
+              <label className="grid gap-2 text-sm font-semibold">
+                Receiving account
+                <Select
+                  value={emailAccountId}
+                  onValueChange={selectEmailAccount}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose an Email account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {emailAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.displayName} · {account.emailAddress}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-xs font-normal text-muted-foreground">
+                  Every newly discovered inbound message creates one durable
+                  run. Existing mailbox history is ignored.
+                </span>
+              </label>
+            )}
+            <label className="grid gap-2 text-sm font-semibold">
               Agent
               <Select value={agentId} onValueChange={setAgentId} required>
                 <SelectTrigger>
@@ -130,13 +239,19 @@ function CreateAutomation({
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {agents.map((a) => (
+                  {availableAgents.map((a) => (
                     <SelectItem key={a.id} value={a.id}>
                       {a.name} · {a.role}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {triggerType === "email" && !availableAgents.length && (
+                <span className="text-xs font-normal text-destructive">
+                  No agent can read this account. Assign Email read access on an
+                  agent first.
+                </span>
+              )}
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Execution mode
@@ -157,24 +272,26 @@ function CreateAutomation({
                 prompt as a specific outcome.
               </span>
             </label>
-            <label className="grid gap-2 text-sm font-semibold">
-              Trigger
-              <Select
-                value={scheduleType}
-                onValueChange={(value) =>
-                  setScheduleType(value as "cron" | "manual")
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cron">Cron schedule</SelectItem>
-                  <SelectItem value="manual">Manual only</SelectItem>
-                </SelectContent>
-              </Select>
-            </label>
-            {scheduleType === "cron" && (
+            {triggerType === "schedule" && (
+              <label className="grid gap-2 text-sm font-semibold">
+                Timing
+                <Select
+                  value={scheduleType}
+                  onValueChange={(value) =>
+                    setScheduleType(value as "cron" | "manual")
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cron">Cron schedule</SelectItem>
+                    <SelectItem value="manual">Manual only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
+            )}
+            {triggerType === "schedule" && scheduleType === "cron" && (
               <label className="grid gap-2 text-sm font-semibold">
                 Cron expression
                 <Input
@@ -192,7 +309,11 @@ function CreateAutomation({
               Prompt
               <Textarea
                 name="prompt"
-                placeholder="Review the B2B pipeline and flag every blocked opportunity…"
+                placeholder={
+                  triggerType === "email"
+                    ? "Read the message, classify the request, and take the appropriate next action…"
+                    : "Review the B2B pipeline and flag every blocked opportunity…"
+                }
                 defaultValue={template?.prompt}
                 className="min-h-36"
                 required
@@ -202,15 +323,28 @@ function CreateAutomation({
               <div>
                 <p className="text-sm font-semibold">Enabled</p>
                 <p className="text-xs text-muted-foreground">
-                  Start checking this schedule immediately.
+                  {triggerType === "email"
+                    ? "Start listening for new messages immediately."
+                    : "Start checking this schedule immediately."}
                 </p>
               </div>
-              <Switch checked={enabled} onCheckedChange={setEnabled} />
+              <Switch
+                checked={enabled}
+                onCheckedChange={setEnabled}
+                aria-label="Enable automation"
+              />
             </div>
           </div>
           <DialogFooter className="mt-6">
-            <Button type="submit" disabled={saving || !agentId}>
-              {saving ? "Scheduling…" : "Create automation"}
+            <Button
+              type="submit"
+              disabled={
+                saving ||
+                !agentId ||
+                (triggerType === "email" && !emailAccountId)
+              }
+            >
+              {saving ? "Creating…" : "Create automation"}
             </Button>
           </DialogFooter>
         </form>
@@ -229,6 +363,9 @@ export function AutomationsView({
     [agents] = useState<Agent[]>(initialData.agents),
     [error] = useState(""),
     [runningId, setRunningId] = useState<string | null>(null);
+  const accountById = new Map(
+    initialData.emailAccounts.map((account) => [account.id, account]),
+  );
   async function toggle(item: Automation, enabled: boolean) {
     setAutomations(
       (v) => v?.map((a) => (a.id === item.id ? { ...a, enabled } : a)) ?? null,
@@ -276,29 +413,49 @@ export function AutomationsView({
     <>
       <PageHeader
         title="Automations"
-        description={`${automations?.filter((item) => item.enabled).length ?? 0} active · ${automations?.length ?? 0} configured · local scheduler`}
+        description={`${automations?.filter((item) => item.enabled).length ?? 0} active · ${automations?.filter((item) => item.triggerType === "email").length ?? 0} inbox-triggered · ${automations?.filter((item) => item.triggerType === "schedule").length ?? 0} scheduled`}
         actions={
           <CreateAutomation
             agents={agents}
+            emailAccounts={initialData.emailAccounts}
+            emailAccess={initialData.emailAccess}
+            emailConfigured={initialData.emailConfigured}
             onCreated={(a) => setAutomations((v) => [...(v ?? []), a])}
           />
         }
       />
+      {initialData.emailError && (
+        <div
+          role="status"
+          className="mb-6 flex items-start gap-3 border-y border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm"
+        >
+          <Mail className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-300" />
+          <div>
+            <p className="font-semibold">Inbox triggers need attention</p>
+            <p className="mt-0.5 text-muted-foreground">
+              {initialData.emailError}
+            </p>
+          </div>
+        </div>
+      )}
       {error && <ErrorState message={error} />}{" "}
       {!automations && !error && <LoadingState />}
       {automations &&
         (!automations.length ? (
           <EmptyState
-            title="Nothing scheduled"
+            title="No automations yet"
             description={
               agents.length
-                ? "Create a cron automation for a recurring review, summary, or follow-up."
-                : "Create an agent first, then return here to schedule recurring work."
+                ? "Turn a recurring schedule or a newly received email into focused agent work."
+                : "Create an agent first, then return here to automate recurring or inbox-driven work."
             }
             action={
               <div className="flex flex-wrap justify-center gap-2">
                 <CreateAutomation
                   agents={agents}
+                  emailAccounts={initialData.emailAccounts}
+                  emailAccess={initialData.emailAccess}
+                  emailConfigured={initialData.emailConfigured}
                   template={{
                     name: "Weekly OKR review",
                     cron: "0 9 * * 1",
@@ -309,19 +466,22 @@ export function AutomationsView({
                 />
                 <CreateAutomation
                   agents={agents}
+                  emailAccounts={initialData.emailAccounts}
+                  emailAccess={initialData.emailAccess}
+                  emailConfigured={initialData.emailConfigured}
                   onCreated={(a) => setAutomations([a])}
                 />
               </div>
             }
           />
         ) : (
-          <DenseTable minWidth="980px">
+          <DenseTable minWidth="1040px">
             <thead>
               <tr>
                 <th className={denseTableHead}>Automation</th>
                 <th className={denseTableHead}>Agent</th>
                 <th className={denseTableHead}>Mode</th>
-                <th className={denseTableHead}>Schedule</th>
+                <th className={denseTableHead}>Trigger</th>
                 <th className={denseTableHead}>Last run</th>
                 <th className={denseTableHead}>Status</th>
                 <th className={`${denseTableHead} text-right`}>Actions</th>
@@ -344,11 +504,21 @@ export function AutomationsView({
                   <td className={`${denseTableCell} text-xs capitalize`}>
                     {item.mode}
                   </td>
-                  <td className={`${denseTableCell} font-mono text-xs`}>
-                    <span className="flex items-center gap-1.5">
-                      <Clock3 className="size-3.5" />
-                      {item.cronExpression ?? "Manual"}
-                    </span>
+                  <td className={`${denseTableCell} text-xs`}>
+                    {item.triggerType === "email" ? (
+                      <span className="flex max-w-56 items-center gap-1.5">
+                        <Mail className="size-3.5 shrink-0" />
+                        <span className="truncate">
+                          {accountById.get(item.emailAccountId ?? "")
+                            ?.emailAddress ?? "Unavailable account"}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 font-mono">
+                        <Clock3 className="size-3.5" />
+                        {item.cronExpression ?? "Manual"}
+                      </span>
+                    )}
                   </td>
                   <td
                     className={`${denseTableCell} text-xs text-muted-foreground`}
@@ -374,19 +544,21 @@ export function AutomationsView({
                   </td>
                   <td className={`${denseTableCell} text-right`}>
                     <div className="flex items-center justify-end gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => runNow(item)}
-                        disabled={runningId === item.id}
-                      >
-                        {runningId === item.id ? (
-                          <LoaderCircle className="animate-spin" />
-                        ) : (
-                          <Play />
-                        )}
-                        Run now
-                      </Button>
+                      {item.triggerType === "schedule" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => runNow(item)}
+                          disabled={runningId === item.id}
+                        >
+                          {runningId === item.id ? (
+                            <LoaderCircle className="animate-spin" />
+                          ) : (
+                            <Play />
+                          )}
+                          Run now
+                        </Button>
+                      )}
                       <Switch
                         checked={item.enabled}
                         onCheckedChange={(value) => toggle(item, value)}

@@ -13,10 +13,14 @@ test("the create automation action submits its form", async () => {
 
   assert.match(
     source,
-    /<Button type="submit" disabled=\{saving \|\| !agentId\}>/,
+    /<Button\s+type="submit"/,
     "Base UI buttons default to type=button, so the create action must opt into form submission",
   );
+  assert.match(source, /disabled=\{\s*saving \|\|\s*!agentId/);
   assert.match(source, /Execution mode/);
-  assert.match(source, /<SelectItem value="review">Operational review<\/SelectItem>/);
+  assert.match(
+    source,
+    /<SelectItem value="review">Operational review<\/SelectItem>/,
+  );
   assert.match(source, /mode,/);
 });

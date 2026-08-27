@@ -2,6 +2,7 @@ export type RunTrigger =
   | "chat"
   | "manual"
   | "automation"
+  | "email"
   | "assignment"
   | "resumed"
   | "review_requested"
@@ -111,7 +112,7 @@ function assertTriggerMode(trigger: RunTrigger, mode: RunMode) {
     throw new Error(`${trigger} requires work_item execution mode.`);
   }
   if (
-    (trigger === "manual" || trigger === "automation") &&
+    (trigger === "manual" || trigger === "automation" || trigger === "email") &&
     !["review", "task"].includes(mode)
   ) {
     throw new Error(`${trigger} requires review or task execution mode.`);

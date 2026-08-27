@@ -46,6 +46,41 @@ function client() {
   return new EmailAdminClient(currentServiceUrl());
 }
 
+export function isInboundEmailFeedConfigured() {
+  return Boolean(
+    (currentConfig() || process.env.SLAB_EMAIL_URL?.trim()) &&
+    readSecret("SLAB_EMAIL_ADMIN_KEY", "SLAB_EMAIL_ADMIN_KEY_FILE"),
+  );
+}
+
+export function assertAgentEmailConnectorReady(agentId: string) {
+  const config = currentConfig();
+  if (!config || config.status !== "connected") {
+    throw new OperationalError(
+      "The Email connector is not ready. Test the Email integration before dispatching inbox automations.",
+      "EMAIL_CONNECTOR_NOT_READY",
+      503,
+    );
+  }
+  const access = emailAccessRepository.getAgentEmailAccess(agentId);
+  if (!access) {
+    throw new OperationalError(
+      "The assigned agent has no Email connector profile.",
+      "EMAIL_CONNECTOR_NOT_READY",
+      503,
+    );
+  }
+  try {
+    readEmailConnectorToken(access.tokenId);
+  } catch {
+    throw new OperationalError(
+      "The assigned agent's Email connector token is unavailable. Save its Email access again to rotate the token.",
+      "EMAIL_CONNECTOR_NOT_READY",
+      503,
+    );
+  }
+}
+
 export async function getEmailIntegrationState(): Promise<EmailIntegrationState> {
   const config = currentConfig();
   const adminConfigured = Boolean(
@@ -142,6 +177,20 @@ export async function saveAndTestEmailIntegration(serviceUrl: string) {
 
 export async function testEmailIntegration() {
   return saveAndTestEmailIntegration(currentServiceUrl());
+}
+
+export function listInboundEmailEvents(after: number, limit = 100) {
+  return client().listInboundEvents({ after, limit });
+}
+
+export async function getInboundEmailAccount(accountId: string) {
+  const account = await client().getAccount(accountId);
+  if (!account.enabled || !account.capabilities.read) {
+    throw new OperationalError(
+      "Choose an enabled Email account that supports reading messages.",
+    );
+  }
+  return account;
 }
 
 export async function createEmailAccount(
