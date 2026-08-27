@@ -425,6 +425,89 @@ export type BudgetConfiguration = {
   prices: RuntimeModelPrice[];
 };
 
+export type SystemUpdateChannel = "stable" | "candidate";
+export type SystemUpdateAction = "check" | "apply";
+export type SystemUpdateRequestState =
+  "submitted" | "running" | "succeeded" | "failed";
+
+export type SystemUpdateComponentIdentity = {
+  ref: string;
+  digest: string;
+  revision: string | null;
+};
+
+export type SystemUpdateComponent = {
+  id: "agents" | "work" | "docs" | "email" | "runner";
+  name: string;
+  services: string[];
+  installed: SystemUpdateComponentIdentity | null;
+  available: SystemUpdateComponentIdentity | null;
+  status: "up_to_date" | "update_available" | "recovery_required";
+};
+
+export type SystemUpdateCheckResult = {
+  schemaVersion: 1;
+  status:
+    | "up_to_date"
+    | "update_available"
+    | "channel_equivalent"
+    | "channel_older"
+    | "recovery_required";
+  channel: SystemUpdateChannel;
+  installedStackVersion: string;
+  availableStackVersion: string;
+  checkedAt: string;
+  recoveryReason: string | null;
+  release: {
+    releasedAt: string | null;
+    severity: "routine" | "security" | "critical";
+    releaseNotesUrl: string | null;
+    rollbackCompatibleFromInstalled: boolean;
+  };
+  components: SystemUpdateComponent[];
+};
+
+export type SystemUpdateRequest = {
+  id: string;
+  action: SystemUpdateAction;
+  channel: SystemUpdateChannel;
+  target: string | null;
+  source: "manual" | "scheduled";
+  state: SystemUpdateRequestState;
+  requestedAt: string;
+  expiresAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  result: SystemUpdateCheckResult | null;
+  error: { code: string; message: string } | null;
+  automaticDecision:
+    "apply_submitted" | "up_to_date" | "unsafe" | "not_applicable" | null;
+  scheduledFor: string | null;
+  parentRequestId: string | null;
+  followUpRequestId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SystemUpdatePolicy = {
+  version: number;
+  enabled: boolean;
+  checkHourUtc: number;
+  lastScheduledAt: string | null;
+  updatedAt: string;
+};
+
+export type SystemUpdatesData = {
+  bridge: {
+    available: boolean;
+    message: string;
+  };
+  policy: SystemUpdatePolicy;
+  latestRequest: SystemUpdateRequest | null;
+  latestCheck: SystemUpdateRequest | null;
+  requests: SystemUpdateRequest[];
+};
+
 export type UsageCostSource =
   | "provider_reported"
   | "sdk_estimated"
