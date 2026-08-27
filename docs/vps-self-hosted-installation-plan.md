@@ -10,36 +10,36 @@ Public entry point: `https://slab.ar/install.sh`
 
 Last updated: 2026-08-21
 
-| Milestone                                       | Status            | Evidence                                                                                      |
-| ----------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------------- |
-| Plan committed                                  | Complete          | `slab-agents@8dc598e`                                                                         |
-| Local `slab-stack` repository                   | Complete          | `slab-stack@df635e4`                                                                          |
-| Manifest, service, image, and Compose contracts | Complete          | `slab-stack@df635e4`                                                                          |
-| Initial Codex version lock                      | Complete          | Codex CLI `0.148.0`, `slab-stack@9fa934e`                                                     |
-| Slab Agents production runtime contract        | Published         | `ghcr.io/martin2844/slab-agents@sha256:ef8309d534e4f75a39ae78f5fb58ea89cc16e7d1457a66a3d477809fbca4de39` |
-| Slab Agents single-user authentication         | Published         | scrypt password, stdin bootstrap, revocable sessions, proxy/CSRF/rate-limit image smoke passed  |
-| Runner production image                         | Published         | `ghcr.io/martin2844/slab-runner@sha256:7cd7c1da0aa14a710c7b9c2ac59e16679e3a684513b78da6e22dc7976d078377` |
-| Runner multi-arch publication                   | Complete          | Public amd64/arm64 pull, signature, provenance, SBOM, and 0 high/critical scan verified        |
-| Slab Work production image                      | Published         | `ghcr.io/martin2844/slab@sha256:3190a68db66331027605dec6f07dfd12565b0ed9132d518b25367609edf1cfc5`        |
-| Slab Docs production image                      | Published         | `ghcr.io/martin2844/slab-docs@sha256:0521012b5465e92192699eb13a13826f07739995531e1a963c8e09db25a7d59a` |
-| Slab Email production image                     | Published         | `ghcr.io/martin2844/slab-email@sha256:1e3b48c612e70ec5afdbe364c3435d55df7654122a586e10909e0bb5392e02b3` |
-| Immutable stack candidate                       | Complete          | `slab-stack/releases/v0.1.0-candidate.7.json` pins all five public images by tag and digest     |
-| Private full-stack integration                  | Complete          | `slab-stack#8`: clean Compose boot, bootstrap, connections, CRUD, restart, persistence, and network gate |
-| Versioned functional installer                  | Complete          | `slab-stack#9`, merge `63c3280`: interactive/non-interactive flow, lock, state ledger, admin bootstrap, readiness, and sanitized diagnostics |
-| Installer private-mode integration              | Complete          | Candidate.2 installs, authenticates, reruns without bootstrap credentials, preserves secrets/data, and passes CI full-stack smoke |
-| Codex onboarding and runtime readiness           | Complete          | `slab-runner#2`, `slab-agents#2`, `slab-stack#10`: persistent auth, `slabctl`, UI guidance, restart, and authenticated readiness |
-| Codex-enabled stack candidate                    | Complete          | Candidate.4 passes 69 installer tests, ShellCheck, private full-stack smoke, login/logout, and idempotent installer rerun |
-| Ubuntu 26.04 and Docker host bootstrap           | Complete          | `slab-stack#11`, merge `478e5ec`: official Docker apt repository, pinned signing-key fingerprint, and conflict-safe setup |
-| Clean VPS install and real Codex runtime smoke   | Complete          | Clean Ubuntu 26.04 amd64 VPS: Docker bootstrapped, private stack healthy, headless device auth completed, `SLAB_RUNTIME_OK` run completed |
-| Real Work + Docs agent run                       | Complete          | UI-created COO run completed with 7/7 successful tool calls, persisted Docs document `demo-operating-notes`, and persisted Work issue `OPS-1` |
-| systemd stack lifecycle                          | Complete          | `slab-stack@0c29c25`; real Ubuntu 26.04 VPS restart preserved Work, Docs, administrator access, and Codex auth with `slab.service` enabled/active |
-| Real domain and TLS                              | Complete          | `agents.c5h.dev`; Caddy obtained a trusted Let's Encrypt certificate, HTTP redirects to HTTPS, public `:3009` is closed, and `slabctl domain verify` promotes state to `READY` (`slab-stack@ecfdc12`) |
-| Signed public bootstrap candidate               | Complete          | GitHub release `v0.1.0-candidate.7`; Ed25519 signature/checksum verified, byte-reproducible bundle, CI green |
-| Candidate bootstrap VPS dry-run                 | Complete          | Ubuntu 26.04 VPS verified signature/checksum and dry-ran `candidate.7`; production remained ready |
-| Candidate.7 production reconciliation           | Complete          | Seven-volume verified backup, additive Email migration to schema 2, exact image digests, systemd active, HTTPS ready, and direct port closed |
-| Web-managed Gmail OAuth                         | Deployed          | Settings owns the server-side admin flow; OAuth secret is encrypted only by `slab-email`, absent from API/UI reads, and production reports an actionable `missing` state |
+| Milestone                                       | Status            | Evidence                                                                                                                                                                                                                                                                                 |
+| ----------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan committed                                  | Complete          | `slab-agents@8dc598e`                                                                                                                                                                                                                                                                    |
+| Local `slab-stack` repository                   | Complete          | `slab-stack@df635e4`                                                                                                                                                                                                                                                                     |
+| Manifest, service, image, and Compose contracts | Complete          | `slab-stack@df635e4`                                                                                                                                                                                                                                                                     |
+| Initial Codex version lock                      | Complete          | Codex CLI `0.148.0`, `slab-stack@9fa934e`                                                                                                                                                                                                                                                |
+| Slab Agents production runtime contract         | Published         | `ghcr.io/martin2844/slab-agents@sha256:ef8309d534e4f75a39ae78f5fb58ea89cc16e7d1457a66a3d477809fbca4de39`                                                                                                                                                                                 |
+| Slab Agents single-user authentication          | Published         | scrypt password, stdin bootstrap, revocable sessions, proxy/CSRF/rate-limit image smoke passed                                                                                                                                                                                           |
+| Runner production image                         | Published         | `ghcr.io/martin2844/slab-runner@sha256:7cd7c1da0aa14a710c7b9c2ac59e16679e3a684513b78da6e22dc7976d078377`                                                                                                                                                                                 |
+| Runner multi-arch publication                   | Complete          | Public amd64/arm64 pull, signature, provenance, SBOM, and 0 high/critical scan verified                                                                                                                                                                                                  |
+| Slab Work production image                      | Published         | `ghcr.io/martin2844/slab@sha256:3190a68db66331027605dec6f07dfd12565b0ed9132d518b25367609edf1cfc5`                                                                                                                                                                                        |
+| Slab Docs production image                      | Published         | `ghcr.io/martin2844/slab-docs@sha256:0521012b5465e92192699eb13a13826f07739995531e1a963c8e09db25a7d59a`                                                                                                                                                                                   |
+| Slab Email production image                     | Published         | `ghcr.io/martin2844/slab-email@sha256:1e3b48c612e70ec5afdbe364c3435d55df7654122a586e10909e0bb5392e02b3`                                                                                                                                                                                  |
+| Immutable stack candidate                       | Complete          | `slab-stack/releases/v0.1.0-candidate.7.json` pins all five public images by tag and digest                                                                                                                                                                                              |
+| Private full-stack integration                  | Complete          | `slab-stack#8`: clean Compose boot, bootstrap, connections, CRUD, restart, persistence, and network gate                                                                                                                                                                                 |
+| Versioned functional installer                  | Complete          | `slab-stack#9`, merge `63c3280`: interactive/non-interactive flow, lock, state ledger, admin bootstrap, readiness, and sanitized diagnostics                                                                                                                                             |
+| Installer private-mode integration              | Complete          | Candidate.2 installs, authenticates, reruns without bootstrap credentials, preserves secrets/data, and passes CI full-stack smoke                                                                                                                                                        |
+| Codex onboarding and runtime readiness          | Complete          | `slab-runner#2`, `slab-agents#2`, `slab-stack#10`: persistent auth, `slabctl`, UI guidance, restart, and authenticated readiness                                                                                                                                                         |
+| Codex-enabled stack candidate                   | Complete          | Candidate.4 passes 69 installer tests, ShellCheck, private full-stack smoke, login/logout, and idempotent installer rerun                                                                                                                                                                |
+| Ubuntu 26.04 and Docker host bootstrap          | Complete          | `slab-stack#11`, merge `478e5ec`: official Docker apt repository, pinned signing-key fingerprint, and conflict-safe setup                                                                                                                                                                |
+| Clean VPS install and real Codex runtime smoke  | Complete          | Clean Ubuntu 26.04 amd64 VPS: Docker bootstrapped, private stack healthy, headless device auth completed, `SLAB_RUNTIME_OK` run completed                                                                                                                                                |
+| Real Work + Docs agent run                      | Complete          | UI-created COO run completed with 7/7 successful tool calls, persisted Docs document `demo-operating-notes`, and persisted Work issue `OPS-1`                                                                                                                                            |
+| systemd stack lifecycle                         | Complete          | `slab-stack@0c29c25`; real Ubuntu 26.04 VPS restart preserved Work, Docs, administrator access, and Codex auth with `slab.service` enabled/active                                                                                                                                        |
+| Real domain and TLS                             | Complete          | `agents.c5h.dev`; Caddy obtained a trusted Let's Encrypt certificate, HTTP redirects to HTTPS, public `:3009` is closed, and `slabctl domain verify` promotes state to `READY` (`slab-stack@ecfdc12`)                                                                                    |
+| Signed public bootstrap candidate               | Complete          | GitHub release `v0.1.0-candidate.7`; Ed25519 signature/checksum verified, byte-reproducible bundle, CI green                                                                                                                                                                             |
+| Candidate bootstrap VPS dry-run                 | Complete          | Ubuntu 26.04 VPS verified signature/checksum and dry-ran `candidate.7`; production remained ready                                                                                                                                                                                        |
+| Candidate.7 production reconciliation           | Complete          | Seven-volume verified backup, additive Email migration to schema 2, exact image digests, systemd active, HTTPS ready, and direct port closed                                                                                                                                             |
+| Web-managed Gmail OAuth                         | Deployed          | Settings owns the server-side admin flow; OAuth secret is encrypted only by `slab-email`, absent from API/UI reads, and production reports an actionable `missing` state                                                                                                                 |
 | Managed Proton Bridge                           | Deployed          | Candidate.10 builds Proton Bridge 3.26.0 from checksum-pinned source with Go 1.26.6 in the existing `slab-email` lifecycle; Settings and `slabctl proton setup` share the private challenge flow, generated mailbox credentials remain encrypted, and real-account login remains user QA |
-| Stable public installer                         | Blocked by design | Candidate channel only; backup/restore, update/rollback, and remaining VPS matrix still gate `stable` |
+| Stable public installer                         | Blocked by design | Candidate channel only; backup/restore, update/rollback, and remaining VPS matrix still gate `stable`                                                                                                                                                                                    |
 
 Current next gate: complete backup/restore and the remaining clean-VPS matrix, then
 promote the signed, version-pinned bootstrap from `candidate` to `stable`.
@@ -260,13 +260,13 @@ Repository responsibilities:
 
 ## 5. Current-state inventory and gaps
 
-| Service     | Image now | CI now              | Main release gaps                                                                    |
-| ----------- | --------- | ------------------- | ------------------------------------------------------------------------------------ |
-| Slab Agents | Yes       | CI + image release  | candidate published and unified private-stack smoke passed                            |
-| Slab Work   | Yes       | CI + image release  | candidate published and unified private-stack smoke passed                            |
-| Slab Docs   | Yes       | CI + image release  | candidate published and unified private-stack smoke passed                            |
-| Slab Email  | Yes       | CI + image release  | candidate published and unified private-stack smoke passed                            |
-| Slab Runner | Yes       | CI + image release  | bundled Codex candidate published and unified private-stack smoke passed              |
+| Service     | Image now | CI now             | Main release gaps                                                        |
+| ----------- | --------- | ------------------ | ------------------------------------------------------------------------ |
+| Slab Agents | Yes       | CI + image release | candidate published and unified private-stack smoke passed               |
+| Slab Work   | Yes       | CI + image release | candidate published and unified private-stack smoke passed               |
+| Slab Docs   | Yes       | CI + image release | candidate published and unified private-stack smoke passed               |
+| Slab Email  | Yes       | CI + image release | candidate published and unified private-stack smoke passed               |
+| Slab Runner | Yes       | CI + image release | bundled Codex candidate published and unified private-stack smoke passed |
 
 Important implementation facts already present and reusable:
 
@@ -900,7 +900,14 @@ Benefits:
 
 ### 14.2 First login
 
-After the stack is healthy, the installer offers:
+After the stack is healthy, open Settings → Runtime and choose Connect ChatGPT.
+Slab Agents asks Runner to start the structured Codex device flow, returns only
+the verification URL, user code, expiry, and sanitized account status to the
+authenticated browser, and polls until the account connects. Tokens and Codex's
+credential files never cross the Runner boundary.
+
+If the web flow or control plane is unavailable, the installer also offers the
+recovery command:
 
 ```bash
 docker compose exec slab-runner codex login --device-auth
@@ -922,25 +929,23 @@ pipe to `codex login --with-api-key`
 never include it in argv or install.env
 ```
 
-`slab_runner_codex` must be backed up and protected like a credential store.
+`slab_runner_codex` is a host-local credential store. Portable backups exclude
+it and restored installations require Codex reauthentication.
 
 ### 14.3 Web management
 
-First public release:
+The shipped Settings flow:
 
 - Settings shows Codex installed/authenticated/available state;
-- Settings explains `slabctl codex login` when authentication is missing;
-- CLI owns the interactive device login because it is reliable on a headless server.
-
-Follow-up release, only after a stable machine-readable Runner flow exists:
-
 - start device authorization from Settings;
 - display verification URL/code;
 - poll sanitized status;
 - allow logout/re-authentication;
 - keep all auth state inside Runner's volume.
+- retain `slabctl codex login` as a recovery path when the UI is unavailable.
 
-Do not parse unstable human CLI output in the control plane merely to claim web login support.
+The control plane uses Codex app-server's structured account and login methods;
+it does not parse human CLI output.
 
 ## 15. Future runtime adapters
 
@@ -1587,22 +1592,22 @@ install stack
 
 ## 24. Failure-mode table
 
-| Failure                          | Detection                           | User-visible recovery                                | Test                          |
-| -------------------------------- | ----------------------------------- | ---------------------------------------------------- | ----------------------------- |
-| DNS points elsewhere             | installer + `slabctl domain verify` | print required A/AAAA record; finish as TLS pending  | VPS domain test               |
-| Port 80/443 occupied             | preflight socket/process check      | name owning process; stop before mutation            | VPS conflict test             |
-| Docker installation fails        | apt exit + daemon status            | preserve install state; rerun after package repair   | disposable VM fault injection |
-| Image pull/signature fails       | digest/signature verification       | do not start unverified image                        | release test                  |
-| Migration fails                  | one-shot job exit                   | keep old containers/data; show migration logs        | migration fault test          |
-| Runner healthy, Codex signed out | `/runtimes`                         | stack ready; prompt `slabctl codex login`            | runtime auth test             |
-| Caddy cannot issue certificate   | Caddy logs + HTTPS probe            | TLS pending; diagnose DNS/firewall                   | ACME staging test             |
-| Disk fills during pull/backup    | preflight and ongoing checks        | abort before deleting old artifacts                  | low-disk test                 |
-| SQLite volume ownership wrong    | readiness + entrypoint              | bounded ownership migration or exact repair command  | upgrade fixture               |
-| Active run during update         | run drain status                    | wait, cancel explicitly, or abort update             | lifecycle E2E                 |
-| Backup interrupted               | temp filename + atomic rename       | discard incomplete archive; existing state untouched | kill test                     |
-| Secret file missing              | service config validation           | name missing secret only, never expected value       | config test                   |
-| Optional Email unavailable       | system health                       | UI warning; core stack remains ready                 | dependency isolation test     |
-| Invalid admin password attempts  | login rate limiter                  | generic error + retry delay                          | auth integration test         |
+| Failure                          | Detection                           | User-visible recovery                                     | Test                          |
+| -------------------------------- | ----------------------------------- | --------------------------------------------------------- | ----------------------------- |
+| DNS points elsewhere             | installer + `slabctl domain verify` | print required A/AAAA record; finish as TLS pending       | VPS domain test               |
+| Port 80/443 occupied             | preflight socket/process check      | name owning process; stop before mutation                 | VPS conflict test             |
+| Docker installation fails        | apt exit + daemon status            | preserve install state; rerun after package repair        | disposable VM fault injection |
+| Image pull/signature fails       | digest/signature verification       | do not start unverified image                             | release test                  |
+| Migration fails                  | one-shot job exit                   | keep old containers/data; show migration logs             | migration fault test          |
+| Runner healthy, Codex signed out | `/runtimes`                         | stack ready; connect in Settings, with `slabctl` fallback | runtime auth test             |
+| Caddy cannot issue certificate   | Caddy logs + HTTPS probe            | TLS pending; diagnose DNS/firewall                        | ACME staging test             |
+| Disk fills during pull/backup    | preflight and ongoing checks        | abort before deleting old artifacts                       | low-disk test                 |
+| SQLite volume ownership wrong    | readiness + entrypoint              | bounded ownership migration or exact repair command       | upgrade fixture               |
+| Active run during update         | run drain status                    | wait, cancel explicitly, or abort update                  | lifecycle E2E                 |
+| Backup interrupted               | temp filename + atomic rename       | discard incomplete archive; existing state untouched      | kill test                     |
+| Secret file missing              | service config validation           | name missing secret only, never expected value            | config test                   |
+| Optional Email unavailable       | system health                       | UI warning; core stack remains ready                      | dependency isolation test     |
+| Invalid admin password attempts  | login rate limiter                  | generic error + retry delay                               | auth integration test         |
 
 No failure in this table may be silent. Each gets a test, structured diagnostic, and recovery action.
 

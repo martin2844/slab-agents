@@ -581,12 +581,14 @@ export function HowItWorksGuide() {
                   </dl>
                 </div>
                 <Callout title="Codex login on a VPS" icon={TerminalSquare}>
-                  If runtime verification fails, authenticate the bundled
-                  runtime from the server with:
+                  In Settings → Runtime, choose Connect ChatGPT. Slab shows the
+                  device code and OpenAI verification link while keeping tokens
+                  inside Runner. If web login is unavailable, recover from the
+                  server with:
                   <code className="mt-2 block font-mono text-foreground">
                     sudo slabctl codex login
                   </code>
-                  Then test Runner again from Settings.
+                  Then return to Settings and test Codex again.
                 </Callout>
                 <Callout title="Claude API setup" icon={KeyRound}>
                   In Settings → Runtime, paste an Anthropic API key, save it,

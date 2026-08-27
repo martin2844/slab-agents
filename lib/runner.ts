@@ -56,6 +56,12 @@ import {
   coreToolDefinitions,
   integrationServerName,
 } from "@/lib/agent-tool-catalog";
+import type {
+  CodexAuthStatus,
+  CodexDeviceLogin,
+  CodexLoginStatus,
+} from "@/lib/codex-auth-contract";
+import { codexLoginIdPattern } from "@/lib/codex-auth-contract";
 
 export type { RunnerEvent } from "@/lib/runner-transport";
 
@@ -142,7 +148,7 @@ function runnerHeaders(headers: Record<string, string> = {}) {
 }
 
 async function runnerError(response: Response) {
-  const body = await response.json().catch(() => null);
+  const body = await readRunnerJson(response).catch(() => null);
   const message =
     body &&
     typeof body === "object" &&
@@ -153,6 +159,205 @@ async function runnerError(response: Response) {
       ? String(body.error.message)
       : `Runner returned ${response.status}`;
   return new RunnerRequestError(message, response.status);
+}
+
+async function readRunnerJson(
+  response: Response,
+  maximumBytes = 65_536,
+): Promise<unknown> {
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      bytes += next.value.byteLength;
+      if (bytes > maximumBytes) {
+        await reader.cancel();
+        throw new RunnerRequestError("Runner response was too large.", 502);
+      }
+      chunks.push(next.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  try {
+    return JSON.parse(
+      Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8"),
+    );
+  } catch {
+    throw new RunnerRequestError("Runner returned an invalid response.", 502);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseOptionalString(
+  value: unknown,
+  maximumLength: number,
+): string | null {
+  return typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maximumLength
+    ? value
+    : null;
+}
+
+const codexLoginStatuses = new Set<CodexLoginStatus>([
+  "pending",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "expired",
+]);
+
+function parseCodexDeviceLogin(value: unknown): CodexDeviceLogin {
+  if (!isRecord(value)) {
+    throw new RunnerRequestError(
+      "Runner returned an invalid Codex authentication response.",
+      502,
+    );
+  }
+  const { loginId, verificationUrl, userCode, status, expiresAt } = value;
+  let url: URL;
+  try {
+    url = new URL(String(verificationUrl));
+  } catch {
+    throw new RunnerRequestError(
+      "Runner returned an invalid Codex authentication response.",
+      502,
+    );
+  }
+  if (
+    typeof loginId !== "string" ||
+    !codexLoginIdPattern.test(loginId) ||
+    typeof userCode !== "string" ||
+    userCode.length === 0 ||
+    userCode.length > 64 ||
+    [...userCode].some((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 0x1f || code === 0x7f;
+    }) ||
+    typeof status !== "string" ||
+    !codexLoginStatuses.has(status as CodexLoginStatus) ||
+    typeof expiresAt !== "string" ||
+    !Number.isFinite(Date.parse(expiresAt)) ||
+    url.protocol !== "https:" ||
+    Boolean(url.username || url.password) ||
+    (url.hostname !== "openai.com" && !url.hostname.endsWith(".openai.com"))
+  ) {
+    throw new RunnerRequestError(
+      "Runner returned an invalid Codex authentication response.",
+      502,
+    );
+  }
+  return {
+    loginId,
+    verificationUrl: url.toString(),
+    userCode,
+    status: status as CodexLoginStatus,
+    expiresAt,
+  };
+}
+
+function parseCodexAuthStatus(value: unknown): CodexAuthStatus {
+  if (!isRecord(value)) {
+    throw new RunnerRequestError(
+      "Runner returned an invalid Codex authentication response.",
+      502,
+    );
+  }
+  const status = value.status;
+  const authMode = value.authMode;
+  if (
+    !new Set(["authenticated", "not_authenticated", "unavailable"]).has(
+      String(status),
+    ) ||
+    !new Set([null, "chatgpt", "api_key", "cloud_provider", "unknown"]).has(
+      authMode as string | null,
+    )
+  ) {
+    throw new RunnerRequestError(
+      "Runner returned an invalid Codex authentication response.",
+      502,
+    );
+  }
+  return {
+    status: status as CodexAuthStatus["status"],
+    authMode: authMode as CodexAuthStatus["authMode"],
+    email: parseOptionalString(value.email, 320),
+    planType: parseOptionalString(value.planType, 100),
+    login: value.login === null ? null : parseCodexDeviceLogin(value.login),
+  };
+}
+
+async function codexAuthRequest<T>(
+  path: string,
+  options: {
+    method?: "GET" | "POST" | "DELETE";
+    fetcher?: typeof fetch;
+    parse: (value: unknown) => T;
+  },
+): Promise<T> {
+  const response = await (options.fetcher ?? fetch)(`${runnerUrl()}${path}`, {
+    method: options.method ?? "GET",
+    headers: runnerHeaders({ Accept: "application/json" }),
+    signal: AbortSignal.timeout(options.method === "GET" ? 5_000 : 15_000),
+    cache: "no-store",
+  });
+  if (!response.ok) throw await runnerError(response);
+  const payload = await readRunnerJson(response);
+  if (!isRecord(payload) || !("data" in payload)) {
+    throw new RunnerRequestError(
+      "Runner returned an invalid Codex authentication response.",
+      502,
+    );
+  }
+  return options.parse(payload.data);
+}
+
+export function getCodexAuthStatus(fetcher: typeof fetch = fetch) {
+  return codexAuthRequest("/auth/codex", {
+    fetcher,
+    parse: parseCodexAuthStatus,
+  });
+}
+
+export function startCodexDeviceLogin(fetcher: typeof fetch = fetch) {
+  return codexAuthRequest("/auth/codex/device-login", {
+    method: "POST",
+    fetcher,
+    parse: parseCodexDeviceLogin,
+  });
+}
+
+export function cancelCodexDeviceLogin(
+  loginId: string,
+  fetcher: typeof fetch = fetch,
+) {
+  if (!codexLoginIdPattern.test(loginId)) {
+    throw new RunnerRequestError("Invalid Codex authentication login ID.", 400);
+  }
+  return codexAuthRequest(
+    `/auth/codex/device-login/${encodeURIComponent(loginId)}`,
+    {
+      method: "DELETE",
+      fetcher,
+      parse: parseCodexDeviceLogin,
+    },
+  );
+}
+
+export function logoutCodex(fetcher: typeof fetch = fetch) {
+  return codexAuthRequest("/auth/codex/logout", {
+    method: "POST",
+    fetcher,
+    parse: parseCodexAuthStatus,
+  });
 }
 
 export async function startRunnerRun(
@@ -561,7 +766,9 @@ export async function testRunnerRuntime(runtimeId: string) {
     throw new Error(`Runner did not report the ${runtimeId} runtime.`);
   if (!runtime.available)
     throw new Error(
-      `${runtimeId} is not authenticated or unavailable. On a self-hosted server, run sudo slabctl ${runtimeId} login.`,
+      runtimeId === "codex"
+        ? "Codex is not authenticated or unavailable. Connect ChatGPT in Runtime settings."
+        : `${runtimeId} is not authenticated or unavailable. On a self-hosted server, run sudo slabctl ${runtimeId} login.`,
     );
   return runtime;
 }

@@ -117,11 +117,12 @@ function catalogItem(
     healthDetail = "The connected Runner does not provide this runtime.";
   } else if (runtimeOwned) {
     health = runner.status;
-    const command = runtimeId === "gemini" ? "gemini" : "codex";
     healthDetail = runner.available
       ? "Authenticated in slab-runner."
       : runner.status === "authentication_required"
-        ? `Authenticate ${definition.displayName} with sudo slabctl ${command} login.`
+        ? runtimeId === "codex"
+          ? "Connect a ChatGPT account below."
+          : "Authenticate Gemini CLI with sudo slabctl gemini login."
         : `${definition.displayName} is unavailable in slab-runner.`;
   } else if (runner.status === "unavailable") {
     health = "unavailable";

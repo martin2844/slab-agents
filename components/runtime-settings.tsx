@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { KeyRound, LoaderCircle, Save, TestTube2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/client-api";
 import type { RuntimeCatalogItem } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
+import { CodexAuthSettings } from "@/components/codex-auth-settings";
 
 function healthVariant(runtime: RuntimeCatalogItem) {
   if (runtime.health === "available") return "default" as const;
@@ -38,6 +39,30 @@ export function RuntimeSettings({
       current.map((item) => (item.id === next.id ? next : item)),
     );
   }
+
+  const refreshCodexHealth = useCallback(async () => {
+    const next = await api<RuntimeCatalogItem[]>("/api/runtimes");
+    const codex = next.find(({ id }) => id === "codex");
+    if (!codex) return;
+    setRuntimes((current) =>
+      current.map((item) =>
+        item.id === "codex"
+          ? {
+              ...item,
+              displayName: codex.displayName,
+              stability: codex.stability,
+              authModes: codex.authModes,
+              capabilities: codex.capabilities,
+              registered: codex.registered,
+              configured: codex.configured,
+              health: codex.health,
+              healthDetail: codex.healthDetail,
+              lastVerifiedAt: codex.lastVerifiedAt,
+            }
+          : item,
+      ),
+    );
+  }, []);
 
   async function save(runtime: RuntimeCatalogItem) {
     setBusy(`${runtime.id}:save`);
@@ -174,6 +199,13 @@ export function RuntimeSettings({
             </div>
           ) : null}
 
+          {runtime.id === "codex" ? (
+            <CodexAuthSettings
+              registered={runtime.registered}
+              onAuthenticationChanged={refreshCodexHealth}
+            />
+          ) : null}
+
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-end">
             {runtime.authMode === "api_key" ? (
               <label className="grid gap-1.5 text-xs font-semibold">
@@ -207,7 +239,7 @@ export function RuntimeSettings({
               <div className="text-xs text-muted-foreground">
                 {runtime.id === "gemini"
                   ? "Google account authentication is stored inside slab-runner. Run sudo slabctl gemini login on the host."
-                  : "Authentication is stored inside slab-runner."}
+                  : "Account authentication is managed above."}
               </div>
             )}
             <label className="grid gap-1.5 text-xs font-semibold">
