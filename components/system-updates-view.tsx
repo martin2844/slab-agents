@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
@@ -45,7 +45,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useOperationalPolling } from "@/components/use-operational-polling";
+import { useSystemUpdatesStore } from "@/components/system-updates-store";
 import { api, ApiClientError } from "@/lib/client-api";
 import {
   describeAutomaticSystemUpdateDecision,
@@ -232,7 +232,17 @@ export function SystemUpdatesView({
 }: {
   initialData: SystemUpdatesData;
 }) {
-  const [data, setData] = useState(initialData);
+  const {
+    data: sharedData,
+    refresh,
+    commitData,
+    seedData,
+  } = useSystemUpdatesStore();
+  const [sharedDataAtMount] = useState(sharedData);
+  const data =
+    sharedData === sharedDataAtMount
+      ? initialData
+      : (sharedData ?? initialData);
   const [channel, setChannel] = useState<SystemUpdateChannel>(
     initialData.latestCheck?.channel ?? "stable",
   );
@@ -241,23 +251,21 @@ export function SystemUpdatesView({
   );
   const [policyDraft, setPolicyDraft] = useState(initialData.policy);
   const [savingPolicy, setSavingPolicy] = useState(false);
-  const refreshCoordinatorRef = useRef(
+  const policyCoordinatorRef = useRef(
     new SystemUpdateRefreshCoordinator(initialData.policy),
   );
 
-  const refresh = useCallback(async () => {
-    const response = refreshCoordinatorRef.current.begin();
-    const next = await api<SystemUpdatesData>("/api/system/updates");
-    const reconcilePolicy = refreshCoordinatorRef.current.commit(
+  useEffect(() => {
+    seedData(initialData);
+  }, [initialData, seedData]);
+  useEffect(() => {
+    const response = policyCoordinatorRef.current.begin();
+    const reconcilePolicy = policyCoordinatorRef.current.commit(
       response,
-      next.policy,
+      data.policy,
     );
-    if (!reconcilePolicy) return null;
-    setPolicyDraft(reconcilePolicy);
-    setData(next);
-    return next;
-  }, []);
-  useOperationalPolling(refresh, 3_000);
+    if (reconcilePolicy) setPolicyDraft(reconcilePolicy);
+  }, [data.policy]);
 
   const activeRequest = data.requests.find(
     ({ state }) => state === "submitted" || state === "running",
@@ -271,18 +279,19 @@ export function SystemUpdatesView({
 
   async function submit(action: SystemUpdateAction, target: string | null) {
     setPendingAction(action);
-    refreshCoordinatorRef.current.invalidate();
     try {
       const request = await api<SystemUpdateRequest>("/api/system/updates", {
         method: "POST",
         body: JSON.stringify({ action, channel, target }),
       });
-      refreshCoordinatorRef.current.invalidate();
-      setData((current) => ({
-        ...current,
-        latestRequest: request,
-        requests: [request, ...current.requests],
-      }));
+      commitData((current) => {
+        const base = current ?? data;
+        return {
+          ...base,
+          latestRequest: request,
+          requests: [request, ...base.requests],
+        };
+      });
       toast.success(
         action === "check"
           ? `${channel === "stable" ? "Stable" : "Candidate"} check queued`
@@ -302,7 +311,6 @@ export function SystemUpdatesView({
 
   async function savePolicy() {
     setSavingPolicy(true);
-    refreshCoordinatorRef.current.invalidate();
     try {
       const policy = await api<SystemUpdatePolicy>("/api/system/updates", {
         method: "PATCH",
@@ -312,8 +320,8 @@ export function SystemUpdatesView({
           checkHourUtc: policyDraft.checkHourUtc,
         }),
       });
-      refreshCoordinatorRef.current.acceptPolicyMutation(policy);
-      setData((current) => ({ ...current, policy }));
+      policyCoordinatorRef.current.acceptPolicyMutation(policy);
+      commitData((current) => ({ ...(current ?? data), policy }));
       setPolicyDraft(policy);
       toast.success(
         policy.enabled
@@ -330,7 +338,7 @@ export function SystemUpdatesView({
         cause instanceof ApiClientError &&
         cause.code === "VERSION_CONFLICT"
       ) {
-        refreshCoordinatorRef.current.forceNextPolicySync();
+        policyCoordinatorRef.current.forceNextPolicySync();
         try {
           await refresh();
         } catch {

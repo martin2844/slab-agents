@@ -5,12 +5,25 @@ import test from "node:test";
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("System is a first-class authenticated workspace destination", async () => {
-  const [navigation, page] = await Promise.all([
+  const [navigation, navItem, store, page] = await Promise.all([
     read("components/workspace-shell.tsx"),
+    read("components/system-update-nav-item.tsx"),
+    read("components/system-updates-store.tsx"),
     read("app/system/page.tsx"),
   ]);
 
-  assert.match(navigation, /href: "\/system", label: "System"/);
+  assert.doesNotMatch(navigation, /href: "\/system", label: "System"/);
+  assert.equal(navigation.match(/<SystemUpdateNavItem/g)?.length, 2);
+  assert.match(navigation, /<SystemUpdatesStoreProvider>/);
+  assert.match(navItem, /href="\/system"/);
+  assert.match(navItem, /useSystemUpdatesStore/);
+  assert.match(navItem, /deriveSystemUpdateSidebarState/);
+  assert.match(navItem, /Installed \$\{version\}/);
+  assert.match(navItem, /updateState\.attention/);
+  assert.match(navItem, /rounded-full/);
+  assert.match(navItem, /aria-hidden="true"/);
+  assert.match(navItem, /Bridge offline/);
+  assert.match(store, /pathname\.startsWith\("\/system"\) \? 3_000 : 60_000/);
   assert.match(page, /getSystemUpdatesData/);
   assert.match(page, /<SystemUpdatesView initialData=/);
   assert.match(page, /dynamic = "force-dynamic"/);
@@ -32,8 +45,9 @@ test("the update dashboard exposes inventory while keeping apply atomic", async 
 });
 
 test("automatic updates are clearly stable-only and policy changes are guarded", async () => {
-  const [view, route] = await Promise.all([
+  const [view, store, route] = await Promise.all([
     read("components/system-updates-view.tsx"),
+    read("components/system-updates-store.tsx"),
     read("app/api/system/updates/route.ts"),
   ]);
 
@@ -41,9 +55,15 @@ test("automatic updates are clearly stable-only and policy changes are guarded",
   assert.match(view, /Candidate releases are never applied automatically/);
   assert.match(view, /expectedVersion: policyDraft\.version/);
   assert.match(view, /checkHourUtc: policyDraft\.checkHourUtc/);
-  assert.match(view, /useOperationalPolling\(refresh, 3_000\)/);
-  assert.match(view, /refreshCoordinatorRef\.current\.invalidate\(\)/);
+  assert.doesNotMatch(view, /useOperationalPolling/);
+  assert.match(view, /useSystemUpdatesStore/);
+  assert.match(view, /commitData/);
   assert.match(view, /forceNextPolicySync\(\)/);
+  assert.match(store, /SystemUpdatesDataCoordinator/);
+  assert.match(
+    store,
+    /setData\(dataCoordinatorRef\.current\.seed\(initialData\)\)/,
+  );
   assert.match(route, /policySchema/);
   assert.match(route, /expectedVersion: z\.number\(\)\.int\(\)\.positive\(\)/);
 });

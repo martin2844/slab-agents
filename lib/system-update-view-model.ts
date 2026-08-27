@@ -1,7 +1,9 @@
 import type {
   SystemUpdateChannel,
+  SystemUpdateCheckResult,
   SystemUpdatePolicy,
   SystemUpdateRequest,
+  SystemUpdatesData,
 } from "./types";
 
 function sameEditablePolicy(
@@ -73,6 +75,133 @@ export function deriveSystemUpdateChannelState(
   };
 }
 
+export function deriveSystemUpdateSidebarState(
+  requests: SystemUpdateRequest[],
+) {
+  const stable = deriveSystemUpdateChannelState(requests, "stable");
+  const freshestInventoryIndex = requests.findIndex(
+    (request) => request.state === "succeeded" && request.result,
+  );
+  const uncertainApplyIndex = requests.findIndex(
+    (request) =>
+      request.action === "apply" &&
+      (request.state === "succeeded" || request.state === "failed") &&
+      !request.result,
+  );
+  const activeApplyIndex = requests.findIndex(
+    (request) =>
+      request.action === "apply" &&
+      (request.state === "submitted" || request.state === "running"),
+  );
+  const applyIsNewerThanInventory = (index: number) =>
+    index >= 0 &&
+    (freshestInventoryIndex < 0 || index < freshestInventoryIndex);
+  const versionIsUncertain = applyIsNewerThanInventory(uncertainApplyIndex);
+  const freshestInventory = versionIsUncertain
+    ? null
+    : (requests[freshestInventoryIndex]?.result ?? null);
+  const freshestInventoryRequest =
+    freshestInventoryIndex >= 0 ? requests[freshestInventoryIndex] : null;
+  const stableInventory = stable.inventoryRequest?.result ?? null;
+  const stableInventoryIndex = stable.inventoryRequest
+    ? requests.findIndex(({ id }) => id === stable.inventoryRequest?.id)
+    : -1;
+
+  if (applyIsNewerThanInventory(activeApplyIndex)) {
+    return {
+      installedVersion: null,
+      attention: "update_in_progress" as const,
+      statusLabel: "Update in progress",
+    };
+  }
+
+  if (versionIsUncertain) {
+    return {
+      installedVersion: null,
+      attention: "check_required" as const,
+      statusLabel: "Fresh version check required",
+    };
+  }
+  if (freshestInventory && inventoryNeedsRecovery(freshestInventory)) {
+    return {
+      installedVersion: freshestInventory.installedStackVersion,
+      attention: "recovery_required" as const,
+      statusLabel: "Recovery required",
+    };
+  }
+  const newerCrossChannelInventory =
+    freshestInventoryRequest &&
+    stable.inventoryRequest &&
+    freshestInventoryIndex < stableInventoryIndex &&
+    freshestInventoryRequest.channel !== "stable";
+  if (
+    freshestInventory &&
+    stableInventory &&
+    newerCrossChannelInventory &&
+    (freshestInventoryRequest.action === "apply" ||
+      !sameInstalledInventory(freshestInventory, stableInventory) ||
+      inventoryNeedsRecovery(freshestInventory) !==
+        inventoryNeedsRecovery(stableInventory))
+  ) {
+    return {
+      installedVersion: freshestInventory.installedStackVersion,
+      attention: "check_required" as const,
+      statusLabel: "Fresh stable check required",
+    };
+  }
+  if (freshestInventory && (!stableInventory || stable.needsFreshCheck)) {
+    return {
+      installedVersion: freshestInventory.installedStackVersion,
+      attention: "check_required" as const,
+      statusLabel: "Fresh stable check required",
+    };
+  }
+  if (stableInventory && inventoryNeedsRecovery(stableInventory)) {
+    return {
+      installedVersion: freshestInventory?.installedStackVersion ?? null,
+      attention: "recovery_required" as const,
+      statusLabel: "Recovery required",
+    };
+  }
+  if (stableInventory?.status === "update_available") {
+    return {
+      installedVersion: freshestInventory?.installedStackVersion ?? null,
+      attention: "update_available" as const,
+      statusLabel: "Stable update available",
+    };
+  }
+  return {
+    installedVersion: freshestInventory?.installedStackVersion ?? null,
+    attention: null,
+    statusLabel: freshestInventory ? "Up to date" : "Version unknown",
+  };
+}
+
+function inventoryNeedsRecovery(inventory: SystemUpdateCheckResult) {
+  return (
+    inventory.status === "recovery_required" ||
+    Boolean(inventory.recoveryReason) ||
+    inventory.components.some(({ status }) => status === "recovery_required")
+  );
+}
+
+function sameInstalledInventory(
+  left: SystemUpdateCheckResult,
+  right: SystemUpdateCheckResult,
+) {
+  if (left.installedStackVersion !== right.installedStackVersion) return false;
+  const rightComponents = new Map(
+    right.components.map((component) => [component.id, component.installed]),
+  );
+  return left.components.every((component) => {
+    const other = rightComponents.get(component.id);
+    return (
+      component.installed?.digest === other?.digest &&
+      component.installed?.revision === other?.revision
+    );
+  });
+}
+
 export function describeAutomaticSystemUpdateDecision(
   request: SystemUpdateRequest,
   requests: SystemUpdateRequest[],
@@ -126,6 +255,30 @@ export class LatestResponseGate {
 
   invalidate() {
     this.generation += 1;
+  }
+}
+
+export class SystemUpdatesDataCoordinator {
+  private readonly gate = new LatestResponseGate();
+
+  beginRead() {
+    return this.gate.begin();
+  }
+
+  commitRead(
+    response: ReturnType<LatestResponseGate["begin"]>,
+    next: SystemUpdatesData,
+  ) {
+    return response.isLatest() ? next : null;
+  }
+
+  seed(next: SystemUpdatesData) {
+    this.gate.invalidate();
+    return next;
+  }
+
+  invalidate() {
+    this.gate.invalidate();
   }
 }
 

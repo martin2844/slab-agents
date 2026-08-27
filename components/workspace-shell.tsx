@@ -15,12 +15,12 @@ import {
   PanelsTopLeft,
   PackageOpen,
   Plug,
-  Server,
   Settings,
-  CircleCheck,
   LogOut,
 } from "lucide-react";
 import { SlabBrandMark } from "@/components/slab-brand-mark";
+import { SystemUpdateNavItem } from "@/components/system-update-nav-item";
+import { SystemUpdatesStoreProvider } from "@/components/system-updates-store";
 import { UsageTracker } from "@/components/usage-tracker";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,7 +54,6 @@ const nav = [
       { href: "/packs", label: "Operator Packs", icon: PackageOpen },
       { href: "/automations", label: "Automations", icon: CalendarClock },
       { href: "/integrations", label: "Integrations", icon: Plug },
-      { href: "/system", label: "System", icon: Server },
       { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
@@ -119,25 +118,6 @@ function Navigation({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-function SystemState() {
-  return (
-    <Link
-      href="/settings"
-      className="mb-2 flex items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent/55 px-3 py-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
-    >
-      <CircleCheck className="size-3.5 text-sidebar-primary" />
-      <span className="min-w-0">
-        <span className="block truncate text-xs font-semibold">
-          Local control plane
-        </span>
-        <span className="block truncate font-mono text-[0.64rem] text-sidebar-foreground/55">
-          Codex · localhost
-        </span>
-      </span>
-    </Link>
-  );
-}
-
 function HowItWorksLink({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   return (
@@ -177,79 +157,82 @@ export function WorkspaceShell({
     router.refresh();
   }
   return (
-    <div className="min-h-dvh bg-background text-foreground">
-      <a href="#main-content" className="skip-link">
-        Skip to content
-      </a>
-      <div className="fixed right-14 top-4 z-30 lg:right-5 lg:top-5">
-        <UsageTracker />
-      </div>
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground lg:flex lg:flex-col">
-        <Brand />
-        <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
-          <Navigation />
+    <SystemUpdatesStoreProvider>
+      <div className="min-h-dvh bg-background text-foreground">
+        <a href="#main-content" className="skip-link">
+          Skip to content
+        </a>
+        <div className="fixed right-14 top-4 z-30 lg:right-5 lg:top-5">
+          <UsageTracker />
         </div>
-        <div className="shrink-0 px-1 py-1">
-          <span className="mb-2 block h-px bg-sidebar-border" />
-          <SystemState />
-          <HowItWorksLink />
-          {authEnabled ? (
-            <Button
-              variant="ghost"
-              className="mt-1 w-full justify-start text-sidebar-foreground/68 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-              onClick={logout}
-            >
-              <LogOut />
-              Sign out
-            </Button>
-          ) : null}
-        </div>
-      </aside>
-      <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-sidebar-border bg-sidebar px-4 text-sidebar-foreground lg:hidden">
-        <Brand />
-        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <SheetTrigger
-            render={
+        <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground lg:flex lg:flex-col">
+          <Brand />
+          <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
+            <Navigation />
+          </div>
+          <div className="shrink-0 px-1 py-1">
+            <span className="mb-2 block h-px bg-sidebar-border" />
+            <HowItWorksLink />
+            {authEnabled ? (
               <Button
                 variant="ghost"
-                size="icon"
-                aria-label="Open navigation"
-              />
-            }
-          >
-            <Menu />
-          </SheetTrigger>
-          <SheetContent
-            side="left"
-            className="flex w-72 flex-col border-sidebar-border bg-sidebar p-4 text-sidebar-foreground"
-          >
-            <SheetTitle className="sr-only">Navigation</SheetTitle>
-            <Brand />
-            <div className="mt-8 min-h-0 flex-1 overflow-y-auto">
-              <Navigation onNavigate={() => setMobileOpen(false)} />
-            </div>
-            <div className="shrink-0 px-3 pb-2">
-              <span className="mb-3 block h-px bg-sidebar-border" />
-              <HowItWorksLink onNavigate={() => setMobileOpen(false)} />
-              {authEnabled ? (
+                className="mt-1 w-full justify-start text-sidebar-foreground/68 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                onClick={logout}
+              >
+                <LogOut />
+                Sign out
+              </Button>
+            ) : null}
+            <SystemUpdateNavItem />
+          </div>
+        </aside>
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-sidebar-border bg-sidebar px-4 text-sidebar-foreground lg:hidden">
+          <Brand />
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+            <SheetTrigger
+              render={
                 <Button
                   variant="ghost"
-                  className="mt-2 w-full justify-start text-sidebar-foreground/68 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                  onClick={logout}
-                >
-                  <LogOut />
-                  Sign out
-                </Button>
-              ) : null}
-            </div>
-          </SheetContent>
-        </Sheet>
-      </header>
-      <main id="main-content" className="min-h-dvh min-w-0 lg:pl-56">
-        <div className="mx-auto w-full max-w-[1720px] px-4 py-5 sm:px-6 sm:py-6 lg:pr-20 xl:pl-8 xl:py-7">
-          {children}
-        </div>
-      </main>
-    </div>
+                  size="icon"
+                  aria-label="Open navigation"
+                />
+              }
+            >
+              <Menu />
+            </SheetTrigger>
+            <SheetContent
+              side="left"
+              className="flex w-72 flex-col border-sidebar-border bg-sidebar p-4 text-sidebar-foreground"
+            >
+              <SheetTitle className="sr-only">Navigation</SheetTitle>
+              <Brand />
+              <div className="mt-8 min-h-0 flex-1 overflow-y-auto">
+                <Navigation onNavigate={() => setMobileOpen(false)} />
+              </div>
+              <div className="shrink-0 px-3 pb-2">
+                <span className="mb-3 block h-px bg-sidebar-border" />
+                <HowItWorksLink onNavigate={() => setMobileOpen(false)} />
+                {authEnabled ? (
+                  <Button
+                    variant="ghost"
+                    className="mt-2 w-full justify-start text-sidebar-foreground/68 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    onClick={logout}
+                  >
+                    <LogOut />
+                    Sign out
+                  </Button>
+                ) : null}
+                <SystemUpdateNavItem onNavigate={() => setMobileOpen(false)} />
+              </div>
+            </SheetContent>
+          </Sheet>
+        </header>
+        <main id="main-content" className="min-h-dvh min-w-0 lg:pl-56">
+          <div className="mx-auto w-full max-w-[1720px] px-4 py-5 sm:px-6 sm:py-6 lg:pr-20 xl:pl-8 xl:py-7">
+            {children}
+          </div>
+        </main>
+      </div>
+    </SystemUpdatesStoreProvider>
   );
 }
