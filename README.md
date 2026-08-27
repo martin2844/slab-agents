@@ -72,6 +72,27 @@ Run. Runner exchanges it for a short-lived loopback surrogate before the Claude
 SDK child starts, keeping the real provider key out of the model context,
 runtime environment, MCP definitions, events, and profiling.
 
+## Agent tool policy
+
+Each agent can carry a versioned policy for every assigned MCP server. Policies
+use three execution modes: `approve` runs without an operator pause, `prompt`
+uses Runner's approval lifecycle, and `deny` removes or rejects the tool. The
+control plane translates the product labels Allow, Ask, and No access into
+those runtime modes.
+
+The effective server policies are persisted in `run_tool_policy_snapshots`
+before Runner creation. Retries reuse that immutable snapshot, and a capability
+added after the run started is not hot-plugged. Existing agents without saved
+policies retain the legacy guarded/full-access behavior. Connector policy is a
+separate safety ceiling: an agent-level Allow cannot weaken an Email or
+Calendar write that is configured to require approval. Run-scoped custom and
+Calendar MCP gateways also omit tools denied by the captured policy.
+
+The authenticated control plane exposes the current policies at
+`GET /api/agents/:id/tool-policies` and updates one server atomically with
+`PUT /api/agents/:id/tool-policies`. Updates require `expectedVersion`; a stale
+editor receives `VERSION_CONFLICT`. Changes apply only to future runs.
+
 ## Email integration
 
 Email is managed as an optional workspace capability from Settings. `slab-agents` uses the `slab-email` admin

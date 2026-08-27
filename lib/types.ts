@@ -19,6 +19,28 @@ export type Agent = {
   updatedAt: string;
 };
 
+export type ToolPolicyMode = "approve" | "prompt" | "deny";
+
+export type AgentToolPolicy = {
+  agentId: string;
+  serverName: string;
+  defaultMode: ToolPolicyMode;
+  tools: Record<string, ToolPolicyMode>;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RunToolPolicySnapshot = {
+  runId: string;
+  agentId: string;
+  policies: Record<
+    string,
+    { defaultMode: ToolPolicyMode; tools: Record<string, ToolPolicyMode> }
+  >;
+  capturedAt: string;
+};
+
 export type AgentQuickAction = {
   id: string;
   agentId: string;

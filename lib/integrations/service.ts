@@ -4,6 +4,7 @@ import { agentRepository } from "@/lib/repositories/agent-repository";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { runRepository } from "@/lib/repositories/run-repository";
 import { withImmediateTransaction } from "@/lib/db/transaction";
+import { filterToolsByRunPolicy } from "@/lib/agent-tool-policy";
 import type { IntegrationRecord } from "@/lib/repositories/integration-repository";
 
 import {
@@ -1079,7 +1080,11 @@ export function getRunCustomIntegrationRuntimeAccess(
     status: "ok",
     record,
     credentials: readCustomCredentials(record),
-    allowedTools: capability.allowedTools,
+    allowedTools: filterToolsByRunPolicy(
+      runId,
+      `${record.provider}_${record.slug}`,
+      capability.allowedTools,
+    ),
     integrationVersion: capability.integrationVersion,
   };
 }

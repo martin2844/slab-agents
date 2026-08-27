@@ -3,6 +3,7 @@ import "server-only";
 import { agentRepository } from "@/lib/repositories/agent-repository";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { runRepository } from "@/lib/repositories/run-repository";
+import { filterToolsByRunPolicy } from "@/lib/agent-tool-policy";
 import type { IntegrationRecord } from "@/lib/repositories/integration-repository";
 
 import {
@@ -678,7 +679,11 @@ export function getRunCalendarRuntimeAccess(
     status: "ok" as const,
     record,
     adapter: createAdapter(record),
-    allowedTools: capability.allowedTools,
+    allowedTools: filterToolsByRunPolicy(
+      runId,
+      `calendar_${record.slug}`,
+      capability.allowedTools,
+    ),
   };
 }
 

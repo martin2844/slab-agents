@@ -45,6 +45,10 @@ import {
 } from "@/lib/run-context-profile";
 import { createWorkCoordinationContext } from "@/lib/agent-directory";
 import type { MemoryRecall } from "@/lib/memory/service";
+import {
+  snapshotAgentToolPolicies,
+  type PolicyAwareMcpServer,
+} from "@/lib/agent-tool-policy";
 
 export type { RunnerEvent } from "@/lib/runner-transport";
 
@@ -245,7 +249,7 @@ export async function startRunnerRun(
         .slice(-12)
         .map(({ role, body }) => ({ role, body }))
     : [];
-  const mcpServers = [
+  const liveMcpServers: PolicyAwareMcpServer[] = [
     {
       name: "work" as const,
       url: getSetting("work_mcp_url"),
@@ -261,6 +265,13 @@ export async function startRunnerRun(
     ...calendarMcpServers,
     ...customMcpServers,
   ];
+  const policyRunId = input.controlPlaneRunId ?? input.runId;
+  const { servers: mcpServers, snapshot: toolPolicySnapshot } =
+    snapshotAgentToolPolicies({
+      runId: policyRunId,
+      agent: input.agent,
+      servers: liveMcpServers,
+    });
   const components: ContextComponent[] = [
     {
       key: "agent_instructions",
@@ -385,6 +396,11 @@ export async function startRunnerRun(
       calendarIntegrations: calendarIntegrations.map(
         ({ snapshot }) => snapshot,
       ),
+      toolPolicies: {
+        snapshotId: toolPolicySnapshot.runId,
+        capturedAt: toolPolicySnapshot.capturedAt,
+        policies: toolPolicySnapshot.policies,
+      },
       agentDirectory: workCoordination.directory,
       memory: {
         provider: input.memory?.provider ?? "disabled",
