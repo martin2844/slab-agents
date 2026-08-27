@@ -219,6 +219,11 @@ export function getRunDetailPageData(id: string): RunDetailData | null {
 
 export async function getAutomationsPageData(): Promise<AutomationsData> {
   const email = await getEmailIntegrationState();
+  const feedError = automationRepository.getEmailFeedState()?.lastError;
+  const dispatchWarning = automationRepository.getPendingEmailDispatchWarning();
+  const pendingDispatchError = dispatchWarning
+    ? `“${dispatchWarning.automationName}” event ${dispatchWarning.inboundEventId} is waiting to retry: ${dispatchWarning.error}${dispatchWarning.nextAttemptAt ? ` Next attempt after ${dispatchWarning.nextAttemptAt}.` : ""}`
+    : null;
   return {
     automations: automationRepository.listAutomations(),
     agents: agentRepository.listAgents(),
@@ -235,8 +240,7 @@ export async function getAutomationsPageData(): Promise<AutomationsData> {
     })),
     emailConfigured:
       email.configured && email.adminConfigured && email.status === "connected",
-    emailError:
-      automationRepository.getEmailFeedState()?.lastError ?? email.lastError,
+    emailError: feedError ?? pendingDispatchError ?? email.lastError,
   };
 }
 

@@ -37,6 +37,13 @@ test("How it works documents the shipped ecosystem and provider setup", async ()
     "calendar/microsoft/callback",
     "Proton does not currently support CalDAV",
     "Capability snapshots are immutable during a run",
+    "Turn each new message into one durable Run",
+    "email_get_message",
+    "No access",
+    "Ask",
+    "Allow",
+    "An Email automation is not starting",
+    "Run freezes its permission snapshot when it reaches Runner",
   ]) {
     assert.match(
       guide,

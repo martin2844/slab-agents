@@ -81,8 +81,7 @@ function DiagramNode({
         tone === "muted" && "bg-muted/50",
         tone === "accent" && "border-primary/40 bg-primary/8",
         tone === "dark" && "border-petrol-deep bg-petrol-deep text-white",
-        tone === "success" &&
-          "border-accent bg-accent-muted/60",
+        tone === "success" && "border-accent bg-accent-muted/60",
         className,
       )}
     >
@@ -627,15 +626,15 @@ export function HowItWorksGuide() {
                 </Step>
                 <Step number="02" title="Choose runtime policy">
                   Choose a healthy enabled runtime and model. Codex is stable;
-                  Claude Agent is experimental and requires a verified
-                  Anthropic API key. Enabled agents can receive new work.
-                  Disabled agents keep their history but do not start new runs.
+                  Claude Agent is experimental and requires a verified Anthropic
+                  API key. Enabled agents can receive new work. Disabled agents
+                  keep their history but do not start new runs.
                 </Step>
                 <Step number="03" title="Set tool permissions">
                   In the agent&apos;s Capabilities tab, set each Work, Docs,
                   Email, and assigned integration action to No access, Ask, or
                   Allow. Connector-level safety ceilings still apply, and each
-                  new run freezes its permission snapshot.
+                  Run freezes its permission snapshot when it reaches Runner.
                 </Step>
                 <Step number="04" title="Assign capabilities">
                   Open the agent&apos;s{" "}
@@ -647,7 +646,7 @@ export function HowItWorksGuide() {
                 <Step
                   number="05"
                   title="Give it work"
-                  result="The run receives a fixed capability snapshot"
+                  result="Runner execution receives a fixed capability snapshot"
                 >
                   Use Chat for a continuing conversation, Give task for ad-hoc
                   execution, assign a Work item to the agent slug, or attach the
@@ -672,7 +671,7 @@ export function HowItWorksGuide() {
                     />
                     <FieldRow
                       field="Capabilities"
-                      enter="The integrations available at run start"
+                      enter="The integrations available when Runner execution starts"
                     />
                     <FieldRow
                       field="Work item"
@@ -689,8 +688,8 @@ export function HowItWorksGuide() {
                 <Callout title="Agent directory is automatic" icon={Users}>
                   Every enabled agent is added to the run-time directory with
                   its exact assignee slug, role, and safe capability summary.
-                  New agents appear on the next run without maintaining a
-                  second index. Delegation must use one of those exact slugs.
+                  New agents appear on the next run without maintaining a second
+                  index. Delegation must use one of those exact slugs.
                 </Callout>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" asChild>
@@ -719,7 +718,8 @@ export function HowItWorksGuide() {
                   disabled until an operator opts in.
                 </Step>
                 <Step number="02" title="Configure the provider">
-                  Open <strong className="text-foreground">Settings → Memory</strong>
+                  Open{" "}
+                  <strong className="text-foreground">Settings → Memory</strong>
                   . Set the Honcho URL, workspace ID, write-only API key when
                   required, and a bounded recall budget. Test the connection
                   before enabling regular use.
@@ -744,22 +744,37 @@ export function HowItWorksGuide() {
                 <div className="rounded-lg border bg-muted/30 p-4">
                   <p className="text-sm font-semibold">Truth precedence</p>
                   <dl className="mt-3 divide-y border-y">
-                    <FieldRow field="Work" enter="Current execution state and ownership" />
+                    <FieldRow
+                      field="Work"
+                      enter="Current execution state and ownership"
+                    />
                     <FieldRow field="Docs" enter="Durable company knowledge" />
-                    <FieldRow field="Integrations" enter="Current external facts" />
-                    <FieldRow field="Memory" enter="Potentially relevant preferences and prior corrections" />
+                    <FieldRow
+                      field="Integrations"
+                      enter="Current external facts"
+                    />
+                    <FieldRow
+                      field="Memory"
+                      enter="Potentially relevant preferences and prior corrections"
+                    />
                   </dl>
                 </div>
-                <Callout title="Memory failure is non-blocking" icon={ShieldCheck}>
+                <Callout
+                  title="Memory failure is non-blocking"
+                  icon={ShieldCheck}
+                >
                   Honcho is called with a short timeout. An outage is recorded
                   in the run audit trail, injects no memory context, and never
                   prevents the runtime from starting.
                 </Callout>
-                <Callout title="Self-hosted still needs a model provider" icon={Cloud}>
-                  The self-hosted profile keeps Honcho&apos;s database on your VPS,
-                  but its derivation and embedding workers use the OpenAI API
-                  key supplied during installation. Managed Honcho sends memory
-                  input to the configured Honcho service.
+                <Callout
+                  title="Self-hosted still needs a model provider"
+                  icon={Cloud}
+                >
+                  The self-hosted profile keeps Honcho&apos;s database on your
+                  VPS, but its derivation and embedding workers use the OpenAI
+                  API key supplied during installation. Managed Honcho sends
+                  memory input to the configured Honcho service.
                 </Callout>
                 <Button size="sm" variant="outline" asChild>
                   <Link href="/settings?tab=memory">Configure memory</Link>
@@ -885,8 +900,37 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
             >
               Adding an operation, rotating a secret, enabling an integration,
               or granting access does not hot-plug tools into a running Codex
-              context. Start a new run to receive the new capability version.
+              context. A queued Run that has not reached Runner receives the
+              latest saved configuration; an active or retried Runner snapshot
+              remains fixed.
             </Callout>
+            <div className="mt-5 grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-3">
+              {[
+                [
+                  "No access",
+                  "The tool is omitted and runtime calls are denied.",
+                ],
+                ["Ask", "The Run pauses for an explicit operator decision."],
+                [
+                  "Allow",
+                  "The agent can call the tool without another prompt.",
+                ],
+              ].map(([title, detail]) => (
+                <div key={title} className="bg-card p-4">
+                  <p className="text-sm font-semibold">{title}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {detail}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+              Agent policy can only narrow a connector&apos;s safety ceiling.
+              For example, an Email account configured to require approval for
+              sending remains Ask even if the agent action is set to Allow.
+              Every Run records the effective policy snapshot captured when
+              Runner execution starts.
+            </p>
             <Button className="mt-4" size="sm" asChild>
               <Link href="/integrations">
                 <PlugZap /> Open Integrations
@@ -990,6 +1034,28 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
               After the provider test succeeds, assign one or more accounts to
               an agent and choose read, draft, and send permissions. A connected
               mailbox with no agent access profile produces no Email tools.
+            </Callout>
+            <Callout
+              title="Turn each new message into one durable Run"
+              icon={Workflow}
+            >
+              Open Automations, choose Incoming email, select the receiving
+              account and an eligible agent, then write the focused prompt. Only
+              messages discovered after the automation is created match. Slab
+              stores one deduplicated dispatch intent, rechecks mailbox and
+              connector readiness, and retries transient failures without
+              holding up scheduled automations. The Run receives bounded,
+              untrusted metadata and reads the complete message through its
+              scoped{" "}
+              <code className="font-mono text-foreground">
+                email_get_message
+              </code>{" "}
+              tool.
+              <span className="mt-3 block">
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/automations">Configure Email automation</Link>
+                </Button>
+              </span>
             </Callout>
             <Callout title="Choose the provider that matches the job">
               Use Gmail, Microsoft, Proton, or IMAP/SMTP for a human mailbox.
@@ -1698,6 +1764,19 @@ chat message B
                 access to the integration/tools, then start a new run. Refresh
                 MCP discovery if the provider changed its tools. Active runs
                 never receive hot-plugged capabilities.
+              </TroubleshootingItem>
+              <TroubleshootingItem
+                title="An Email automation is not starting"
+                symptom="New mailbox messages arrive but no Run appears"
+              >
+                Confirm the automation is enabled, the Email integration is
+                Connected, the selected mailbox is enabled and readable, and the
+                assigned agent has that account plus email_get_message set to
+                Ask or Allow. The automation ignores mailbox history from before
+                its creation. The warning on Automations reports a current
+                feed/integration error or a pending dispatch failure with its
+                next retry time. Transient failures retry with backoff and do
+                not block cron schedules.
               </TroubleshootingItem>
               <TroubleshootingItem
                 title="A run waits for approval"

@@ -34,6 +34,7 @@ test("email events become durable, deduplicated automation occurrences", async (
     { startEmailAutomationRun },
     automationPatchRoute,
     { storeEmailConnectorToken },
+    { getAutomationsPageData },
   ] = await Promise.all([
     import("../lib/db/database.ts"),
     import("../lib/repositories/automation-repository.ts"),
@@ -41,6 +42,7 @@ test("email events become durable, deduplicated automation occurrences", async (
     import("../lib/run-service.ts"),
     import("../app/api/automations/[id]/route.ts"),
     import("../lib/integrations/email-token-vault.ts"),
+    import("../lib/page-data.ts"),
   ]);
   t.after(() => db.close());
 
@@ -400,6 +402,11 @@ test("email events become durable, deduplicated automation occurrences", async (
     automationRepository.getEmailOccurrence(automation.id, 1_101)?.status,
     "dispatched",
   );
+  const pageData = await getAutomationsPageData();
+  assert.match(pageData.emailError ?? "", /Triage inbound requests/);
+  assert.match(pageData.emailError ?? "", /event 1\d{3} is waiting to retry/);
+  assert.match(pageData.emailError ?? "", /runtime unavailable/);
+  assert.match(pageData.emailError ?? "", /Next attempt after/);
 });
 
 test("email trigger semantics frame message metadata as untrusted input", async () => {

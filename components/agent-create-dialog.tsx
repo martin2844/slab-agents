@@ -50,8 +50,9 @@ export function AgentCreateDialog({
     [fullAccess, setFullAccess] = useState(false),
     [runtime, setRuntime] = useState(initialRuntime),
     [model, setModel] = useState("default");
-  const runtimeModels =
-    runtimes.find(({ id }) => id === runtime)?.models ?? ["default"];
+  const runtimeModels = runtimes.find(({ id }) => id === runtime)?.models ?? [
+    "default",
+  ];
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -197,7 +198,7 @@ export function AgentCreateDialog({
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Bot className="size-4" />
-              Available tools: Work and Docs · Reads are always automatic
+              Initial tools: Work and Docs · Refine every action after creation
             </div>
           </div>
           <DialogFooter className="mt-6">

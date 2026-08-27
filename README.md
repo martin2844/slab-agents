@@ -124,6 +124,9 @@ The generated task identifies the account and message, instructs the agent to
 fetch the full message through its scoped Email tools, and treats message
 content as untrusted external input.
 
+The full operator and failure-state contract is documented in
+[`docs/email-automations-and-tool-control-plane.md`](docs/email-automations-and-tool-control-plane.md).
+
 ## Calendar integrations
 
 Calendar is another optional workspace capability managed directly by

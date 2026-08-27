@@ -261,6 +261,30 @@ export const automationRepository = {
         .all(now(), limit) as Row[]
     ).map(mapEmailOccurrence);
   },
+  getPendingEmailDispatchWarning() {
+    const row = db
+      .prepare(
+        `SELECT o.inbound_event_id,o.last_error,o.next_attempt_at,
+                a.id automation_id,a.name automation_name
+         FROM email_automation_occurrences o
+         JOIN automations a ON a.id=o.automation_id
+         WHERE o.status='pending' AND o.last_error IS NOT NULL
+         ORDER BY o.next_attempt_at DESC,o.created_at DESC
+         LIMIT 1`,
+      )
+      .get() as Row | undefined;
+    return row
+      ? {
+          automationId: String(row.automation_id),
+          automationName: String(row.automation_name),
+          inboundEventId: Number(row.inbound_event_id),
+          error: String(row.last_error),
+          nextAttemptAt: row.next_attempt_at
+            ? String(row.next_attempt_at)
+            : null,
+        }
+      : null;
+  },
   markEmailOccurrenceDispatched(
     automationId: string,
     inboundEventId: number,
