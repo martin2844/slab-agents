@@ -109,6 +109,7 @@ test("budget admission reserves atomically, reconciles idempotently, and preserv
   };
   const observed = budget.observeRunUsage(first.id, "runner:1", usage);
   assert.equal(observed?.snapshot.actualCostUsd, 2.1);
+  assert.equal(observed?.snapshot.actualCostSource, "pricing_snapshot");
   assert.equal(observed?.snapshot.actualTokens, 1_100_000);
   const duplicate = budget.observeRunUsage(first.id, "runner:1", usage);
   assert.equal(duplicate?.snapshot.actualCostUsd, 2.1);
@@ -256,18 +257,48 @@ test("budget admission reserves atomically, reconciles idempotently, and preserv
     claudeAdmission.allowed && claudeAdmission.runtimeBudget.pricing,
     null,
   );
-  budget.observeRunUsage(nativeClaude.id, "runner:1", {
-    usageScope: "run_aggregate",
-    totalTokens: 50,
-    totalCostUsd: 1.5,
-  });
-  const latestAggregate = budget.observeRunUsage(nativeClaude.id, "runner:2", {
-    usageScope: "run_aggregate",
-    totalTokens: 75,
-    totalCostUsd: 2,
-  });
+  budget.observeRunUsage(
+    nativeClaude.id,
+    "runner:1",
+    {
+      usageScope: "run_aggregate",
+      totalTokens: 50,
+      totalCostUsd: 1.5,
+      costSource: "sdk_estimated",
+    },
+    "claude-execution-1",
+  );
+  const latestAggregate = budget.observeRunUsage(
+    nativeClaude.id,
+    "runner:2",
+    {
+      usageScope: "run_aggregate",
+      totalTokens: 75,
+      totalCostUsd: 2,
+      costSource: "sdk_estimated",
+    },
+    "claude-execution-1",
+  );
   assert.equal(latestAggregate?.snapshot.actualTokens, 75);
   assert.equal(latestAggregate?.snapshot.actualCostUsd, 2);
+  assert.equal(latestAggregate?.snapshot.actualCostSource, "sdk_estimated");
+  const retriedAggregate = budget.observeRunUsage(
+    nativeClaude.id,
+    "retry:1",
+    {
+      usageScope: "run_aggregate",
+      totalTokens: 25,
+      totalCostUsd: 0.5,
+      costSource: "sdk_estimated",
+    },
+    "claude-execution-2",
+  );
+  assert.equal(
+    retriedAggregate?.snapshot.actualTokens,
+    100,
+    "aggregate usage must replace earlier updates within an execution and sum across retries",
+  );
+  assert.equal(retriedAggregate?.snapshot.actualCostUsd, 2.5);
 
   const perCallCosts = makeRun(
     "per-call-costs",
@@ -289,12 +320,14 @@ test("budget admission reserves atomically, reconciles idempotently, and preserv
     usageScope: "model_call",
     totalTokens: 10,
     costUsd: 0.2,
+    costSource: "provider_reported",
     totalCostUsd: 0.2,
   });
   const secondCall = budget.observeRunUsage(perCallCosts.id, "runner:2", {
     usageScope: "model_call",
     totalTokens: 20,
     costUsd: 0.3,
+    costSource: "provider_reported",
     totalCostUsd: 0.5,
   });
   assert.equal(secondCall?.snapshot.actualTokens, 30);
@@ -302,5 +335,19 @@ test("budget admission reserves atomically, reconciles idempotently, and preserv
     secondCall?.snapshot.actualCostUsd,
     0.5,
     "model-call costs must sum per-call values without summing cumulative totals",
+  );
+  assert.equal(secondCall?.snapshot.actualCostSource, "provider_reported");
+
+  const legacyClaude = makeRun("legacy-claude", "claude", "default");
+  assert.equal(budget.admitRunBudget(legacyClaude, agent).allowed, true);
+  const legacyCost = budget.observeRunUsage(legacyClaude.id, "legacy:1", {
+    usageScope: "run_aggregate",
+    totalTokens: 10,
+    totalCostUsd: 0.1,
+  });
+  assert.equal(
+    legacyCost?.snapshot.actualCostSource,
+    "sdk_estimated",
+    "older Runner events must retain truthful provenance during a rolling upgrade",
   );
 });

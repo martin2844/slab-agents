@@ -144,13 +144,13 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
     { runId: limitedRun.id },
     {
       startRunner,
-      observeBudget: (runId, eventKey, data) => {
+      observeBudget: (runId, eventKey, data, runnerRunId) => {
         assert.equal(
           runRepository.getRun(runId)?.runnerEventId,
           0,
           "usage must be accounted before its Runner cursor advances",
         );
-        return budget.observeRunUsage(runId, eventKey, data);
+        return budget.observeRunUsage(runId, eventKey, data, runnerRunId);
       },
       settleBudget: (runId, terminalStatus) => {
         assert.equal(runRepository.getRun(runId)?.status, terminalStatus);

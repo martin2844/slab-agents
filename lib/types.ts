@@ -425,6 +425,13 @@ export type BudgetConfiguration = {
   prices: RuntimeModelPrice[];
 };
 
+export type UsageCostSource =
+  | "provider_reported"
+  | "sdk_estimated"
+  | "pricing_snapshot"
+  | "unpriced"
+  | "no_usage";
+
 export type RunBudgetSnapshot = {
   runId: string;
   status: "reserved" | "active" | "rejected" | "settled" | "exceeded";
@@ -434,8 +441,12 @@ export type RunBudgetSnapshot = {
   maxTokens: number | null;
   maxCostUsd: number | null;
   reservedCostUsd: number;
+  actualInputTokens: number;
+  actualCachedInputTokens: number;
+  actualOutputTokens: number;
   actualTokens: number;
   actualCostUsd: number | null;
+  actualCostSource: UsageCostSource | null;
   reason: string | null;
 };
 

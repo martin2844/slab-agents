@@ -678,6 +678,7 @@ export async function* executeRun(
                 run.id,
                 `${event.runId}:${event.id}`,
                 data,
+                event.runId,
               );
               if (budgetOutcome?.newlyExceeded) {
                 runRepository.addRunEvent(run.id, "run_budget_exceeded", {

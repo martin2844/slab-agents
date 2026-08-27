@@ -13,6 +13,7 @@ import type {
   Run,
   RunBudgetSnapshot,
   RuntimeModelPrice,
+  UsageCostSource,
 } from "@/lib/types";
 
 const MICRO_USD = 1_000_000;
@@ -125,8 +126,12 @@ function mapReservation(row: BudgetReservationRecord): RunBudgetSnapshot {
     maxTokens: row.effectiveMaxTokens,
     maxCostUsd: microToUsd(row.effectiveMaxCostMicroUsd),
     reservedCostUsd: microToUsd(row.reservedCostMicroUsd) ?? 0,
+    actualInputTokens: row.actualInputTokens,
+    actualCachedInputTokens: row.actualCachedInputTokens,
+    actualOutputTokens: row.actualOutputTokens,
     actualTokens: row.actualTotalTokens,
     actualCostUsd: microToUsd(row.actualCostMicroUsd),
+    actualCostSource: row.actualCostSource as UsageCostSource | null,
     reason: row.reason,
   };
 }
@@ -439,6 +444,7 @@ export function observeRunUsage(
   runId: string,
   eventKey: string,
   data: Record<string, unknown>,
+  runnerRunId?: string,
 ): BudgetObservation | null {
   return withImmediateTransaction(() => {
     const reservation = budgetRepository.getReservation(runId);
@@ -455,24 +461,49 @@ export function observeRunUsage(
     const totalTokens =
       usageNumber(data, "totalTokens", "total_tokens") ||
       inputTokens + outputTokens;
-    const providerCost =
+    const reportedCost =
       usageScope === "run_aggregate" ? data.totalCostUsd : data.costUsd;
-    const providerCostMicroUsd =
-      typeof providerCost === "number" &&
-      Number.isFinite(providerCost) &&
-      providerCost >= 0
-        ? usdToMicro(providerCost)
+    const reportedCostMicroUsd =
+      typeof reportedCost === "number" &&
+      Number.isFinite(reportedCost) &&
+      reportedCost >= 0
+        ? usdToMicro(reportedCost)
         : null;
+    const legacyCostSource =
+      data.costSource === undefined
+        ? reservation.runtimeId === "openrouter"
+          ? "provider_reported"
+          : reservation.runtimeId === "claude"
+            ? "sdk_estimated"
+            : null
+        : null;
+    const costSource =
+      data.costSource === "provider_reported" ||
+      data.costSource === "sdk_estimated"
+        ? data.costSource
+        : legacyCostSource;
+    const providerCostMicroUsd =
+      costSource === "provider_reported" ? reportedCostMicroUsd : null;
+    const estimatedCostMicroUsd =
+      costSource === "sdk_estimated" ? reportedCostMicroUsd : null;
+    const resolvedRunnerRunId =
+      runnerRunId ??
+      (eventKey.includes(":")
+        ? eventKey.slice(0, eventKey.lastIndexOf(":"))
+        : eventKey);
     const timestamp = new Date().toISOString();
     const inserted = budgetRepository.insertUsageObservation({
       runId,
       eventKey,
+      runnerRunId: resolvedRunnerRunId,
       usageScope,
       inputTokens,
       cachedInputTokens,
       outputTokens,
       totalTokens,
       providerCostMicroUsd,
+      estimatedCostMicroUsd,
+      costSource,
       timestamp,
     });
     if (!inserted) {
@@ -484,10 +515,18 @@ export function observeRunUsage(
     }
 
     const observations = budgetRepository.listUsageObservations(runId);
-    const aggregate = observations
-      .filter((row) => row.usageScope === "run_aggregate")
-      .at(-1);
-    const source = aggregate ? [aggregate] : observations;
+    const byRunnerRun = new Map<string, (typeof observations)[number][]>();
+    for (const observation of observations) {
+      const execution = byRunnerRun.get(observation.runnerRunId) ?? [];
+      execution.push(observation);
+      byRunnerRun.set(observation.runnerRunId, execution);
+    }
+    const source = [...byRunnerRun.values()].flatMap((execution) => {
+      const aggregate = execution
+        .filter((row) => row.usageScope === "run_aggregate")
+        .at(-1);
+      return aggregate ? [aggregate] : execution;
+    });
     const totals = source.reduce(
       (sum, row) => ({
         input: sum.input + row.inputTokens,
@@ -496,6 +535,8 @@ export function observeRunUsage(
         total: sum.total + row.totalTokens,
         provider: sum.provider + (row.providerCostMicroUsd ?? 0),
         hasProvider: sum.hasProvider || row.providerCostMicroUsd !== null,
+        estimated: sum.estimated + (row.estimatedCostMicroUsd ?? 0),
+        hasEstimated: sum.hasEstimated || row.estimatedCostMicroUsd !== null,
       }),
       {
         input: 0,
@@ -504,6 +545,8 @@ export function observeRunUsage(
         total: 0,
         provider: 0,
         hasProvider: false,
+        estimated: 0,
+        hasEstimated: false,
       },
     );
     const calculatedCostMicroUsd =
@@ -518,9 +561,22 @@ export function observeRunUsage(
                 Number(reservation.outputRateMicroUsdPerMillion)) /
               1_000_000,
           );
+    const actualCostSource: UsageCostSource = totals.hasProvider
+      ? "provider_reported"
+      : totals.hasEstimated
+        ? "sdk_estimated"
+        : totals.total === 0
+          ? "no_usage"
+          : calculatedCostMicroUsd !== null
+            ? "pricing_snapshot"
+            : "unpriced";
     const actualCostMicroUsd = totals.hasProvider
       ? totals.provider
-      : calculatedCostMicroUsd;
+      : totals.hasEstimated
+        ? totals.estimated
+        : totals.total === 0
+          ? 0
+          : calculatedCostMicroUsd;
     const tokenExceeded =
       reservation.effectiveMaxTokens !== null &&
       totals.total >= reservation.effectiveMaxTokens;
@@ -542,7 +598,14 @@ export function observeRunUsage(
       totalTokens: totals.total,
       calculatedCostMicroUsd,
       providerCostMicroUsd: totals.hasProvider ? totals.provider : null,
+      estimatedCostMicroUsd:
+        actualCostSource === "sdk_estimated"
+          ? totals.estimated
+          : actualCostSource === "pricing_snapshot"
+            ? calculatedCostMicroUsd
+            : null,
       actualCostMicroUsd,
+      actualCostSource,
       reason,
       timestamp,
     });

@@ -29,6 +29,8 @@ export type RuntimePriceRecord = {
 
 export type BudgetReservationRecord = {
   runId: string;
+  runtimeId: string;
+  model: string;
   status: string;
   terminalStatus: string | null;
   policyVersion: number;
@@ -36,8 +38,15 @@ export type BudgetReservationRecord = {
   effectiveMaxTokens: number | null;
   effectiveMaxCostMicroUsd: number | null;
   reservedCostMicroUsd: number;
+  actualInputTokens: number;
+  actualCachedInputTokens: number;
+  actualOutputTokens: number;
   actualTotalTokens: number;
+  calculatedCostMicroUsd: number | null;
+  providerCostMicroUsd: number | null;
+  estimatedCostMicroUsd: number | null;
   actualCostMicroUsd: number | null;
+  actualCostSource: string | null;
   reason: string | null;
   inputRateMicroUsdPerMillion: number | null;
   cachedInputRateMicroUsdPerMillion: number | null;
@@ -45,12 +54,15 @@ export type BudgetReservationRecord = {
 };
 
 export type UsageObservationRecord = {
+  runnerRunId: string;
   usageScope: string;
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
   totalTokens: number;
   providerCostMicroUsd: number | null;
+  estimatedCostMicroUsd: number | null;
+  costSource: string | null;
 };
 
 function nullableNumber(value: unknown) {
@@ -91,6 +103,8 @@ function mapPrice(row: Row): RuntimePriceRecord {
 function mapReservation(row: Row): BudgetReservationRecord {
   return {
     runId: String(row.run_id),
+    runtimeId: String(row.runtime_id),
+    model: String(row.model),
     status: String(row.status),
     terminalStatus: row.terminal_status ? String(row.terminal_status) : null,
     policyVersion: Number(row.policy_version),
@@ -98,8 +112,17 @@ function mapReservation(row: Row): BudgetReservationRecord {
     effectiveMaxTokens: nullableNumber(row.effective_max_tokens),
     effectiveMaxCostMicroUsd: nullableNumber(row.effective_max_cost_micro_usd),
     reservedCostMicroUsd: Number(row.reserved_cost_micro_usd ?? 0),
+    actualInputTokens: Number(row.actual_input_tokens ?? 0),
+    actualCachedInputTokens: Number(row.actual_cached_input_tokens ?? 0),
+    actualOutputTokens: Number(row.actual_output_tokens ?? 0),
     actualTotalTokens: Number(row.actual_total_tokens ?? 0),
+    calculatedCostMicroUsd: nullableNumber(row.calculated_cost_micro_usd),
+    providerCostMicroUsd: nullableNumber(row.provider_cost_micro_usd),
+    estimatedCostMicroUsd: nullableNumber(row.estimated_cost_micro_usd),
     actualCostMicroUsd: nullableNumber(row.actual_cost_micro_usd),
+    actualCostSource: row.actual_cost_source
+      ? String(row.actual_cost_source)
+      : null,
     reason: row.reason ? String(row.reason) : null,
     inputRateMicroUsdPerMillion: nullableNumber(
       row.input_rate_micro_usd_per_million,
@@ -316,30 +339,37 @@ export const budgetRepository = {
   insertUsageObservation(input: {
     runId: string;
     eventKey: string;
+    runnerRunId: string;
     usageScope: string;
     inputTokens: number;
     cachedInputTokens: number;
     outputTokens: number;
     totalTokens: number;
     providerCostMicroUsd: number | null;
+    estimatedCostMicroUsd: number | null;
+    costSource: string | null;
     timestamp: string;
   }) {
     return Boolean(
       db
         .prepare(
           `INSERT OR IGNORE INTO budget_usage_observations
-           (run_id,event_key,usage_scope,input_tokens,cached_input_tokens,output_tokens,total_tokens,provider_cost_micro_usd,created_at)
-           VALUES (?,?,?,?,?,?,?,?,?)`,
+           (run_id,event_key,runner_run_id,usage_scope,input_tokens,cached_input_tokens,output_tokens,total_tokens,
+            provider_cost_micro_usd,estimated_cost_micro_usd,cost_source,created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.runId,
           input.eventKey,
+          input.runnerRunId,
           input.usageScope,
           input.inputTokens,
           input.cachedInputTokens,
           input.outputTokens,
           input.totalTokens,
           input.providerCostMicroUsd,
+          input.estimatedCostMicroUsd,
+          input.costSource,
           input.timestamp,
         ).changes,
     );
@@ -353,12 +383,15 @@ export const budgetRepository = {
         )
         .all(runId) as Row[]
     ).map((row) => ({
+      runnerRunId: String(row.runner_run_id),
       usageScope: String(row.usage_scope),
       inputTokens: Number(row.input_tokens),
       cachedInputTokens: Number(row.cached_input_tokens),
       outputTokens: Number(row.output_tokens),
       totalTokens: Number(row.total_tokens),
       providerCostMicroUsd: nullableNumber(row.provider_cost_micro_usd),
+      estimatedCostMicroUsd: nullableNumber(row.estimated_cost_micro_usd),
+      costSource: row.cost_source ? String(row.cost_source) : null,
     }));
   },
 
@@ -370,13 +403,16 @@ export const budgetRepository = {
     totalTokens: number;
     calculatedCostMicroUsd: number | null;
     providerCostMicroUsd: number | null;
+    estimatedCostMicroUsd: number | null;
     actualCostMicroUsd: number | null;
+    actualCostSource: string;
     reason: string | null;
     timestamp: string;
   }) {
     db.prepare(
       `UPDATE run_budget_reservations SET actual_input_tokens=?,actual_cached_input_tokens=?,actual_output_tokens=?,actual_total_tokens=?,
-       calculated_cost_micro_usd=?,provider_cost_micro_usd=?,actual_cost_micro_usd=?,status=CASE WHEN ? IS NULL THEN status ELSE 'exceeded' END,
+       calculated_cost_micro_usd=?,provider_cost_micro_usd=?,estimated_cost_micro_usd=?,actual_cost_micro_usd=?,actual_cost_source=?,
+       status=CASE WHEN ? IS NULL THEN status ELSE 'exceeded' END,
        reason=COALESCE(?,reason),exceeded_at=CASE WHEN ? IS NULL THEN exceeded_at ELSE COALESCE(exceeded_at,?) END,updated_at=? WHERE run_id=?`,
     ).run(
       input.inputTokens,
@@ -385,7 +421,9 @@ export const budgetRepository = {
       input.totalTokens,
       input.calculatedCostMicroUsd,
       input.providerCostMicroUsd,
+      input.estimatedCostMicroUsd,
       input.actualCostMicroUsd,
+      input.actualCostSource,
       input.reason,
       input.reason,
       input.reason,
@@ -417,7 +455,7 @@ export const budgetRepository = {
     db.prepare(
       `UPDATE run_budget_reservations SET status=CASE WHEN status='rejected' THEN status ELSE 'settled' END,
        terminal_status=?,actual_input_tokens=0,actual_cached_input_tokens=0,actual_output_tokens=0,actual_total_tokens=0,
-       calculated_cost_micro_usd=0,provider_cost_micro_usd=0,actual_cost_micro_usd=0,
+       calculated_cost_micro_usd=0,provider_cost_micro_usd=NULL,estimated_cost_micro_usd=NULL,actual_cost_micro_usd=0,actual_cost_source='no_usage',
        settled_at=COALESCE(settled_at,?),updated_at=? WHERE run_id=?`,
     ).run(terminalStatus, timestamp, timestamp, runId);
   },
