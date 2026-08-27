@@ -432,6 +432,64 @@ export type UsageCostSource =
   | "unpriced"
   | "no_usage";
 
+export type UsageSummaryPeriod = "today" | "7d" | "30d" | "month" | "all";
+
+export type UsageSummaryBreakdown = {
+  key: string;
+  label: string;
+  context: string | null;
+  runs: number;
+  tokens: number;
+  providerReportedUsd: number;
+  sdkEstimatedUsd: number;
+  pricingEstimatedUsd: number;
+  unpricedTokens: number;
+};
+
+export type UsageBudgetWindow = {
+  limitUsd: number | null;
+  spentUsd: number;
+  committedUsd: number;
+  activeReservedUsd: number;
+};
+
+export type UsageSummary = {
+  period: UsageSummaryPeriod;
+  basis: "budget_admission_at";
+  from: string | null;
+  to: string;
+  generatedAt: string;
+  costs: {
+    trackedUsd: number;
+    providerReportedUsd: number;
+    sdkEstimatedUsd: number;
+    pricingEstimatedUsd: number;
+  };
+  tokens: {
+    input: number;
+    cachedInput: number;
+    output: number;
+    total: number;
+    cacheHitRate: number | null;
+    unpriced: number;
+  };
+  runs: {
+    total: number;
+    priced: number;
+    unpriced: number;
+    active: number;
+  };
+  budgets: {
+    day: UsageBudgetWindow;
+    month: UsageBudgetWindow;
+  };
+  breakdowns: {
+    runtimes: UsageSummaryBreakdown[];
+    models: UsageSummaryBreakdown[];
+    agents: UsageSummaryBreakdown[];
+  };
+};
+
 export type RunBudgetSnapshot = {
   runId: string;
   status: "reserved" | "active" | "rejected" | "settled" | "exceeded";

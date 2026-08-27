@@ -20,6 +20,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { SlabBrandMark } from "@/components/slab-brand-mark";
+import { UsageTracker } from "@/components/usage-tracker";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -178,6 +179,9 @@ export function WorkspaceShell({
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>
+      <div className="fixed right-14 top-4 z-30 lg:right-5 lg:top-5">
+        <UsageTracker />
+      </div>
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground lg:flex lg:flex-col">
         <Brand />
         <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
@@ -240,7 +244,7 @@ export function WorkspaceShell({
         </Sheet>
       </header>
       <main id="main-content" className="min-h-dvh min-w-0 lg:pl-56">
-        <div className="mx-auto w-full max-w-[1720px] px-4 py-5 sm:px-6 sm:py-6 xl:px-8 xl:py-7">
+        <div className="mx-auto w-full max-w-[1720px] px-4 py-5 sm:px-6 sm:py-6 lg:pr-20 xl:pl-8 xl:py-7">
           {children}
         </div>
       </main>

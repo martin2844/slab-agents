@@ -65,6 +65,29 @@ export type UsageObservationRecord = {
   costSource: string | null;
 };
 
+export type UsageAggregateRecord = {
+  runs: number;
+  pricedRuns: number;
+  unpricedRuns: number;
+  activeRuns: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  unpricedTokens: number;
+  providerCostMicroUsd: number;
+  sdkEstimatedCostMicroUsd: number;
+  pricingEstimatedCostMicroUsd: number;
+};
+
+export type UsageBreakdownRecord = UsageAggregateRecord & {
+  key: string;
+  label: string;
+  context: string | null;
+};
+
+type UsageBreakdownDimension = "runtime" | "model" | "agent";
+
 function nullableNumber(value: unknown) {
   return value === null || value === undefined ? null : Number(value);
 }
@@ -134,6 +157,52 @@ function mapReservation(row: Row): BudgetReservationRecord {
       row.output_rate_micro_usd_per_million,
     ),
   };
+}
+
+function mapUsageAggregate(row: Row): UsageAggregateRecord {
+  return {
+    runs: Number(row.runs ?? 0),
+    pricedRuns: Number(row.priced_runs ?? 0),
+    unpricedRuns: Number(row.unpriced_runs ?? 0),
+    activeRuns: Number(row.active_runs ?? 0),
+    inputTokens: Number(row.input_tokens ?? 0),
+    cachedInputTokens: Number(row.cached_input_tokens ?? 0),
+    outputTokens: Number(row.output_tokens ?? 0),
+    totalTokens: Number(row.total_tokens ?? 0),
+    unpricedTokens: Number(row.unpriced_tokens ?? 0),
+    providerCostMicroUsd: Number(row.provider_cost_micro_usd ?? 0),
+    sdkEstimatedCostMicroUsd: Number(row.sdk_estimated_cost_micro_usd ?? 0),
+    pricingEstimatedCostMicroUsd: Number(
+      row.pricing_estimated_cost_micro_usd ?? 0,
+    ),
+  };
+}
+
+const usageAggregateColumns = `
+  COUNT(*) AS runs,
+  SUM(CASE WHEN b.actual_cost_source IN ('provider_reported','sdk_estimated','pricing_snapshot') THEN 1 ELSE 0 END) AS priced_runs,
+  SUM(CASE WHEN b.actual_cost_source='unpriced' THEN 1 ELSE 0 END) AS unpriced_runs,
+  SUM(CASE WHEN EXISTS (
+    SELECT 1 FROM runs active_run
+    WHERE active_run.id=b.run_id
+      AND active_run.status IN ('queued','running','waiting_approval')
+  ) THEN 1 ELSE 0 END) AS active_runs,
+  COALESCE(SUM(b.actual_input_tokens),0) AS input_tokens,
+  COALESCE(SUM(b.actual_cached_input_tokens),0) AS cached_input_tokens,
+  COALESCE(SUM(b.actual_output_tokens),0) AS output_tokens,
+  COALESCE(SUM(b.actual_total_tokens),0) AS total_tokens,
+  COALESCE(SUM(CASE WHEN b.actual_cost_source='unpriced' THEN b.actual_total_tokens ELSE 0 END),0) AS unpriced_tokens,
+  COALESCE(SUM(CASE WHEN b.actual_cost_source='provider_reported' THEN b.actual_cost_micro_usd ELSE 0 END),0) AS provider_cost_micro_usd,
+  COALESCE(SUM(CASE WHEN b.actual_cost_source='sdk_estimated' THEN b.actual_cost_micro_usd ELSE 0 END),0) AS sdk_estimated_cost_micro_usd,
+  COALESCE(SUM(CASE WHEN b.actual_cost_source='pricing_snapshot' THEN b.actual_cost_micro_usd ELSE 0 END),0) AS pricing_estimated_cost_micro_usd`;
+
+function usageWindow(start: string | null, end: string) {
+  return start === null
+    ? { clause: "b.created_at < ?", parameters: [end] }
+    : {
+        clause: "b.created_at >= ? AND b.created_at < ?",
+        parameters: [start, end],
+      };
 }
 
 export const budgetRepository = {
@@ -283,13 +352,95 @@ export const budgetRepository = {
       .prepare(
         `SELECT COALESCE(SUM(
            CASE
-             WHEN status IN ('reserved','active') THEN reserved_cost_micro_usd
+             WHEN status IN ('reserved','active')
+               OR (status='exceeded' AND terminal_status IS NULL)
+               THEN reserved_cost_micro_usd
              WHEN actual_cost_micro_usd IS NOT NULL THEN actual_cost_micro_usd
              ELSE reserved_cost_micro_usd
            END
          ),0) AS exposure
          FROM run_budget_reservations
          WHERE status != 'rejected' AND created_at >= ? AND created_at < ?`,
+      )
+      .get(start, end) as Row;
+    return Number(row.exposure ?? 0);
+  },
+
+  summarizeUsage(start: string | null, end: string): UsageAggregateRecord {
+    const window = usageWindow(start, end);
+    const row = db
+      .prepare(
+        `SELECT ${usageAggregateColumns}
+         FROM run_budget_reservations b
+         WHERE b.status != 'rejected' AND ${window.clause}`,
+      )
+      .get(...window.parameters) as Row;
+    return mapUsageAggregate(row);
+  },
+
+  listUsageBreakdown(
+    dimension: UsageBreakdownDimension,
+    start: string | null,
+    end: string,
+    limit = 8,
+  ): UsageBreakdownRecord[] {
+    const window = usageWindow(start, end);
+    const dimensions = {
+      runtime: {
+        key: "b.runtime_id",
+        label: "b.runtime_id",
+        context: "NULL",
+        joins: "",
+        group: "b.runtime_id",
+      },
+      model: {
+        key: "b.runtime_id || char(0) || b.model",
+        label: "b.model",
+        context: "b.runtime_id",
+        joins: "",
+        group: "b.runtime_id,b.model",
+      },
+      agent: {
+        key: "r.agent_id",
+        label: "a.name",
+        context: "a.role",
+        joins: "JOIN runs r ON r.id=b.run_id JOIN agents a ON a.id=r.agent_id",
+        group: "r.agent_id,a.name,a.role",
+      },
+    } as const;
+    const selected = dimensions[dimension];
+    return (
+      db
+        .prepare(
+          `SELECT ${selected.key} AS breakdown_key,
+                  ${selected.label} AS breakdown_label,
+                  ${selected.context} AS breakdown_context,
+                  ${usageAggregateColumns}
+           FROM run_budget_reservations b
+           ${selected.joins}
+           WHERE b.status != 'rejected' AND ${window.clause}
+           GROUP BY ${selected.group}
+           ORDER BY (provider_cost_micro_usd + sdk_estimated_cost_micro_usd + pricing_estimated_cost_micro_usd) DESC,
+                    total_tokens DESC
+           LIMIT ?`,
+        )
+        .all(...window.parameters, limit) as Row[]
+    ).map((row) => ({
+      ...mapUsageAggregate(row),
+      key: String(row.breakdown_key),
+      label: String(row.breakdown_label),
+      context: row.breakdown_context ? String(row.breakdown_context) : null,
+    }));
+  },
+
+  activeReservedExposure(start: string, end: string) {
+    const row = db
+      .prepare(
+        `SELECT COALESCE(SUM(reserved_cost_micro_usd),0) AS exposure
+         FROM run_budget_reservations
+         WHERE (status IN ('reserved','active')
+                OR (status='exceeded' AND terminal_status IS NULL))
+           AND created_at >= ? AND created_at < ?`,
       )
       .get(start, end) as Row;
     return Number(row.exposure ?? 0);
