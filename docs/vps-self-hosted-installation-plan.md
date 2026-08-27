@@ -959,10 +959,8 @@ normalized Runner request
       │
       ├── CodexAdapter          native app-server
       ├── ClaudeAgentAdapter    Claude Agent SDK
-      └── AiSdkAdapter          API models / OpenAI-compatible providers
-             ├── Anthropic API
-             ├── OpenAI API
-             └── Kimi API
+      ├── OpenRouterAdapter     fixed OpenRouter Chat Completions endpoint
+      └── DirectApiAdapter      operator-selected OpenAI-compatible endpoint
 ```
 
 The normalized contract must continue to cover:
@@ -981,7 +979,21 @@ The normalized contract must continue to cover:
 
 Use the Claude Agent SDK for a Claude Code-style runtime. For a third-party product deployment, default to Anthropic API credentials or a supported cloud provider such as Bedrock or Vertex. Do not promise that a customer's Claude subscription OAuth can be embedded in Slab without explicit provider approval and a verified supported authentication contract.
 
-### 15.2 Kimi and API runtimes
+### 15.2 OpenRouter and direct API runtimes
+
+OpenRouter is a first-class adapter, not a user-controlled base URL. Its
+write-only key is encrypted by Slab Agents and supplied to Runner per Run.
+Server-side discovery requests tool-capable models and honors the configured
+zero-data-retention filter. Each inference request carries explicit provider
+routing policy for parameter support, data collection, and zero data retention.
+Runner records OpenRouter's exact per-call cost from the final usage event and
+rejects missing or malformed cost accounting instead of inventing a value.
+
+Direct API remains available for operator-selected OpenAI-compatible endpoints.
+It intentionally does not inherit OpenRouter-specific routing semantics or
+trust provider-specific cost fields.
+
+### 15.3 Kimi and other API runtimes
 
 Use Vercel AI SDK's `ToolLoopAgent` as the API harness and `@ai-sdk/openai-compatible` for providers with a compatible endpoint. This removes provider-loop boilerplate while Slab retains control of:
 
@@ -995,7 +1007,7 @@ Use Vercel AI SDK's `ToolLoopAgent` as the API harness and `@ai-sdk/openai-compa
 
 Kimi ACP/CLI can be evaluated later as an experimental native adapter. Kimi API support should ship first because it is easier to meter and control.
 
-### 15.3 No mandatory gateway
+### 15.4 No mandatory gateway
 
 Do not introduce LiteLLM in the first deployment. Direct provider connections preserve transparent billing and reduce infrastructure. Reconsider a gateway only when centralized multi-tenant keys, provider failover, or cross-provider routing becomes a real operational need.
 

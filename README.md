@@ -45,8 +45,13 @@ Settings → Runtime lists the adapters registered by Slab Runner. Codex keeps
 its existing Runner-owned ChatGPT authentication. Claude uses an Anthropic API
 key entered through a write-only password field and encrypted in the control
 plane database; API and page responses expose only configured/health metadata.
-Testing Claude performs bounded server-side model discovery. Agents select a
-runtime plus a discovered model or the workspace default, and each Run persists
+Testing Claude performs bounded server-side model discovery. OpenRouter is a
+first-class API runtime with a fixed provider endpoint; its test discovers only
+tool-capable models and can additionally restrict discovery to zero-data-
+retention endpoints. OpenRouter routing defaults to requiring every requested
+parameter, denying data-collecting providers, and requiring zero data retention.
+Those controls are explicit in Settings and are sent privately to Runner for
+each Run. Agents select a runtime plus a discovered model or the workspace default, and each Run persists
 the effective runtime/model before entering the queue. Changing an Agent does
 not rewrite queued or historical Runs, and there is no silent provider
 fallback.
@@ -67,9 +72,10 @@ Native enforcement is negotiated from the Runner runtime catalog. If a rolling
 upgrade leaves Runner without the required budget capability, the control plane
 fails the limited Run before creating a new Runner execution.
 
-The private Runner request carries the selected Claude credential only for that
-Run. Runner exchanges it for a short-lived loopback surrogate before the Claude
-SDK child starts, keeping the real provider key out of the model context,
+The private Runner request carries the selected Claude or OpenRouter credential
+only for that Run. Runner exchanges the Claude key for a short-lived loopback
+surrogate before the Claude SDK child starts. OpenRouter calls stay inside the
+Runner process. Both paths keep the real provider key out of the model context,
 runtime environment, MCP definitions, events, and profiling.
 
 ## Agent tool policy

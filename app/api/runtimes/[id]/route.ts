@@ -11,6 +11,9 @@ const schema = z.object({
   defaultModel: z.string().trim().min(1).max(200).optional(),
   baseUrl: z.string().trim().url().max(2_048).optional(),
   apiFormat: z.enum(["responses", "chat_completions"]).optional(),
+  requireParameters: z.boolean().optional(),
+  dataCollection: z.enum(["allow", "deny"]).optional(),
+  zdr: z.boolean().optional(),
 });
 
 export async function PATCH(

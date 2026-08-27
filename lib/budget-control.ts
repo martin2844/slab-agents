@@ -362,9 +362,10 @@ export function admitRunBudget(
     );
     const price = budgetRepository.findRuntimePrice(run.runtime, run.model);
     let reason: string | null = null;
-    const hasNativeCostLimit =
+    const hasEnforceableProviderCost =
       isRuntimeId(run.runtime) &&
-      runtimeBudgetCapabilities[run.runtime].nativeCostLimit;
+      (runtimeBudgetCapabilities[run.runtime].nativeCostLimit ||
+        runtimeBudgetCapabilities[run.runtime].incrementalCostUsage);
     const hasEnforceableTokenLimit =
       isRuntimeId(run.runtime) &&
       (runtimeBudgetCapabilities[run.runtime].nativeTokenLimit ||
@@ -372,7 +373,7 @@ export function admitRunBudget(
     if (maxTokens !== null && !hasEnforceableTokenLimit) {
       reason = "token_limit_unavailable";
     }
-    if (maxCostMicro !== null && !price && !hasNativeCostLimit) {
+    if (maxCostMicro !== null && !price && !hasEnforceableProviderCost) {
       reason ??= "pricing_unavailable";
     }
 
@@ -454,10 +455,13 @@ export function observeRunUsage(
     const totalTokens =
       usageNumber(data, "totalTokens", "total_tokens") ||
       inputTokens + outputTokens;
+    const providerCost =
+      usageScope === "run_aggregate" ? data.totalCostUsd : data.costUsd;
     const providerCostMicroUsd =
-      typeof data.totalCostUsd === "number" &&
-      Number.isFinite(data.totalCostUsd)
-        ? usdToMicro(Math.max(0, data.totalCostUsd))
+      typeof providerCost === "number" &&
+      Number.isFinite(providerCost) &&
+      providerCost >= 0
+        ? usdToMicro(providerCost)
         : null;
     const timestamp = new Date().toISOString();
     const inserted = budgetRepository.insertUsageObservation({

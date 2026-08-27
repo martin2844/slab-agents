@@ -268,4 +268,39 @@ test("budget admission reserves atomically, reconciles idempotently, and preserv
   });
   assert.equal(latestAggregate?.snapshot.actualTokens, 75);
   assert.equal(latestAggregate?.snapshot.actualCostUsd, 2);
+
+  const perCallCosts = makeRun(
+    "per-call-costs",
+    "openrouter",
+    "provider/tool-model",
+  );
+  const openRouterAdmission = budget.admitRunBudget(perCallCosts, agent);
+  assert.equal(openRouterAdmission.allowed, true);
+  assert.equal(
+    openRouterAdmission.allowed && openRouterAdmission.runtimeBudget.maxCostUsd,
+    5,
+  );
+  assert.equal(
+    openRouterAdmission.allowed && openRouterAdmission.runtimeBudget.pricing,
+    null,
+    "exact OpenRouter cost events must not require operator-entered prices",
+  );
+  budget.observeRunUsage(perCallCosts.id, "runner:1", {
+    usageScope: "model_call",
+    totalTokens: 10,
+    costUsd: 0.2,
+    totalCostUsd: 0.2,
+  });
+  const secondCall = budget.observeRunUsage(perCallCosts.id, "runner:2", {
+    usageScope: "model_call",
+    totalTokens: 20,
+    costUsd: 0.3,
+    totalCostUsd: 0.5,
+  });
+  assert.equal(secondCall?.snapshot.actualTokens, 30);
+  assert.equal(
+    secondCall?.snapshot.actualCostUsd,
+    0.5,
+    "model-call costs must sum per-call values without summing cumulative totals",
+  );
 });

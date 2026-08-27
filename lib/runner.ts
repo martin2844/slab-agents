@@ -92,11 +92,14 @@ async function assertRunnerBudgetSupport(
     budget.maxTokens !== null && !local.incrementalTokenUsage;
   const requiresIncrementalCost =
     budget.maxCostUsd !== null &&
-    Boolean(budget.pricing) &&
-    local.incrementalTokenUsage;
+    ((Boolean(budget.pricing) && local.incrementalTokenUsage) ||
+      local.incrementalCostUsage);
   const requiresNativeCost =
     budget.maxCostUsd !== null &&
-    !(budget.pricing && local.incrementalTokenUsage);
+    !(
+      (budget.pricing && local.incrementalTokenUsage) ||
+      local.incrementalCostUsage
+    );
 
   let runtimes: RunnerRuntimeSummary[];
   try {

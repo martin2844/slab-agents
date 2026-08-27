@@ -40,29 +40,58 @@ export function RuntimeSettings({
     );
   }
 
-  const refreshCodexHealth = useCallback(async () => {
+  function configurationBody(
+    runtime: RuntimeCatalogItem,
+    options: { includeEnabled?: boolean } = {},
+  ) {
+    return {
+      ...(options.includeEnabled ? { enabled: runtime.enabled } : {}),
+      defaultModel: runtime.defaultModel,
+      ...(keys[runtime.id] ? { apiKey: keys[runtime.id] } : {}),
+      ...(runtime.id === "direct_api"
+        ? {
+            baseUrl: runtime.baseUrl,
+            apiFormat: runtime.apiFormat,
+          }
+        : {}),
+      ...(runtime.id === "openrouter" && runtime.providerRouting
+        ? {
+            requireParameters: runtime.providerRouting.requireParameters,
+            dataCollection: runtime.providerRouting.dataCollection,
+            zdr: runtime.providerRouting.zdr,
+          }
+        : {}),
+    };
+  }
+
+  const refreshRuntimeHealth = useCallback(async (runtimeId: string) => {
     const next = await api<RuntimeCatalogItem[]>("/api/runtimes");
-    const codex = next.find(({ id }) => id === "codex");
-    if (!codex) return;
+    const refreshed = next.find(({ id }) => id === runtimeId);
+    if (!refreshed) return;
     setRuntimes((current) =>
       current.map((item) =>
-        item.id === "codex"
+        item.id === runtimeId
           ? {
               ...item,
-              displayName: codex.displayName,
-              stability: codex.stability,
-              authModes: codex.authModes,
-              capabilities: codex.capabilities,
-              registered: codex.registered,
-              configured: codex.configured,
-              health: codex.health,
-              healthDetail: codex.healthDetail,
-              lastVerifiedAt: codex.lastVerifiedAt,
+              displayName: refreshed.displayName,
+              stability: refreshed.stability,
+              authModes: refreshed.authModes,
+              capabilities: refreshed.capabilities,
+              registered: refreshed.registered,
+              configured: refreshed.configured,
+              health: refreshed.health,
+              healthDetail: refreshed.healthDetail,
+              lastVerifiedAt: refreshed.lastVerifiedAt,
+              configVersion: refreshed.configVersion,
             }
           : item,
       ),
     );
   }, []);
+  const refreshCodexHealth = useCallback(
+    () => refreshRuntimeHealth("codex"),
+    [refreshRuntimeHealth],
+  );
 
   async function save(runtime: RuntimeCatalogItem) {
     setBusy(`${runtime.id}:save`);
@@ -71,17 +100,9 @@ export function RuntimeSettings({
         `/api/runtimes/${runtime.id}`,
         {
           method: "PATCH",
-          body: JSON.stringify({
-            enabled: runtime.enabled,
-            defaultModel: runtime.defaultModel,
-            ...(keys[runtime.id] ? { apiKey: keys[runtime.id] } : {}),
-            ...(runtime.id === "direct_api"
-              ? {
-                  baseUrl: runtime.baseUrl,
-                  apiFormat: runtime.apiFormat,
-                }
-              : {}),
-          }),
+          body: JSON.stringify(
+            configurationBody(runtime, { includeEnabled: true }),
+          ),
         },
       );
       replace(next);
@@ -100,18 +121,14 @@ export function RuntimeSettings({
     setBusy(`${runtime.id}:test`);
     try {
       let current = runtime;
-      if (keys[runtime.id] || runtime.id === "direct_api") {
+      if (
+        keys[runtime.id] ||
+        runtime.id === "direct_api" ||
+        runtime.id === "openrouter"
+      ) {
         current = await api<RuntimeCatalogItem>(`/api/runtimes/${runtime.id}`, {
           method: "PATCH",
-          body: JSON.stringify({
-            ...(keys[runtime.id] ? { apiKey: keys[runtime.id] } : {}),
-            ...(runtime.id === "direct_api"
-              ? {
-                  baseUrl: runtime.baseUrl,
-                  apiFormat: runtime.apiFormat,
-                }
-              : {}),
-          }),
+          body: JSON.stringify(configurationBody(runtime)),
         });
         replace(current);
         setKeys((values) => ({ ...values, [runtime.id]: "" }));
@@ -123,6 +140,7 @@ export function RuntimeSettings({
       replace(next);
       toast.success(`${runtime.displayName} is ready`);
     } catch (error) {
+      await refreshRuntimeHealth(runtime.id).catch(() => undefined);
       toast.error(
         error instanceof Error ? error.message : "Runtime test failed",
       );
@@ -206,12 +224,93 @@ export function RuntimeSettings({
             />
           ) : null}
 
+          {runtime.id === "openrouter" && runtime.providerRouting ? (
+            <div className="grid gap-3 rounded-md border bg-muted/20 p-3 md:grid-cols-3">
+              <label className="flex items-start justify-between gap-3 text-xs">
+                <span>
+                  <span className="block font-semibold">
+                    Require all request parameters
+                  </span>
+                  <span className="mt-1 block text-muted-foreground">
+                    Route only to providers that support every parameter Slab
+                    sends, including tools and output controls.
+                  </span>
+                </span>
+                <Switch
+                  className="mt-0.5 shrink-0"
+                  checked={runtime.providerRouting.requireParameters}
+                  onCheckedChange={(requireParameters) =>
+                    replace({
+                      ...runtime,
+                      providerRouting: {
+                        ...runtime.providerRouting!,
+                        requireParameters,
+                      },
+                    })
+                  }
+                  aria-label="Require OpenRouter request parameter support"
+                />
+              </label>
+              <label className="flex items-start justify-between gap-3 text-xs">
+                <span>
+                  <span className="block font-semibold">
+                    Deny data collection
+                  </span>
+                  <span className="mt-1 block text-muted-foreground">
+                    Exclude providers that may retain prompts for training or
+                    analytics.
+                  </span>
+                </span>
+                <Switch
+                  className="mt-0.5 shrink-0"
+                  checked={runtime.providerRouting.dataCollection === "deny"}
+                  onCheckedChange={(deny) =>
+                    replace({
+                      ...runtime,
+                      providerRouting: {
+                        ...runtime.providerRouting!,
+                        dataCollection: deny ? "deny" : "allow",
+                      },
+                    })
+                  }
+                  aria-label="Deny OpenRouter provider data collection"
+                />
+              </label>
+              <label className="flex items-start justify-between gap-3 text-xs">
+                <span>
+                  <span className="block font-semibold">
+                    Zero data retention only
+                  </span>
+                  <span className="mt-1 block text-muted-foreground">
+                    Use only endpoints with a zero-data-retention policy.
+                  </span>
+                </span>
+                <Switch
+                  className="mt-0.5 shrink-0"
+                  checked={runtime.providerRouting.zdr}
+                  onCheckedChange={(zdr) =>
+                    replace({
+                      ...runtime,
+                      providerRouting: {
+                        ...runtime.providerRouting!,
+                        zdr,
+                      },
+                    })
+                  }
+                  aria-label="Require OpenRouter zero data retention"
+                />
+              </label>
+            </div>
+          ) : null}
+
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-end">
             {runtime.authMode === "api_key" ? (
               <label className="grid gap-1.5 text-xs font-semibold">
                 {runtime.id === "claude"
                   ? "Anthropic API key"
-                  : "Provider API key"}
+                  : runtime.id === "openrouter"
+                    ? "OpenRouter API key"
+                    : "Provider API key"}
                 <div className="relative">
                   <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -223,7 +322,9 @@ export function RuntimeSettings({
                         ? "Configured · replace only"
                         : runtime.id === "claude"
                           ? "sk-ant-…"
-                          : "Write-only credential"
+                          : runtime.id === "openrouter"
+                            ? "sk-or-v1-…"
+                            : "Write-only credential"
                     }
                     onChange={(event) =>
                       setKeys((current) => ({

@@ -7,7 +7,13 @@ import { OperationalError } from "@/lib/operational-error";
 
 import { decryptLocalSecret, encryptLocalSecret } from "@/lib/secrets";
 
-export const runtimeIds = ["codex", "claude", "direct_api", "gemini"] as const;
+export const runtimeIds = [
+  "codex",
+  "claude",
+  "direct_api",
+  "openrouter",
+  "gemini",
+] as const;
 export type RuntimeId = (typeof runtimeIds)[number];
 
 export const runtimeBudgetCapabilities: Record<
@@ -16,27 +22,38 @@ export const runtimeBudgetCapabilities: Record<
     nativeTokenLimit: boolean;
     nativeCostLimit: boolean;
     incrementalTokenUsage: boolean;
+    incrementalCostUsage: boolean;
   }
 > = {
   codex: {
     nativeTokenLimit: false,
     nativeCostLimit: false,
     incrementalTokenUsage: true,
+    incrementalCostUsage: false,
   },
   claude: {
     nativeTokenLimit: false,
     nativeCostLimit: true,
     incrementalTokenUsage: false,
+    incrementalCostUsage: false,
   },
   direct_api: {
     nativeTokenLimit: false,
     nativeCostLimit: false,
     incrementalTokenUsage: true,
+    incrementalCostUsage: false,
+  },
+  openrouter: {
+    nativeTokenLimit: false,
+    nativeCostLimit: false,
+    incrementalTokenUsage: true,
+    incrementalCostUsage: true,
   },
   gemini: {
     nativeTokenLimit: false,
     nativeCostLimit: false,
     incrementalTokenUsage: false,
+    incrementalCostUsage: false,
   },
 };
 
@@ -68,6 +85,13 @@ export const runtimeDefaults: Record<
     defaultModel: "gpt-5.4",
     models: ["gpt-5.4"],
   },
+  openrouter: {
+    runtimeId: "openrouter",
+    enabled: false,
+    authMode: "api_key",
+    defaultModel: "openrouter/auto",
+    models: ["openrouter/auto"],
+  },
   gemini: {
     runtimeId: "gemini",
     enabled: false,
@@ -91,6 +115,9 @@ export function getRuntimeConfig(runtimeId: RuntimeId): RuntimeConfigRecord {
     credentialCiphertext: null,
     baseUrl: runtimeId === "direct_api" ? "https://api.openai.com/v1" : null,
     apiFormat: runtimeId === "direct_api" ? "responses" : null,
+    openrouterRequireParameters: true,
+    openrouterDataCollection: "deny",
+    openrouterZdr: true,
     configVersion: 0,
     lastVerificationStatus: null,
     lastVerificationDetail: null,
@@ -107,6 +134,9 @@ export function saveRuntimeConfiguration(input: {
   defaultModel?: string;
   baseUrl?: string;
   apiFormat?: "responses" | "chat_completions";
+  requireParameters?: boolean;
+  dataCollection?: "allow" | "deny";
+  zdr?: boolean;
 }) {
   const current = getRuntimeConfig(input.runtimeId);
   const apiKey = input.apiKey?.trim();
@@ -129,6 +159,11 @@ export function saveRuntimeConfiguration(input: {
       "Configure an API key before enabling Direct API.",
     );
   }
+  if (input.runtimeId === "openrouter" && enabled && !credentialCiphertext) {
+    throw new OperationalError(
+      "Configure an OpenRouter API key before enabling OpenRouter.",
+    );
+  }
   const baseUrl =
     input.runtimeId === "direct_api"
       ? normalizeDirectApiUrl(input.baseUrl ?? current.baseUrl ?? "")
@@ -140,7 +175,13 @@ export function saveRuntimeConfiguration(input: {
   const connectionChanged =
     Boolean(apiKey) ||
     (input.runtimeId === "direct_api" &&
-      (baseUrl !== current.baseUrl || apiFormat !== current.apiFormat));
+      (baseUrl !== current.baseUrl || apiFormat !== current.apiFormat)) ||
+    (input.runtimeId === "openrouter" &&
+      ((input.requireParameters ?? current.openrouterRequireParameters) !==
+        current.openrouterRequireParameters ||
+        (input.dataCollection ?? current.openrouterDataCollection) !==
+          current.openrouterDataCollection ||
+        (input.zdr ?? current.openrouterZdr) !== current.openrouterZdr));
   const defaultModel = input.defaultModel?.trim() || current.defaultModel;
   if (
     input.runtimeId !== "codex" &&
@@ -159,6 +200,18 @@ export function saveRuntimeConfiguration(input: {
     credentialCiphertext,
     baseUrl,
     apiFormat,
+    openrouterRequireParameters:
+      input.runtimeId === "openrouter"
+        ? (input.requireParameters ?? current.openrouterRequireParameters)
+        : current.openrouterRequireParameters,
+    openrouterDataCollection:
+      input.runtimeId === "openrouter"
+        ? (input.dataCollection ?? current.openrouterDataCollection)
+        : current.openrouterDataCollection,
+    openrouterZdr:
+      input.runtimeId === "openrouter"
+        ? (input.zdr ?? current.openrouterZdr)
+        : current.openrouterZdr,
     defaultModel,
     models: current.models,
     ...(connectionChanged
@@ -201,7 +254,12 @@ export function resolveRuntimeModel(runtimeId: string, model: string) {
 }
 
 export function getRuntimeAuthentication(runtimeId: string) {
-  if (runtimeId !== "claude" && runtimeId !== "direct_api") return null;
+  if (
+    runtimeId !== "claude" &&
+    runtimeId !== "direct_api" &&
+    runtimeId !== "openrouter"
+  )
+    return null;
   const config = getRuntimeConfig(runtimeId);
   if (!config.enabled || !config.credentialCiphertext) {
     throw new OperationalError(
@@ -216,7 +274,15 @@ export function getRuntimeAuthentication(runtimeId: string) {
           baseUrl: normalizeDirectApiUrl(config.baseUrl ?? ""),
           apiFormat: config.apiFormat ?? "responses",
         }
-      : {}),
+      : runtimeId === "openrouter"
+        ? {
+            providerRouting: {
+              requireParameters: config.openrouterRequireParameters,
+              dataCollection: config.openrouterDataCollection,
+              zdr: config.openrouterZdr,
+            },
+          }
+        : {}),
   };
 }
 

@@ -173,6 +173,118 @@ test("runtime configuration, model selection, and credentials stay server-side",
     /query string or fragment/,
   );
 
+  const openRouterKey = "sk-or-v1-openrouter-secret-never-returned";
+  runtimeConfig.saveRuntimeConfiguration({
+    runtimeId: "openrouter",
+    apiKey: openRouterKey,
+    requireParameters: true,
+    dataCollection: "deny",
+    zdr: true,
+  });
+  const storedOpenRouter =
+    runtimeConfigRepository.getRuntimeConfig("openrouter");
+  assert.ok(storedOpenRouter?.credentialCiphertext);
+  assert.doesNotMatch(storedOpenRouter.credentialCiphertext, /never-returned/);
+  assert.equal(storedOpenRouter.openrouterRequireParameters, true);
+  assert.equal(storedOpenRouter.openrouterDataCollection, "deny");
+  assert.equal(storedOpenRouter.openrouterZdr, true);
+  await runtimeService.testRuntime("openrouter", {
+    fetcher: async (url, init) => {
+      if (String(url) === "https://openrouter.ai/api/v1/key") {
+        assert.equal(init?.headers.Authorization, `Bearer ${openRouterKey}`);
+        assert.equal(init?.redirect, "manual");
+        return Response.json({ data: { label: "slab-test-key" } });
+      }
+      assert.equal(
+        String(url),
+        "https://openrouter.ai/api/v1/models?supported_parameters=tools&zdr=true",
+      );
+      assert.equal(init?.headers.Authorization, `Bearer ${openRouterKey}`);
+      assert.equal(init?.redirect, "manual");
+      return Response.json({
+        data: [
+          {
+            id: "provider/tool-model",
+            supported_parameters: ["tools", "temperature"],
+          },
+          { id: "provider/text-only", supported_parameters: ["temperature"] },
+          { id: "provider/tool-model", supported_parameters: ["tools"] },
+        ],
+      });
+    },
+    now: () => "2026-08-24T12:00:01.500Z",
+  });
+  assert.deepEqual(
+    runtimeConfigRepository.getRuntimeConfig("openrouter")?.models,
+    ["provider/tool-model"],
+  );
+  let invalidKeyRequests = 0;
+  await assert.rejects(
+    runtimeService.testRuntime("openrouter", {
+      fetcher: async (url) => {
+        invalidKeyRequests += 1;
+        assert.equal(String(url), "https://openrouter.ai/api/v1/key");
+        return Response.json(
+          { error: { message: "Unauthorized" } },
+          { status: 401 },
+        );
+      },
+    }),
+    /rejected the configured API key/,
+  );
+  assert.equal(
+    invalidKeyRequests,
+    1,
+    "an invalid key must fail before public model discovery",
+  );
+  runtimeConfig.saveRuntimeConfiguration({
+    runtimeId: "openrouter",
+    enabled: true,
+    defaultModel: "provider/tool-model",
+  });
+  assert.deepEqual(runtimeConfig.getRuntimeAuthentication("openrouter"), {
+    mode: "api_key",
+    credential: openRouterKey,
+    providerRouting: {
+      requireParameters: true,
+      dataCollection: "deny",
+      zdr: true,
+    },
+  });
+  runtimeConfig.saveRuntimeConfiguration({
+    runtimeId: "openrouter",
+    dataCollection: "allow",
+    zdr: false,
+  });
+  assert.equal(
+    runtimeConfigRepository.getRuntimeConfig("openrouter")
+      ?.lastVerificationStatus,
+    null,
+    "routing changes must invalidate model-policy verification",
+  );
+  assert.deepEqual(
+    runtimeConfig.getRuntimeAuthentication("openrouter").providerRouting,
+    {
+      requireParameters: true,
+      dataCollection: "allow",
+      zdr: false,
+    },
+  );
+  await runtimeService.testRuntime("openrouter", {
+    fetcher: async (url) => {
+      if (String(url) === "https://openrouter.ai/api/v1/key") {
+        return Response.json({ data: { label: "slab-test-key" } });
+      }
+      assert.equal(
+        String(url),
+        "https://openrouter.ai/api/v1/models?supported_parameters=tools",
+      );
+      return Response.json({
+        data: [{ id: "provider/tool-model", supported_parameters: ["tools"] }],
+      });
+    },
+  });
+
   let testedRuntime = null;
   await runtimeService.testRuntime("gemini", {
     testRuntimeOwned: async (runtimeId) => {
@@ -242,6 +354,30 @@ test("runtime configuration, model selection, and credentials stay server-side",
   assert.equal(directRun.runtime, "direct_api");
   assert.equal(directRun.model, "kimi-test");
 
+  const openRouterAgent = agentRepository.createAgent({
+    name: "OpenRouter Operator",
+    slug: "openrouter-operator",
+    role: "Operations",
+    instructions: "Operate through the configured OpenRouter runtime.",
+    runtime: "openrouter",
+    model: "default",
+    enabled: true,
+    fullAccess: false,
+  });
+  const openRouterThread = conversationRepository.createThread(
+    openRouterAgent.id,
+    "OpenRouter runtime",
+  );
+  const openRouterRun = createRunExecution({
+    agentId: openRouterAgent.id,
+    threadId: openRouterThread.id,
+    trigger: "chat",
+    mode: "chat",
+    prompt: "Confirm the OpenRouter runtime.",
+  });
+  assert.equal(openRouterRun.runtime, "openrouter");
+  assert.equal(openRouterRun.model, "provider/tool-model");
+
   const geminiAgent = agentRepository.createAgent({
     name: "Gemini Operator",
     slug: "gemini-operator",
@@ -306,6 +442,18 @@ test("runtime configuration, model selection, and credentials stay server-side",
           authentication: { status: "required", mode: "api_key" },
           checkedAt: "2026-08-24T12:00:00.000Z",
         },
+        {
+          id: "openrouter",
+          displayName: "OpenRouter",
+          stability: "experimental",
+          authModes: ["api_key"],
+          capabilities: { tools: true },
+          available: false,
+          status: "authentication_required",
+          reasonCode: "authentication_required",
+          authentication: { status: "required", mode: "api_key" },
+          checkedAt: "2026-08-24T12:00:00.000Z",
+        },
       ],
     });
   t.after(() => {
@@ -316,12 +464,21 @@ test("runtime configuration, model selection, and credentials stay server-side",
   assert.doesNotMatch(serialized, /runtime-choice-secret/);
   assert.doesNotMatch(serialized, /credentialCiphertext|credential_ciphertext/);
   assert.doesNotMatch(serialized, /openai-compatible-secret/);
+  assert.doesNotMatch(serialized, /openrouter-secret/);
   assert.equal(
     publicCatalog.find(({ id }) => id === "claude")?.configured,
     true,
   );
   assert.equal(
     publicCatalog.find(({ id }) => id === "gemini")?.health,
+    "available",
+  );
+  assert.deepEqual(
+    publicCatalog.find(({ id }) => id === "openrouter")?.providerRouting,
+    { requireParameters: true, dataCollection: "allow", zdr: false },
+  );
+  assert.equal(
+    publicCatalog.find(({ id }) => id === "openrouter")?.health,
     "available",
   );
 
@@ -388,38 +545,48 @@ test("runtime configuration, model selection, and credentials stay server-side",
 });
 
 test("runtime UI is write-only for provider credentials and run audit shows selection", async () => {
-  const [settings, runDetail, migration, directMigration, geminiMigration] =
-    await Promise.all([
-      readFile(
-        new URL("../components/runtime-settings.tsx", import.meta.url),
-        "utf8",
+  const [
+    settings,
+    runDetail,
+    migration,
+    directMigration,
+    geminiMigration,
+    openRouterMigration,
+  ] = await Promise.all([
+    readFile(
+      new URL("../components/runtime-settings.tsx", import.meta.url),
+      "utf8",
+    ),
+    readFile(new URL("../components/run-detail.tsx", import.meta.url), "utf8"),
+    readFile(
+      new URL(
+        "../db/migrations/202608240022_runtime_provider_choice.cjs",
+        import.meta.url,
       ),
-      readFile(
-        new URL("../components/run-detail.tsx", import.meta.url),
-        "utf8",
+      "utf8",
+    ),
+    readFile(
+      new URL(
+        "../db/migrations/202608240024_direct_api_runtime.cjs",
+        import.meta.url,
       ),
-      readFile(
-        new URL(
-          "../db/migrations/202608240022_runtime_provider_choice.cjs",
-          import.meta.url,
-        ),
-        "utf8",
+      "utf8",
+    ),
+    readFile(
+      new URL(
+        "../db/migrations/202608240025_gemini_runtime.cjs",
+        import.meta.url,
       ),
-      readFile(
-        new URL(
-          "../db/migrations/202608240024_direct_api_runtime.cjs",
-          import.meta.url,
-        ),
-        "utf8",
+      "utf8",
+    ),
+    readFile(
+      new URL(
+        "../db/migrations/202608270029_openrouter_runtime.cjs",
+        import.meta.url,
       ),
-      readFile(
-        new URL(
-          "../db/migrations/202608240025_gemini_runtime.cjs",
-          import.meta.url,
-        ),
-        "utf8",
-      ),
-    ]);
+      "utf8",
+    ),
+  ]);
 
   assert.match(settings, /type="password"/);
   assert.match(settings, /Configured · replace only/);
@@ -434,4 +601,14 @@ test("runtime UI is write-only for provider credentials and run audit shows sele
   assert.match(geminiMigration, /gemini/);
   assert.match(geminiMigration, /runtime_owned/);
   assert.match(settings, /sudo slabctl gemini login/);
+  assert.match(settings, /OpenRouter API key/);
+  assert.match(settings, /Deny data collection/);
+  assert.match(settings, /Zero data retention only/);
+  const testHandler = settings.slice(
+    settings.indexOf("async function test"),
+    settings.indexOf("return ("),
+  );
+  assert.match(testHandler, /catch[\s\S]*refreshRuntimeHealth\(runtime\.id\)/);
+  assert.match(openRouterMigration, /openrouter_data_collection/);
+  assert.match(openRouterMigration, /openrouter_zdr/);
 });

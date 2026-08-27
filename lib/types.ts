@@ -389,6 +389,11 @@ export type RuntimeCatalogItem = {
   defaultModel: string;
   baseUrl: string | null;
   apiFormat: "responses" | "chat_completions" | null;
+  providerRouting: {
+    requireParameters: boolean;
+    dataCollection: "allow" | "deny";
+    zdr: boolean;
+  } | null;
 };
 
 export type BudgetPolicy = {

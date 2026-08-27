@@ -539,8 +539,8 @@ export function HowItWorksGuide() {
                     Settings → Runtime
                   </strong>
                   . Test Runner and each runtime separately. Codex uses the
-                  bundled CLI account; Claude uses a write-only Anthropic API
-                  key configured on this page.
+                  bundled CLI account; Claude and OpenRouter use write-only API
+                  keys configured on this page.
                 </Step>
                 <Step
                   number="05"
@@ -596,6 +596,13 @@ export function HowItWorksGuide() {
                   server-side. The stored key is never returned to the browser
                   or added to an agent prompt.
                 </Callout>
+                <Callout title="OpenRouter setup" icon={KeyRound}>
+                  In Settings → Runtime, paste an OpenRouter API key and choose
+                  Test. Slab discovers tool-capable models server-side. Routing
+                  requires tool parameter support, denies data-collecting
+                  providers, and uses zero-data-retention endpoints by default;
+                  each safeguard remains independently configurable.
+                </Callout>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" asChild>
                     <Link href="/settings">Open Settings</Link>
@@ -628,9 +635,11 @@ export function HowItWorksGuide() {
                 </Step>
                 <Step number="02" title="Choose runtime policy">
                   Choose a healthy enabled runtime and model. Codex is stable;
-                  Claude Agent is experimental and requires a verified Anthropic
-                  API key. Enabled agents can receive new work. Disabled agents
-                  keep their history but do not start new runs.
+                  Claude Agent and OpenRouter are experimental and require a
+                  verified write-only API key. OpenRouter model choices are
+                  restricted to models reporting tool support. Enabled agents
+                  can receive new work. Disabled agents keep their history but
+                  do not start new runs.
                 </Step>
                 <Step number="03" title="Set tool permissions">
                   In the agent&apos;s Capabilities tab, set each Work, Docs,

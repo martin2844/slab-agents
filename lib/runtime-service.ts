@@ -46,6 +46,13 @@ const fallbackDefinitions: Record<
     authModes: ["api_key"],
     capabilities: {},
   },
+  openrouter: {
+    id: "openrouter",
+    displayName: "OpenRouter",
+    stability: "experimental",
+    authModes: ["api_key"],
+    capabilities: {},
+  },
   gemini: {
     id: "gemini",
     displayName: "Gemini CLI",
@@ -136,7 +143,7 @@ function catalogItem(
   } else if (config.lastVerificationStatus === "failed") {
     health = "unavailable";
     healthDetail =
-      config.lastVerificationDetail ?? "Anthropic authentication failed.";
+      config.lastVerificationDetail ?? `${definition.displayName} test failed.`;
   }
 
   return {
@@ -157,6 +164,14 @@ function catalogItem(
     defaultModel: config.defaultModel,
     baseUrl: config.baseUrl,
     apiFormat: config.apiFormat,
+    providerRouting:
+      runtimeId === "openrouter"
+        ? {
+            requireParameters: config.openrouterRequireParameters,
+            dataCollection: config.openrouterDataCollection,
+            zdr: config.openrouterZdr,
+          }
+        : null,
   };
 }
 
@@ -179,6 +194,9 @@ export async function updateRuntime(input: {
   defaultModel?: string;
   baseUrl?: string;
   apiFormat?: "responses" | "chat_completions";
+  requireParameters?: boolean;
+  dataCollection?: "allow" | "deny";
+  zdr?: boolean;
 }) {
   saveRuntimeConfiguration(input);
   return (await listRuntimeCatalog()).find(({ id }) => id === input.runtimeId)!;
@@ -225,6 +243,11 @@ export async function testRuntime(
           redirect: "manual",
         },
       );
+      if (response.status >= 300 && response.status < 400) {
+        throw new OperationalError(
+          "Anthropic model discovery refused a redirect.",
+        );
+      }
       if (!response.ok) {
         throw new OperationalError(
           response.status === 401 || response.status === 403
@@ -235,7 +258,7 @@ export async function testRuntime(
       const payload = (await readJsonLimited(response)) as {
         data?: Array<{ id?: unknown }>;
       };
-      const discovered = (payload.data ?? [])
+      const discovered = (Array.isArray(payload?.data) ? payload.data : [])
         .map(({ id }) => (typeof id === "string" ? id : ""))
         .filter((id) => id.length > 0 && id.length <= 200)
         .slice(0, 100);
@@ -250,6 +273,97 @@ export async function testRuntime(
             : "default",
           status: "connected",
           detail: `${discovered.length} Anthropic models available.`,
+          checkedAt,
+        })
+      )
+        throw new RuntimeConfigurationChangedError();
+    } else if (runtimeId === "openrouter") {
+      if (!config.credentialCiphertext) {
+        throw new OperationalError("Configure an OpenRouter API key first.");
+      }
+      const credential = decryptLocalSecret(config.credentialCiphertext);
+      const requestOptions = {
+        headers: {
+          Authorization: `Bearer ${credential}`,
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(10_000),
+        cache: "no-store" as const,
+        redirect: "manual" as const,
+      };
+      const keyResponse = await fetcher(
+        "https://openrouter.ai/api/v1/key",
+        requestOptions,
+      );
+      if (keyResponse.status >= 300 && keyResponse.status < 400) {
+        throw new OperationalError("OpenRouter key check refused a redirect.");
+      }
+      if (!keyResponse.ok) {
+        throw new OperationalError(
+          keyResponse.status === 401 || keyResponse.status === 403
+            ? "OpenRouter rejected the configured API key."
+            : `OpenRouter key check returned ${keyResponse.status}.`,
+        );
+      }
+      const keyPayload = (await readJsonLimited(keyResponse)) as {
+        data?: unknown;
+      };
+      if (
+        !keyPayload?.data ||
+        typeof keyPayload.data !== "object" ||
+        Array.isArray(keyPayload.data)
+      ) {
+        throw new OperationalError(
+          "OpenRouter key check returned an invalid response.",
+        );
+      }
+
+      const params = new URLSearchParams({ supported_parameters: "tools" });
+      if (config.openrouterZdr) params.set("zdr", "true");
+      const response = await fetcher(
+        `https://openrouter.ai/api/v1/models?${params.toString()}`,
+        requestOptions,
+      );
+      if (response.status >= 300 && response.status < 400) {
+        throw new OperationalError(
+          "OpenRouter model discovery refused a redirect.",
+        );
+      }
+      if (!response.ok) {
+        throw new OperationalError(
+          response.status === 401 || response.status === 403
+            ? "OpenRouter rejected the configured API key."
+            : `OpenRouter model discovery returned ${response.status}.`,
+        );
+      }
+      const payload = (await readJsonLimited(response)) as {
+        data?: Array<{ id?: unknown; supported_parameters?: unknown }>;
+      };
+      const discovered = (Array.isArray(payload?.data) ? payload.data : [])
+        .filter(
+          ({ supported_parameters }) =>
+            Array.isArray(supported_parameters) &&
+            supported_parameters.includes("tools"),
+        )
+        .map(({ id }) => (typeof id === "string" ? id.trim() : ""))
+        .filter((id) => id.length > 0 && id.length <= 200)
+        .slice(0, 500);
+      const models = [...new Set(discovered)];
+      if (models.length === 0) {
+        throw new OperationalError(
+          "OpenRouter did not report any tool-capable models for this policy.",
+        );
+      }
+      if (
+        !runtimeConfigRepository.completeRuntimeVerification({
+          runtimeId,
+          expectedConfigVersion: config.configVersion,
+          models,
+          defaultModel: models.includes(config.defaultModel)
+            ? config.defaultModel
+            : models[0],
+          status: "connected",
+          detail: `${models.length} tool-capable OpenRouter models available${config.openrouterZdr ? " with zero-data-retention routing" : ""}.`,
           checkedAt,
         })
       )
@@ -287,7 +401,7 @@ export async function testRuntime(
       const payload = (await readJsonLimited(response)) as {
         data?: Array<{ id?: unknown }>;
       };
-      const discovered = (payload.data ?? [])
+      const discovered = (Array.isArray(payload?.data) ? payload.data : [])
         .map(({ id }) => (typeof id === "string" ? id : ""))
         .filter((id) => id.length > 0 && id.length <= 200)
         .slice(0, 200);

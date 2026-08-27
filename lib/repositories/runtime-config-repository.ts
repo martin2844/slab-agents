@@ -10,6 +10,9 @@ export type RuntimeConfigRecord = {
   credentialCiphertext: string | null;
   baseUrl: string | null;
   apiFormat: "responses" | "chat_completions" | null;
+  openrouterRequireParameters: boolean;
+  openrouterDataCollection: "allow" | "deny";
+  openrouterZdr: boolean;
   defaultModel: string;
   models: string[];
   configVersion: number;
@@ -32,6 +35,14 @@ function mapRuntimeConfig(row: Row): RuntimeConfigRecord {
     apiFormat: row.api_format
       ? (String(row.api_format) as RuntimeConfigRecord["apiFormat"])
       : null,
+    openrouterRequireParameters:
+      row.openrouter_require_parameters === undefined
+        ? true
+        : bool(row.openrouter_require_parameters),
+    openrouterDataCollection:
+      row.openrouter_data_collection === "allow" ? "allow" : "deny",
+    openrouterZdr:
+      row.openrouter_zdr === undefined ? true : bool(row.openrouter_zdr),
     defaultModel: String(row.default_model ?? "default"),
     models: json(row.models_json, ["default"]),
     configVersion: Number(row.config_version ?? 1),
@@ -70,6 +81,9 @@ export const runtimeConfigRepository = {
     credentialCiphertext?: string | null;
     baseUrl?: string | null;
     apiFormat?: RuntimeConfigRecord["apiFormat"];
+    openrouterRequireParameters?: boolean;
+    openrouterDataCollection?: RuntimeConfigRecord["openrouterDataCollection"];
+    openrouterZdr?: boolean;
     defaultModel: string;
     models: string[];
     lastVerificationStatus?: RuntimeConfigRecord["lastVerificationStatus"];
@@ -80,14 +94,17 @@ export const runtimeConfigRepository = {
     const timestamp = now();
     db.prepare(
       `INSERT INTO runtime_configs
-        (runtime_id,enabled,auth_mode,credential_ciphertext,base_url,api_format,default_model,models_json,config_version,last_verification_status,last_verification_detail,last_verified_at,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        (runtime_id,enabled,auth_mode,credential_ciphertext,base_url,api_format,openrouter_require_parameters,openrouter_data_collection,openrouter_zdr,default_model,models_json,config_version,last_verification_status,last_verification_detail,last_verified_at,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(runtime_id) DO UPDATE SET
         enabled=excluded.enabled,
         auth_mode=excluded.auth_mode,
         credential_ciphertext=excluded.credential_ciphertext,
         base_url=excluded.base_url,
         api_format=excluded.api_format,
+        openrouter_require_parameters=excluded.openrouter_require_parameters,
+        openrouter_data_collection=excluded.openrouter_data_collection,
+        openrouter_zdr=excluded.openrouter_zdr,
         default_model=excluded.default_model,
         models_json=excluded.models_json,
         config_version=excluded.config_version,
@@ -102,6 +119,15 @@ export const runtimeConfigRepository = {
       input.credentialCiphertext ?? current?.credentialCiphertext ?? null,
       input.baseUrl ?? current?.baseUrl ?? null,
       input.apiFormat ?? current?.apiFormat ?? null,
+      (input.openrouterRequireParameters ??
+        current?.openrouterRequireParameters ??
+        true)
+        ? 1
+        : 0,
+      input.openrouterDataCollection ??
+        current?.openrouterDataCollection ??
+        "deny",
+      (input.openrouterZdr ?? current?.openrouterZdr ?? true) ? 1 : 0,
       input.defaultModel,
       JSON.stringify([...new Set(input.models)]),
       current ? current.configVersion + 1 : 1,
