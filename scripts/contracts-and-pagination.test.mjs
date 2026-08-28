@@ -37,7 +37,10 @@ test("offset pagination collects every page and fails closed at its bound", asyn
     label: "fixture",
     fetchPage: async (limit, offset) => {
       offsets.push(offset);
-      return { items: values.slice(offset, offset + limit), total: values.length };
+      return {
+        items: values.slice(offset, offset + limit),
+        total: values.length,
+      };
     },
   });
   assert.deepEqual(offsets, [0, 100, 200]);
@@ -107,13 +110,24 @@ test("remote MCP schemas preserve provider constraints", () => {
 
 test("bounded concurrency waits for every worker before reporting failure", async () => {
   const completed = [];
+  const started = [];
   await assert.rejects(
-    mapWithConcurrency(["fail", "slow"], 2, async (value) => {
-      if (value === "fail") throw new Error("worker failed");
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      completed.push(value);
-    }),
+    mapWithConcurrency(
+      ["fail", "slow", "never-1", "never-2"],
+      2,
+      async (value) => {
+        started.push(value);
+        if (value === "fail") throw new Error("worker failed");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        completed.push(value);
+      },
+    ),
     /worker failed/,
   );
   assert.deepEqual(completed, ["slow"]);
+  assert.deepEqual(
+    started.sort(),
+    ["fail", "slow"],
+    "workers stop claiming new values after the first failure",
+  );
 });

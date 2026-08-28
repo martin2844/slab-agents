@@ -12,6 +12,8 @@ const publicPaths = new Set([
   "/login",
   "/api/auth/login",
   "/api/auth/status",
+  "/api/sources/github/callback/manifest",
+  "/api/sources/github/callback/install",
 ]);
 const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
 

@@ -46,13 +46,14 @@ const chapters = [
   ["02", "Bring it online", "#setup"],
   ["03", "Create agents", "#agents"],
   ["04", "Memory", "#memory"],
-  ["05", "Create tools", "#tools"],
-  ["06", "Email", "#email"],
-  ["07", "Gmail", "#gmail"],
-  ["08", "Proton Bridge", "#proton"],
-  ["09", "Calendar", "#calendar"],
-  ["10", "Run lifecycle", "#runs"],
-  ["11", "Troubleshooting", "#troubleshooting"],
+  ["05", "Sources", "#sources"],
+  ["06", "Create tools", "#tools"],
+  ["07", "Email", "#email"],
+  ["08", "Gmail", "#gmail"],
+  ["09", "Proton Bridge", "#proton"],
+  ["10", "Calendar", "#calendar"],
+  ["11", "Run lifecycle", "#runs"],
+  ["12", "Troubleshooting", "#troubleshooting"],
 ] as const;
 
 type Icon = React.ComponentType<{ className?: string }>;
@@ -257,6 +258,24 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ProviderCard({
+  icon: IconComponent,
+  title,
+  copy,
+}: {
+  icon: Icon;
+  title: string;
+  copy: string;
+}) {
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <IconComponent className="size-4 text-primary" />
+      <h3 className="mt-4 text-sm font-semibold">{title}</h3>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">{copy}</p>
+    </div>
+  );
+}
+
 function TroubleshootingItem({
   title,
   symptom,
@@ -335,6 +354,11 @@ export function HowItWorksGuide() {
             <Button size="sm" variant="outline" asChild>
               <Link href="#calendar">
                 <CalendarDays /> Connect Calendar
+              </Link>
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link href="#sources">
+                <Database /> Connect knowledge
               </Link>
             </Button>
             <Button size="sm" variant="outline" asChild>
@@ -473,7 +497,7 @@ export function HowItWorksGuide() {
                 <DiagramNode
                   label="Capabilities"
                   title="Integrations"
-                  detail="PostHog, declarative read-only HTTP APIs, and remote Streamable HTTP MCP servers."
+                  detail="PostHog, declarative APIs, remote MCP, and source sync from WordPress, GitHub, and websites."
                   icon={PlugZap}
                   tone="success"
                 />
@@ -795,8 +819,79 @@ export function HowItWorksGuide() {
           </GuideSection>
 
           <GuideSection
-            id="tools"
+            id="sources"
             number="05"
+            title="Connect external knowledge"
+            description="Sources mirrors governed external content into Slab Docs. Agents keep one knowledge interface while operators retain provenance, freshness, and credential control."
+            icon={Database}
+          >
+            <div className="grid gap-4 lg:grid-cols-3">
+              <ProviderCard
+                icon={Globe2}
+                title="WordPress"
+                copy="Read published posts and pages through wp-json. Public sites need no credential; private content can use an application password or bearer token."
+              />
+              <ProviderCard
+                icon={Code2}
+                title="GitHub repositories"
+                copy="Index selected Markdown and text paths. Public repositories work directly; private repositories use a read-only GitHub App or fine-grained token."
+              />
+              <ProviderCard
+                icon={Network}
+                title="Website / sitemap"
+                copy="Read same-origin pages listed by an XML sitemap. Path prefixes and document limits keep the source deliberate and bounded."
+              />
+            </div>
+            <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_.8fr]">
+              <ol className="rounded-lg border bg-card px-4">
+                <Step number="01" title="Connect">
+                  Open Sources, choose a provider, enter its canonical location,
+                  authentication, scope, and synchronization interval.
+                </Step>
+                <Step number="02" title="Test and synchronize">
+                  Test validates the remote connection without writing Docs.
+                  Sync creates one source root and managed child documents.
+                </Step>
+                <Step number="03" title="Use through Docs">
+                  Agents search and read the mirrored documents through their
+                  existing Docs capability. No extra source tool is added to a
+                  run.
+                </Step>
+              </ol>
+              <div className="space-y-3">
+                <CodeBlock>{`WordPress / GitHub / Website
+        ↓ server-side sync
+Slab Agents (encrypted credentials)
+        ↓ Docs MCP
+Slab Docs (provenance + revisions)
+        ↓ existing capability
+Agent`}</CodeBlock>
+                <Callout title="Private GitHub repositories" icon={ShieldCheck}>
+                  Connect creates a GitHub App using GitHub&apos;s manifest
+                  flow. Select only the repositories Slab may read. The App
+                  requests repository contents and metadata read-only;
+                  installation tokens are short-lived and never enter prompts or
+                  the browser.
+                </Callout>
+              </div>
+            </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Button asChild>
+                <Link href="/sources">
+                  <Database /> Open Sources
+                </Link>
+              </Button>
+              <Button variant="outline" asChild>
+                <Link href="/docs">
+                  <FileText /> View synchronized Docs
+                </Link>
+              </Button>
+            </div>
+          </GuideSection>
+
+          <GuideSection
+            id="tools"
+            number="06"
             title="Create tools from an API or MCP server"
             description="Custom Integrations turns curated external capabilities into named agent tools. The model never receives a generic HTTP client and never chooses an arbitrary host or header."
             icon={Wrench}
@@ -951,7 +1046,7 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
 
           <GuideSection
             id="email"
-            number="06"
+            number="07"
             title="Email architecture and permissions"
             description="Email is optional and deliberately split: Slab Agents owns agent policy; slab-email owns mailbox credentials, provider tokens, and MCP execution."
             icon={Mail}
@@ -1079,7 +1174,7 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
 
           <GuideSection
             id="gmail"
-            number="07"
+            number="08"
             title="Connect Gmail with Google OAuth"
             description="Gmail uses the official Gmail API and OAuth 2.0. You create the OAuth client in Google Cloud, save it in Settings, and explicitly add test users while the app remains in Testing."
             icon={Cloud}
@@ -1215,7 +1310,7 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
 
           <GuideSection
             id="proton"
-            number="08"
+            number="09"
             title="Connect Proton with managed Bridge"
             description="On supported self-hosted images, Proton Bridge is already built into slab-email. You do not install a second service: connect your Proton account and let slab-email manage the private Bridge lifecycle."
             icon={KeyRound}
@@ -1357,7 +1452,7 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
 
           <GuideSection
             id="calendar"
-            number="09"
+            number="10"
             title="Connect calendars"
             description="Calendar is an optional Slab Agents capability. Provider credentials stay encrypted in the control plane; agents receive only semantic, account-scoped tools through an opaque run token."
             icon={CalendarDays}
@@ -1579,7 +1674,7 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
 
           <GuideSection
             id="runs"
-            number="10"
+            number="11"
             title="From intent to auditable run"
             description="Every execution is durable and typed. Agent identity, trigger, execution mode, optional Work scope, run policy, capabilities, and runtime continuity are separate concepts."
             icon={Activity}
@@ -1680,7 +1775,7 @@ chat message B
 
           <GuideSection
             id="troubleshooting"
-            number="11"
+            number="12"
             title="Troubleshooting"
             description="Start with the visible status and test action closest to the failing boundary. Do not compensate for a missing capability by expanding an agent prompt."
             icon={TestTube2}

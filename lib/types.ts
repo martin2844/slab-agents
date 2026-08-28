@@ -355,6 +355,95 @@ export type DocsPageData = {
   error: string;
 };
 
+export type KnowledgeSourceKind = "wordpress" | "github" | "website";
+export type KnowledgeSourceStatus =
+  "never_synced" | "syncing" | "healthy" | "error" | "disabled" | "deleting";
+export type KnowledgeSourceAuthType =
+  "none" | "basic" | "bearer" | "github_app";
+
+export type WordPressSourceConfig = {
+  kind: "wordpress";
+  siteUrl: string;
+  authType: "none" | "basic" | "bearer";
+  username: string | null;
+  contentTypes: string[];
+  publishedOnly: boolean;
+  maxDocuments: number;
+};
+
+export type GitHubSourceConfig = {
+  kind: "github";
+  repository: string;
+  branch: string;
+  authType: "none" | "bearer" | "github_app";
+  pathPrefixes: string[];
+  extensions: string[];
+  maxDocuments: number;
+};
+
+export type WebsiteSourceConfig = {
+  kind: "website";
+  siteUrl: string;
+  sitemapUrl: string | null;
+  authType: "none" | "basic" | "bearer";
+  username: string | null;
+  includePathPrefixes: string[];
+  maxDocuments: number;
+};
+
+export type KnowledgeSourceConfig =
+  WordPressSourceConfig | GitHubSourceConfig | WebsiteSourceConfig;
+
+export type KnowledgeSource = {
+  id: string;
+  name: string;
+  slug: string;
+  kind: KnowledgeSourceKind;
+  config: KnowledgeSourceConfig;
+  authType: KnowledgeSourceAuthType;
+  secretConfigured: boolean;
+  githubAppId: string | null;
+  enabled: boolean;
+  version: number;
+  syncIntervalMinutes: number | null;
+  status: KnowledgeSourceStatus;
+  lastSyncStartedAt: string | null;
+  lastSyncedAt: string | null;
+  lastError: string | null;
+  rootDocumentId: string | null;
+  itemCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GitHubSourceApp = {
+  id: string;
+  name: string;
+  organization: string | null;
+  appId: string | null;
+  appSlug: string | null;
+  installationId: string | null;
+  accountLogin: string | null;
+  status:
+    "pending_registration" | "pending_installation" | "connected" | "error";
+  lastVerifiedAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GitHubRepositoryOption = {
+  id: number;
+  fullName: string;
+  defaultBranch: string;
+  private: boolean;
+};
+
+export type SourcesPageData = {
+  sources: KnowledgeSource[];
+  githubApps: GitHubSourceApp[];
+};
+
 export type WorkspaceSettings = {
   workMcpUrl: string;
   workApiKeyConfigured: boolean;

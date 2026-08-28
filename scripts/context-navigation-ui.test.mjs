@@ -11,13 +11,17 @@ function navigationGroup(source, label) {
 }
 
 test("Docs and Sources live in Context while service setup lives in Connections", async () => {
-  const [navigation, sourcesPage, settings, settingsPage, guide] =
+  const [navigation, sourcesPage, sourcesView, settings, settingsPage, guide] =
     await Promise.all([
       readFile(
         new URL("../components/workspace-shell.tsx", import.meta.url),
         "utf8",
       ),
       readFile(new URL("../app/sources/page.tsx", import.meta.url), "utf8"),
+      readFile(
+        new URL("../components/sources-view.tsx", import.meta.url),
+        "utf8",
+      ),
       readFile(
         new URL("../components/settings-view.tsx", import.meta.url),
         "utf8",
@@ -36,8 +40,11 @@ test("Docs and Sources live in Context while service setup lives in Connections"
   assert.doesNotMatch(configureGroup, /href: "\/docs"/);
   assert.doesNotMatch(configureGroup, /href: "\/sources"/);
   assert.doesNotMatch(configureGroup, /href: "\/system"/);
-  assert.match(sourcesPage, /No external context sources are available yet/);
-  assert.match(sourcesPage, /planned home for external sources/);
+  assert.match(sourcesPage, /getSourcesPageData/);
+  assert.match(sourcesView, /Knowledge sources/);
+  assert.match(sourcesView, /WordPress/);
+  assert.match(sourcesView, /GitHub repository/);
+  assert.match(sourcesView, /Website \/ sitemap/);
   assert.match(settings, /TabsTrigger value="connections">Connections/);
   assert.match(settings, /TabsContent value="connections"/);
   assert.match(settingsPage, /query\.tab === "security"/);

@@ -6,6 +6,7 @@ import { startAutomationRun } from "@/lib/run-service";
 import { dueAutomation } from "@/lib/automation-schedule";
 import { tickEmailAutomations } from "@/lib/email-automation-dispatcher";
 import { tickSystemUpdates } from "@/lib/system-update-service";
+import { tickKnowledgeSources } from "@/lib/sources/scheduler";
 
 const state = globalThis as unknown as {
   slabScheduler?: NodeJS.Timeout;
@@ -22,6 +23,9 @@ export async function tickScheduler() {
     });
     void tickSystemUpdates().catch((error) => {
       console.error("[scheduler] System update tick:", error);
+    });
+    void tickKnowledgeSources().catch((error) => {
+      console.error("[scheduler] Knowledge source tick:", error);
     });
     const current = new Date();
     for (const occurrence of automationRepository.listPendingAutomationOccurrences()) {
