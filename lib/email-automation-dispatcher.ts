@@ -8,7 +8,10 @@ import {
   listInboundEmailEvents,
 } from "@/lib/integrations/email-service";
 import { automationRepository } from "@/lib/repositories/automation-repository";
-import { startEmailAutomationRun } from "@/lib/run-service";
+import {
+  advanceEmailWorkflowExecutions,
+  startEmailAutomationRun,
+} from "@/lib/email-workflow-execution-service";
 import type { InboundEmailEvent } from "@/lib/types";
 
 const PAGE_SIZE = 100;
@@ -155,12 +158,18 @@ const state = globalThis as unknown as {
 
 async function runEmailAutomationTick(dependencies: Dependencies) {
   const configured = dependencies.configured ?? isInboundEmailFeedConfigured;
-  if (!configured()) return;
   const listEvents = dependencies.listEvents ?? listInboundEmailEvents;
   const getAccount = dependencies.getAccount ?? getInboundEmailAccount;
   const startOccurrence =
     dependencies.startOccurrence ?? startEmailAutomationRun;
   const logError = dependencies.logError ?? defaultLogError;
+
+  try {
+    await advanceEmailWorkflowExecutions({ getAccount, logError });
+  } catch (error) {
+    logError("[scheduler] Email workflow advancement:", error);
+  }
+  if (!configured()) return;
 
   let cursor = automationRepository.getEmailFeedState()?.cursor ?? 0;
   try {

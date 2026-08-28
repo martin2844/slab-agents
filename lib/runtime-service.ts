@@ -107,7 +107,7 @@ function catalogItem(
   const config = getRuntimeConfig(runtimeId);
   const fallback = fallbackDefinitions[runtimeId];
   const definition = runner ?? fallback;
-  const authModes = Array.isArray(runner?.authModes)
+  const authModes = runner && Array.isArray(runner.authModes)
     ? runner.authModes
     : fallback.authModes;
   const capabilities =

@@ -49,6 +49,7 @@ import type { MemoryRecall } from "@/lib/memory/service";
 import {
   filterExposedToolsByPolicy,
   snapshotAgentToolPolicies,
+  type McpToolPolicy,
   type PolicyAwareMcpServer,
 } from "@/lib/agent-tool-policy";
 import {
@@ -377,6 +378,7 @@ export async function startRunnerRun(
     budget?: RuntimeBudget | null;
     attachOnly?: boolean;
     runnerEventCursor?: number;
+    toolPolicyOverrides?: Record<string, McpToolPolicy>;
   },
   dependencies: RunnerRuntimeDependencies = {},
 ) {
@@ -500,6 +502,7 @@ export async function startRunnerRun(
       runId: policyRunId,
       agent: input.agent,
       servers: liveMcpServers,
+      overrides: input.toolPolicyOverrides,
     });
   const effectiveToolsByServer = new Map(
     mcpServers.map(({ name }) => [
@@ -808,11 +811,16 @@ export async function runStatelessConfigurationAssistant(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const baseFetcher = dependencies.fetcher ?? fetch;
+  const abortSignalAny = (
+    AbortSignal as typeof AbortSignal & {
+      any(signals: AbortSignal[]): AbortSignal;
+    }
+  ).any;
   const fetcher: typeof fetch = (resource, init = {}) =>
     baseFetcher(resource, {
       ...init,
       signal: init.signal
-        ? AbortSignal.any([init.signal, controller.signal])
+        ? abortSignalAny([init.signal, controller.signal])
         : controller.signal,
     });
   const runId = `configuration-assistant-${randomUUID()}`;

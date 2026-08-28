@@ -980,6 +980,7 @@ export type AutomationExecution = {
   automationName: string;
   definitionVersion: number;
   definition: {
+    mode: Extract<RunMode, "review" | "task">;
     emailMatch: EmailAutomationMatch;
     steps: AutomationWorkflowStep[];
   };

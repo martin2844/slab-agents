@@ -104,6 +104,14 @@ export const conversationRepository = {
       .get(runId) as Row | undefined;
     return row ? mapMessage(row) : null;
   },
+  getRunAssistantOutput(runId: string) {
+    const row = db
+      .prepare(
+        "SELECT * FROM messages WHERE run_id=? AND role='assistant' ORDER BY rowid DESC LIMIT 1",
+      )
+      .get(runId) as Row | undefined;
+    return row ? mapMessage(row) : null;
+  },
   addMessage(
     threadId: string,
     runId: string | null,

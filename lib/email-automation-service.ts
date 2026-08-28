@@ -14,6 +14,7 @@ export async function assertEmailAutomationTarget(
   agentId: string,
   accountId: string,
   steps: AutomationWorkflowStep[] = [],
+  dependencies: { getAccount?: typeof getInboundEmailAccount } = {},
 ) {
   if (steps[0] && steps[0].agentId !== agentId) {
     throw new OperationalError(
@@ -29,7 +30,9 @@ export async function assertEmailAutomationTarget(
       throw new OperationalError(blocked, "EMAIL_AUTOMATION_BLOCKED", 409);
     assertAgentEmailConnectorReady(targetAgentId);
   }
-  const account = await getInboundEmailAccount(accountId);
+  const account = await (dependencies.getAccount ?? getInboundEmailAccount)(
+    accountId,
+  );
   const replyStep = steps.find((step) => step.action === "review_and_reply");
   if (replyStep) {
     const access = emailAccessRepository.getAgentEmailAccess(replyStep.agentId);

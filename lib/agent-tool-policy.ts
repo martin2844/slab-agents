@@ -15,6 +15,51 @@ export type PolicyAwareMcpServer = {
   approval?: McpToolPolicy;
 };
 
+const toolPolicyModes = new Set<ToolPolicyMode>([
+  "approve",
+  "prompt",
+  "deny",
+]);
+
+export function parseToolPolicyOverrides(
+  value: unknown,
+): Record<string, McpToolPolicy> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const result: Record<string, McpToolPolicy> = {};
+  for (const [serverName, rawPolicy] of Object.entries(value)) {
+    if (
+      !rawPolicy ||
+      typeof rawPolicy !== "object" ||
+      Array.isArray(rawPolicy)
+    ) {
+      return undefined;
+    }
+    const policy = rawPolicy as Record<string, unknown>;
+    if (!toolPolicyModes.has(policy.defaultMode as ToolPolicyMode)) {
+      return undefined;
+    }
+    if (
+      !policy.tools ||
+      typeof policy.tools !== "object" ||
+      Array.isArray(policy.tools)
+    ) {
+      return undefined;
+    }
+    const tools: Record<string, ToolPolicyMode> = {};
+    for (const [tool, mode] of Object.entries(policy.tools)) {
+      if (!toolPolicyModes.has(mode as ToolPolicyMode)) return undefined;
+      tools[tool] = mode as ToolPolicyMode;
+    }
+    result[serverName] = {
+      defaultMode: policy.defaultMode as ToolPolicyMode,
+      tools,
+    };
+  }
+  return result;
+}
+
 const READ_ONLY_TOOLS: Record<string, readonly string[]> = {
   work: [
     "list_projects",
@@ -131,11 +176,18 @@ export function snapshotAgentToolPolicies(input: {
   runId: string;
   agent: Agent;
   servers: PolicyAwareMcpServer[];
+  overrides?: Record<string, McpToolPolicy>;
 }) {
+  const policies = livePolicies(input.agent, input.servers);
+  for (const [serverName, override] of Object.entries(input.overrides ?? {})) {
+    if (policies[serverName]) {
+      policies[serverName] = combinePolicies(policies[serverName], override);
+    }
+  }
   const captured = agentToolPolicyRepository.getOrCreateRunSnapshot({
     runId: input.runId,
     agentId: input.agent.id,
-    policies: livePolicies(input.agent, input.servers),
+    policies,
   });
   const { snapshot } = captured;
   const servers = input.servers.flatMap((server) => {
