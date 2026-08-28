@@ -4,6 +4,15 @@ import { randomUUID } from "node:crypto";
 import { db, now } from "@/lib/db/database";
 import { withImmediateTransaction } from "@/lib/db/transaction";
 import { assertAutomationTriggerConfiguration } from "@/lib/automation-trigger";
+import {
+  automationWorkflowStepsSchema,
+  defaultEmailWorkflow,
+  emailAutomationMatchSchema,
+  EMPTY_EMAIL_AUTOMATION_MATCH,
+  matchesEmailAutomation,
+  type AutomationWorkflowStep,
+  type EmailAutomationMatch,
+} from "@/lib/automation-workflow";
 import { bool, type Row } from "@/lib/repositories/repository-helpers";
 import type {
   Automation,
@@ -12,14 +21,33 @@ import type {
 } from "@/lib/types";
 
 function mapAutomation(row: Row): Automation {
+  const triggerType = row.trigger_type === "email" ? "email" : "schedule";
+  const emailMatch = row.email_match_json
+    ? emailAutomationMatchSchema.parse(JSON.parse(String(row.email_match_json)))
+    : EMPTY_EMAIL_AUTOMATION_MATCH;
+  const steps =
+    triggerType === "email"
+      ? row.workflow_steps_json
+        ? automationWorkflowStepsSchema.parse(
+            JSON.parse(String(row.workflow_steps_json)),
+          )
+        : defaultEmailWorkflow({
+            automationId: String(row.id),
+            agentId: String(row.agent_id),
+            prompt: String(row.prompt),
+          })
+      : [];
   return {
     id: String(row.id),
     name: String(row.name),
     agentId: String(row.agent_id),
     agentName: row.agent_name ? String(row.agent_name) : undefined,
-    triggerType: row.trigger_type === "email" ? "email" : "schedule",
+    triggerType,
     cronExpression: row.cron_expression ? String(row.cron_expression) : null,
     emailAccountId: row.email_account_id ? String(row.email_account_id) : null,
+    emailMatch,
+    workflowVersion: Number(row.workflow_version ?? 1),
+    steps,
     prompt: String(row.prompt),
     mode: row.mode as Automation["mode"],
     enabled: bool(row.enabled),
@@ -40,6 +68,7 @@ function mapEmailOccurrence(row: Row): EmailAutomationOccurrence {
     automationId: String(row.automation_id),
     inboundEventId: Number(row.inbound_event_id),
     runId: String(row.run_id),
+    executionId: row.execution_id ? String(row.execution_id) : null,
     event,
     status: row.status as EmailAutomationOccurrence["status"],
     skipReason: row.skip_reason ? String(row.skip_reason) : null,
@@ -86,12 +115,28 @@ export const automationRepository = {
     prompt: string;
     mode: Automation["mode"];
     enabled: boolean;
+    emailMatch?: EmailAutomationMatch;
+    steps?: AutomationWorkflowStep[];
   }) {
     assertAutomationTriggerConfiguration(input);
     const id = randomUUID(),
       timestamp = now();
+    const emailMatch = emailAutomationMatchSchema.parse(
+      input.emailMatch ?? EMPTY_EMAIL_AUTOMATION_MATCH,
+    );
+    const steps =
+      input.triggerType === "email"
+        ? automationWorkflowStepsSchema.parse(
+            input.steps ??
+              defaultEmailWorkflow({
+                automationId: id,
+                agentId: input.agentId,
+                prompt: input.prompt,
+              }),
+          )
+        : [];
     db.prepare(
-      "INSERT INTO automations (id,name,agent_id,trigger_type,cron_expression,email_account_id,prompt,mode,enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO automations (id,name,agent_id,trigger_type,cron_expression,email_account_id,email_match_json,workflow_version,workflow_steps_json,prompt,mode,enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     ).run(
       id,
       input.name,
@@ -99,6 +144,9 @@ export const automationRepository = {
       input.triggerType,
       input.cronExpression,
       input.emailAccountId,
+      JSON.stringify(emailMatch),
+      1,
+      input.triggerType === "email" ? JSON.stringify(steps) : null,
       input.prompt,
       input.mode,
       input.enabled ? 1 : 0,
@@ -120,6 +168,8 @@ export const automationRepository = {
       lastRunAt: string | null;
       lastScheduledFor: string | null;
       missedRunPolicy: Automation["missedRunPolicy"];
+      emailMatch: EmailAutomationMatch;
+      steps: AutomationWorkflowStep[];
     }>,
   ) {
     const current = automationRepository.getAutomation(id);
@@ -134,9 +184,30 @@ export const automationRepository = {
         input.emailAccountId === undefined
           ? current.emailAccountId
           : input.emailAccountId,
+      emailMatch: input.emailMatch,
+      steps: input.steps,
     });
+    const nextTriggerType = input.triggerType ?? current.triggerType;
+    const emailMatch = emailAutomationMatchSchema.parse(
+      input.emailMatch ?? current.emailMatch,
+    );
+    const steps =
+      nextTriggerType === "email"
+        ? automationWorkflowStepsSchema.parse(
+            input.steps ??
+              (current.steps.length
+                ? current.steps
+                : defaultEmailWorkflow({
+                    automationId: current.id,
+                    agentId: current.agentId,
+                    prompt: current.prompt,
+                  })),
+          )
+        : [];
+    const workflowChanged =
+      input.emailMatch !== undefined || input.steps !== undefined;
     db.prepare(
-      "UPDATE automations SET name=?,trigger_type=?,cron_expression=?,email_account_id=?,prompt=?,mode=?,enabled=?,last_run_at=?,last_scheduled_for=?,missed_run_policy=?,updated_at=? WHERE id=?",
+      "UPDATE automations SET name=?,trigger_type=?,cron_expression=?,email_account_id=?,email_match_json=?,workflow_version=workflow_version+?,workflow_steps_json=?,prompt=?,mode=?,enabled=?,last_run_at=?,last_scheduled_for=?,missed_run_policy=?,updated_at=? WHERE id=?",
     ).run(
       input.name ?? current.name,
       input.triggerType ?? current.triggerType,
@@ -146,6 +217,9 @@ export const automationRepository = {
       input.emailAccountId === undefined
         ? current.emailAccountId
         : input.emailAccountId,
+      JSON.stringify(emailMatch),
+      workflowChanged ? 1 : 0,
+      nextTriggerType === "email" ? JSON.stringify(steps) : null,
       input.prompt ?? current.prompt,
       input.mode ?? current.mode,
       (input.enabled ?? current.enabled) ? 1 : 0,
@@ -188,7 +262,7 @@ export const automationRepository = {
       const state = automationRepository.getEmailFeedState()!;
       if (state.cursor !== input.expectedCursor) return false;
       const eligible = db.prepare(
-        `SELECT id FROM automations
+        `SELECT id,email_match_json FROM automations
          WHERE trigger_type='email' AND enabled=1 AND email_account_id=?
            AND created_at<=?`,
       );
@@ -204,6 +278,10 @@ export const automationRepository = {
           event.accountId,
           event.discoveredAt,
         ) as Row[]) {
+          const match = emailAutomationMatchSchema.parse(
+            JSON.parse(String(row.email_match_json)),
+          );
+          if (!matchesEmailAutomation(match, event)) continue;
           insert.run(
             String(row.id),
             event.id,

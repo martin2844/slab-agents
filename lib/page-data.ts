@@ -239,6 +239,9 @@ export async function getAutomationsPageData(): Promise<AutomationsData> {
           emailAutomationBlockReason(access.agentId, accountId) === null,
       ),
       readEnabled: access.readEnabled,
+      draftEnabled: access.draftEnabled,
+      sendEnabled: access.sendEnabled,
+      sendPolicy: access.sendPolicy,
     })),
     emailConfigured:
       email.configured && email.adminConfigured && email.status === "connected",

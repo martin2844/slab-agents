@@ -13,7 +13,11 @@ export async function POST(request: Request) {
     if (!agentRepository.getAgent(input.agentId))
       throw notFound("Agent not found");
     if (input.triggerType === "email") {
-      await assertEmailAutomationTarget(input.agentId, input.emailAccountId!);
+      await assertEmailAutomationTarget(
+        input.agentId,
+        input.emailAccountId!,
+        input.steps,
+      );
     }
     return Response.json(
       { data: automationRepository.createAutomation(input) },

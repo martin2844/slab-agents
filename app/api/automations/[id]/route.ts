@@ -19,6 +19,8 @@ export async function PATCH(
           ? current.cronExpression
           : input.cronExpression,
       emailAccountId: current.emailAccountId,
+      emailMatch: input.emailMatch,
+      steps: input.steps,
     });
     if (
       current.triggerType === "email" &&
@@ -28,6 +30,7 @@ export async function PATCH(
       await assertEmailAutomationTarget(
         current.agentId,
         current.emailAccountId,
+        input.steps ?? current.steps,
       );
     }
     const result = automationRepository.updateAutomation(id, input);

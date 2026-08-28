@@ -4,6 +4,10 @@ import type {
   OperatorPackManifest,
   PackCapabilityCategory,
 } from "@/lib/packs/manifest";
+import type {
+  AutomationWorkflowStep,
+  EmailAutomationMatch,
+} from "@/lib/automation-workflow";
 
 export type Agent = {
   id: string;
@@ -135,6 +139,9 @@ export type Automation = {
   triggerType: "schedule" | "email";
   cronExpression: string | null;
   emailAccountId: string | null;
+  emailMatch: EmailAutomationMatch;
+  workflowVersion: number;
+  steps: AutomationWorkflowStep[];
   prompt: string;
   mode: AutomationMode;
   enabled: boolean;
@@ -332,6 +339,9 @@ export type AutomationsData = {
     agentId: string;
     accountIds: string[];
     readEnabled: boolean;
+    draftEnabled: boolean;
+    sendEnabled: boolean;
+    sendPolicy: EmailSendPolicy;
   }>;
   emailConfigured: boolean;
   emailError: string | null;
@@ -945,6 +955,7 @@ export type EmailAutomationOccurrence = {
   automationId: string;
   inboundEventId: number;
   runId: string;
+  executionId: string | null;
   event: InboundEmailEvent;
   status: "pending" | "dispatched" | "skipped";
   skipReason: string | null;
@@ -953,6 +964,55 @@ export type EmailAutomationOccurrence = {
   nextAttemptAt: string | null;
   createdAt: string;
   dispatchedAt: string | null;
+};
+
+export type AutomationExecutionStatus =
+  | "pending"
+  | "running"
+  | "waiting_approval"
+  | "completed"
+  | "failed"
+  | "skipped";
+
+export type AutomationExecution = {
+  id: string;
+  automationId: string | null;
+  automationName: string;
+  definitionVersion: number;
+  definition: {
+    emailMatch: EmailAutomationMatch;
+    steps: AutomationWorkflowStep[];
+  };
+  event: InboundEmailEvent;
+  conversationKey: string;
+  status: AutomationExecutionStatus;
+  currentStepIndex: number;
+  error: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
+export type AutomationStepExecution = {
+  executionId: string;
+  stepId: string;
+  stepIndex: number;
+  stepType: AutomationWorkflowStep["type"];
+  agentId: string;
+  agentName: string;
+  action: AutomationWorkflowStep["action"];
+  runId: string | null;
+  status:
+    | "pending"
+    | "running"
+    | "waiting_approval"
+    | "completed"
+    | "failed"
+    | "skipped";
+  error: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
 };
 
 export type OperatorPackInstallationStatus =
