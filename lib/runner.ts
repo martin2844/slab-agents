@@ -62,6 +62,7 @@ import type {
   CodexLoginStatus,
 } from "@/lib/codex-auth-contract";
 import { codexLoginIdPattern } from "@/lib/codex-auth-contract";
+import { issueDocsRunAccess } from "@/lib/docs-access";
 
 export type { RunnerEvent } from "@/lib/runner-transport";
 
@@ -421,6 +422,16 @@ export async function startRunnerRun(
       : input.messages;
   const workApiKey = getSetting("work_api_key");
   const docsApiKey = getSetting("docs_api_key");
+  const docsMcpUrl = getSetting("docs_mcp_url");
+  const docsAccess = docsApiKey
+    ? await issueDocsRunAccess({
+        runId: input.controlPlaneRunId ?? input.runId,
+        agentId: input.agent.id,
+        docsMcpUrl,
+        adminApiKey: docsApiKey,
+        fetcher: dependencies.fetcher,
+      })
+    : null;
   const configuredIntegrations = integrationRepository.listIntegrations();
   const configuredEmailAccess = emailAccessRepository.getAgentEmailAccess(
     input.agent.id,
@@ -475,8 +486,8 @@ export async function startRunnerRun(
     },
     {
       name: "docs" as const,
-      url: getSetting("docs_mcp_url"),
-      ...(docsApiKey ? { credentials: { bearerToken: docsApiKey } } : {}),
+      url: docsMcpUrl,
+      ...(docsAccess ? { credentials: { bearerToken: docsAccess.token } } : {}),
     },
     ...(posthogMcp ? [posthogMcp] : []),
     ...(emailMcp ? [emailMcp] : []),
@@ -683,6 +694,7 @@ export async function startRunnerRun(
       calendarIntegrations: calendarIntegrations.map(
         ({ snapshot }) => snapshot,
       ),
+      docsAccess: docsAccess?.snapshot ?? null,
       toolPolicies: {
         snapshotId: toolPolicySnapshot.runId,
         capturedAt: toolPolicySnapshot.capturedAt,

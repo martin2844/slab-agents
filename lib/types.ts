@@ -202,6 +202,7 @@ export type Document = {
   title: string;
   body: string;
   parent_id: string | null;
+  collection_id: string;
   tags: string[];
   author: string;
   revision: number;
@@ -216,6 +217,7 @@ export type DocumentSummary = Pick<
   | "slug"
   | "title"
   | "parent_id"
+  | "collection_id"
   | "tags"
   | "archived_at"
   | "created_at"
@@ -224,7 +226,7 @@ export type DocumentSummary = Pick<
 
 export type DocumentSearchResult = Pick<
   Document,
-  "id" | "slug" | "title" | "tags" | "updated_at"
+  "id" | "slug" | "title" | "tags" | "collection_id" | "updated_at"
 > & {
   excerpt: string;
   score: number;
@@ -295,6 +297,7 @@ export type SetupStatus = {
 
 export type AgentDetailData = {
   agent: Agent;
+  knowledgeSources: KnowledgeSource[];
   integrations: Integration[];
   toolPolicies: AgentToolPolicy[];
   toolCatalog: AgentToolCatalogServer[];
@@ -405,6 +408,8 @@ export type KnowledgeSource = {
   githubAppId: string | null;
   enabled: boolean;
   version: number;
+  accessVersion: number;
+  agentIds: string[];
   syncIntervalMinutes: number | null;
   status: KnowledgeSourceStatus;
   lastSyncStartedAt: string | null;
@@ -442,6 +447,7 @@ export type GitHubRepositoryOption = {
 export type SourcesPageData = {
   sources: KnowledgeSource[];
   githubApps: GitHubSourceApp[];
+  agents: Array<Pick<Agent, "id" | "name" | "role" | "enabled">>;
 };
 
 export type WorkspaceSettings = {

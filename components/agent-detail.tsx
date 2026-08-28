@@ -10,6 +10,7 @@ import {
   Play,
   Sparkles,
   Puzzle,
+  BookOpenText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AgentChatDialog } from "@/components/agent-chat-dialog";
@@ -35,6 +36,10 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
   const [quickActions, setQuickActions] = useState(data.quickActions),
     [integrations, setIntegrations] = useState(data.integrations),
     [savingIntegration, setSavingIntegration] = useState<string | null>(null);
+  const [knowledgeSources, setKnowledgeSources] = useState(
+    data.knowledgeSources,
+  );
+  const [savingSource, setSavingSource] = useState<string | null>(null);
   const [runtime, setRuntime] = useState(data.agent.runtime);
   const [model, setModel] = useState(data.agent.model);
   const [savingRuntime, setSavingRuntime] = useState(false);
@@ -91,6 +96,41 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
       );
     } finally {
       setSavingIntegration(null);
+    }
+  }
+
+  async function changeSourceAccess(sourceId: string, enabled: boolean) {
+    const source = knowledgeSources.find((item) => item.id === sourceId);
+    if (!source) return;
+    setSavingSource(sourceId);
+    try {
+      const next = await api<(typeof knowledgeSources)[number]>(
+        `/api/agents/${data.agent.id}/sources`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            sourceId,
+            enabled,
+            expectedAccessVersion: source.accessVersion,
+          }),
+        },
+      );
+      setKnowledgeSources((current) =>
+        current.map((item) => (item.id === next.id ? next : item)),
+      );
+      toast.success(
+        enabled
+          ? `${next.name} enabled for ${data.agent.name}`
+          : `${next.name} disabled for ${data.agent.name}`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not update source access",
+      );
+    } finally {
+      setSavingSource(null);
     }
   }
 
@@ -320,6 +360,53 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
             integrations={integrations}
             onPolicySaved={() => setHasCustomPolicy(true)}
           />
+          <section className="rounded-lg border bg-card p-4">
+            <div>
+              <h2 className="text-sm font-semibold">Knowledge sources</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Choose which synchronized collections this agent can read in new
+                runs.
+              </p>
+            </div>
+            {knowledgeSources.length ? (
+              <div className="mt-4 divide-y rounded-md border">
+                {knowledgeSources.map((source) => {
+                  const assigned = source.agentIds.includes(agent.id);
+                  return (
+                    <div
+                      key={source.id}
+                      className="flex items-center justify-between gap-4 p-4"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <BookOpenText className="size-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold">
+                            {source.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {source.kind} · {source.itemCount} documents ·{" "}
+                            {source.status.replaceAll("_", " ")}
+                          </p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={assigned}
+                        disabled={savingSource === source.id}
+                        onCheckedChange={(checked) =>
+                          changeSourceAccess(source.id, checked)
+                        }
+                        aria-label={`${source.name} for ${agent.name}`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">
+                No knowledge sources configured.
+              </p>
+            )}
+          </section>
           <section className="rounded-lg border bg-card p-4">
             <div>
               <h2 className="text-sm font-semibold">Integrations</h2>

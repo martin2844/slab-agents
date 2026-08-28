@@ -10,10 +10,10 @@ WordPress / GitHub / Website
         slab-agents
       encrypted credentials
             ↓ Docs MCP
-         Slab Docs
-  managed documents + revisions
+        Slab Docs
+  source collection + revisions
             ↓
-     agent Docs capability
+  run-scoped Docs capability
 ```
 
 ## Common lifecycle
@@ -25,6 +25,23 @@ WordPress / GitHub / Website
 5. Later syncs update changed children and preserve revisions. When a complete
    remote collection no longer contains an item, its mirrored document is
    archived rather than deleted.
+
+Each source is a native Docs collection. In the source editor or an agent's
+**Capabilities** tab, choose the agents that may read that collection. New
+sources start private. The migration grants every existing agent access to every
+existing source once, preserving the behavior of workspaces created before
+source ACLs existed.
+
+At run start, `slab-agents` exchanges the server-only Docs admin credential for
+a signed, short-lived token. That token can read the shared `workspace`
+collection plus the source collections assigned to the agent. It can write only
+to `workspace`; synchronized source documents remain read-only to agents. The
+source IDs, names, and access revisions are recorded in the capability snapshot,
+but the token is not.
+
+Access changes apply to the next run. Active runs keep their initial snapshot.
+Removing access filters `list_docs` and `search_docs` and also prevents direct
+`get_doc` or revision access by a known document ID.
 
 Every mirrored document records the source name, canonical URL when available,
 external identifier, remote update time, and a managed-content warning.
@@ -104,6 +121,9 @@ scripts, forms, iframes, and other non-document content.
   plane.
 - GitHub setup states are random, stored only as hashes, expire after one hour,
   and can be consumed only once.
+- Authorization is enforced inside Slab Docs for REST and MCP, not through
+  prompts or hidden UI. Collection administration is available only to the
+  control-plane credential and is not listed as an agent tool.
 
 Private/internal URLs are intentionally supported because Slab is self-hosted.
 The trust boundary is therefore the operator-configured origin, not a blanket

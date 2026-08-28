@@ -119,5 +119,25 @@ export const DocsClient = {
         { id, revision },
       ),
     ),
+  ensureCollection: async (input: {
+    id: string;
+    name: string;
+    kind: "workspace" | "source";
+  }) =>
+    unwrap(
+      await callMcpTool<{ data: { id: string } } | { id: string }>(
+        connection(),
+        "ensure_collection",
+        input,
+      ),
+    ),
+  archiveCollection: async (id: string) =>
+    unwrap(
+      await callMcpTool<{ data: { id: string } } | { id: string }>(
+        connection(),
+        "archive_collection",
+        { id },
+      ),
+    ),
   test: () => testMcp(connection()),
 };
