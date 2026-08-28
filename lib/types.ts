@@ -333,6 +333,9 @@ export type RunDetailData = {
 
 export type AutomationsData = {
   automations: Automation[];
+  executions: Array<
+    AutomationExecution & { steps: AutomationStepExecution[] }
+  >;
   agents: Agent[];
   emailAccounts: EmailAccount[];
   emailAccess: Array<{

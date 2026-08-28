@@ -10,10 +10,12 @@ import {
   emailAutomationMatchSchema,
   EMPTY_EMAIL_AUTOMATION_MATCH,
   matchesEmailAutomation,
+  normalizePersistedAutomationWorkflowSteps,
   type AutomationWorkflowStep,
   type EmailAutomationMatch,
 } from "@/lib/automation-workflow";
 import { bool, type Row } from "@/lib/repositories/repository-helpers";
+import { OperationalError } from "@/lib/operational-error";
 import type {
   Automation,
   EmailAutomationOccurrence,
@@ -29,7 +31,9 @@ function mapAutomation(row: Row): Automation {
     triggerType === "email"
       ? row.workflow_steps_json
         ? automationWorkflowStepsSchema.parse(
-            JSON.parse(String(row.workflow_steps_json)),
+            normalizePersistedAutomationWorkflowSteps(
+              JSON.parse(String(row.workflow_steps_json)),
+            ),
           )
         : defaultEmailWorkflow({
             automationId: String(row.id),
@@ -159,6 +163,8 @@ export const automationRepository = {
     id: string,
     input: Partial<{
       name: string;
+      expectedWorkflowVersion: number;
+      agentId: string;
       triggerType: Automation["triggerType"];
       cronExpression: string | null;
       emailAccountId: string | null;
@@ -205,11 +211,13 @@ export const automationRepository = {
           )
         : [];
     const workflowChanged =
-      input.emailMatch !== undefined || input.steps !== undefined;
-    db.prepare(
-      "UPDATE automations SET name=?,trigger_type=?,cron_expression=?,email_account_id=?,email_match_json=?,workflow_version=workflow_version+?,workflow_steps_json=?,prompt=?,mode=?,enabled=?,last_run_at=?,last_scheduled_for=?,missed_run_policy=?,updated_at=? WHERE id=?",
-    ).run(
+      input.agentId !== undefined ||
+      input.emailAccountId !== undefined ||
+      input.emailMatch !== undefined ||
+      input.steps !== undefined;
+    const values = [
       input.name ?? current.name,
+      input.agentId ?? current.agentId,
       input.triggerType ?? current.triggerType,
       input.cronExpression === undefined
         ? current.cronExpression
@@ -230,7 +238,25 @@ export const automationRepository = {
       input.missedRunPolicy ?? current.missedRunPolicy,
       now(),
       id,
-    );
+    ];
+    const updated = db
+      .prepare(
+        `UPDATE automations SET name=?,agent_id=?,trigger_type=?,cron_expression=?,email_account_id=?,email_match_json=?,workflow_version=workflow_version+?,workflow_steps_json=?,prompt=?,mode=?,enabled=?,last_run_at=?,last_scheduled_for=?,missed_run_policy=?,updated_at=?
+         WHERE id=?${input.expectedWorkflowVersion === undefined ? "" : " AND workflow_version=?"}`,
+      )
+      .run(
+        ...values,
+        ...(input.expectedWorkflowVersion === undefined
+          ? []
+          : [input.expectedWorkflowVersion]),
+      );
+    if (updated.changes !== 1 && input.expectedWorkflowVersion !== undefined) {
+      throw new OperationalError(
+        "Workflow changed while you were editing. Reloaded the latest version; review it before saving again.",
+        "AUTOMATION_VERSION_CONFLICT",
+        409,
+      );
+    }
     return automationRepository.getAutomation(id);
   },
   getEmailFeedState() {

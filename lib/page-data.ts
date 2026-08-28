@@ -2,6 +2,7 @@ import "server-only";
 
 import { agentRepository } from "@/lib/repositories/agent-repository";
 import { automationRepository } from "@/lib/repositories/automation-repository";
+import { automationExecutionRepository } from "@/lib/repositories/automation-execution-repository";
 import { conversationRepository } from "@/lib/repositories/conversation-repository";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { agentToolPolicyRepository } from "@/lib/repositories/agent-tool-policy-repository";
@@ -228,6 +229,7 @@ export async function getAutomationsPageData(): Promise<AutomationsData> {
     : null;
   return {
     automations: automationRepository.listAutomations(),
+    executions: automationExecutionRepository.listRecentWithSteps(),
     agents: agentRepository.listAgents(),
     emailAccounts: email.accounts.filter(
       (account) => account.enabled && account.capabilities.read,

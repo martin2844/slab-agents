@@ -197,10 +197,31 @@ test("inbound email workflows hand off durably and serialize a conversation", as
   assert.equal(execution?.definitionVersion, 1);
   assert.equal(execution?.definition.mode, "task");
   assert.deepEqual(execution?.definition.steps, originalSteps);
+  db.prepare("UPDATE automation_executions SET definition_json=? WHERE id=?").run(
+    JSON.stringify({
+      ...execution.definition,
+      steps: execution.definition.steps.map((step) => ({
+        ...step,
+        type: "agent_task",
+      })),
+    }),
+    execution.id,
+  );
+  assert.equal(
+    automationExecutionRepository.getExecution(execution.id).definition.steps[1]
+      .type,
+    "agent_review",
+  );
   const executionSteps = automationExecutionRepository.listSteps(execution.id);
   assert.equal(executionSteps[0].runId, occurrence.runId);
   assert.equal(executionSteps[1].runId, null);
   assert.equal(executionSteps[0].status, "running");
+  const recentExecutions = automationExecutionRepository.listRecentWithSteps();
+  assert.equal(recentExecutions[0].id, execution.id);
+  assert.deepEqual(
+    recentExecutions[0].steps.map(({ stepId }) => stepId),
+    originalSteps.map(({ id }) => id),
+  );
 
   const draftEvents = runRepository.listRunEvents(occurrence.runId);
   const constraints = draftEvents.find(

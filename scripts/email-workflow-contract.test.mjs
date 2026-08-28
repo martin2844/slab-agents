@@ -29,11 +29,12 @@ test("email workflow schemas keep reply execution linear and bounded", async () 
     automationWorkflowStepsSchema,
     emailAutomationMatchSchema,
     matchesEmailAutomation,
+    nextAutomationWorkflowStepId,
   } = await import("../lib/automation-workflow.ts");
   const agentId = "11111111-1111-4111-8111-111111111111";
   const step = (id, action = "analyze") => ({
     id,
-    type: "agent_task",
+    type: action === "review_and_reply" ? "agent_review" : "agent_task",
     agentId,
     action,
     prompt: "Handle this email.",
@@ -45,6 +46,21 @@ test("email workflow schemas keep reply execution linear and bounded", async () 
       step("after"),
     ]).success,
     false,
+  );
+  assert.equal(
+    automationWorkflowStepsSchema.safeParse([
+      step("draft", "draft_reply"),
+      step("reply", "review_and_reply"),
+    ]).success,
+    true,
+  );
+  assert.equal(nextAutomationWorkflowStepId([]), "draft-step-1");
+  assert.equal(
+    nextAutomationWorkflowStepId([
+      { id: "draft-step-1" },
+      { id: "legacy-custom-id" },
+    ]),
+    "draft-step-2",
   );
   assert.equal(
     automationWorkflowStepsSchema.safeParse([
@@ -167,6 +183,23 @@ test("repository versions workflow edits without versioning scheduler state", as
     timestamp,
     timestamp,
   );
+  const reviewerId = "33333333-3333-4333-8333-333333333333";
+  db.prepare(
+    `INSERT INTO agents
+     (id,name,slug,role,instructions,runtime,model,enabled,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    reviewerId,
+    "COO",
+    "coo-workflow-reviewer",
+    "Reviewer",
+    "Review replies",
+    "codex",
+    "default",
+    1,
+    timestamp,
+    timestamp,
+  );
 
   const scheduled = automationRepository.createAutomation({
     name: "Daily review",
@@ -259,5 +292,53 @@ test("repository versions workflow edits without versioning scheduler state", as
       emailMatch: { ...email.emailMatch, senderDomain: "eycon.com" },
     })?.workflowVersion,
     2,
+  );
+  const reassigned = automationRepository.updateAutomation(email.id, {
+    agentId: reviewerId,
+    emailAccountId: "account-2",
+    steps: [
+      {
+        ...email.steps[0],
+        agentId: reviewerId,
+      },
+    ],
+  });
+  assert.equal(reassigned?.agentId, reviewerId);
+  assert.equal(reassigned?.emailAccountId, "account-2");
+  assert.equal(reassigned?.workflowVersion, 3);
+
+  const firstConcurrentEdit = automationRepository.updateAutomation(email.id, {
+    expectedWorkflowVersion: 3,
+    emailMatch: { ...email.emailMatch, senderDomain: "first.example" },
+  });
+  assert.equal(firstConcurrentEdit?.workflowVersion, 4);
+  assert.throws(
+    () =>
+      automationRepository.updateAutomation(email.id, {
+        expectedWorkflowVersion: 3,
+        emailMatch: { ...email.emailMatch, senderDomain: "stale.example" },
+      }),
+    (error) => error?.code === "AUTOMATION_VERSION_CONFLICT",
+  );
+  assert.equal(
+    automationRepository.getAutomation(email.id)?.emailMatch.senderDomain,
+    "first.example",
+  );
+
+  db.prepare("UPDATE automations SET workflow_steps_json=? WHERE id=?").run(
+    JSON.stringify([
+      {
+        id: "legacy-review",
+        type: "agent_task",
+        agentId: reviewerId,
+        action: "review_and_reply",
+        prompt: "Review and reply.",
+      },
+    ]),
+    email.id,
+  );
+  assert.equal(
+    automationRepository.getAutomation(email.id)?.steps[0]?.type,
+    "agent_review",
   );
 });

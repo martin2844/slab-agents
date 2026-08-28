@@ -44,6 +44,18 @@ export const automationWorkflowStepsSchema = z
         });
       }
       ids.add(step.id);
+      const expectedType =
+        step.action === "review_and_reply" ? "agent_review" : "agent_task";
+      if (step.type !== expectedType) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "type"],
+          message:
+            step.action === "review_and_reply"
+              ? "Review-and-reply must be an agent review step."
+              : "Analyze and draft actions must be agent task steps.",
+        });
+      }
       if (step.action === "review_and_reply") {
         replyActions += 1;
         if (index !== steps.length - 1) {
@@ -69,6 +81,35 @@ export type EmailAutomationMatch = z.infer<
 export type AutomationWorkflowStep = z.infer<
   typeof automationWorkflowStepSchema
 >;
+
+export function nextAutomationWorkflowStepId(
+  steps: Array<Pick<AutomationWorkflowStep, "id">>,
+) {
+  const existing = new Set(steps.map(({ id }) => id));
+  let sequence = 1;
+  while (existing.has(`draft-step-${sequence}`)) sequence += 1;
+  return `draft-step-${sequence}`;
+}
+
+export function normalizePersistedAutomationWorkflowSteps(value: unknown) {
+  if (!Array.isArray(value)) return value;
+  return value.map((step) => {
+    if (!step || typeof step !== "object") return step;
+    const record = step as Record<string, unknown>;
+    if (
+      record.action !== "analyze" &&
+      record.action !== "draft_reply" &&
+      record.action !== "review_and_reply"
+    ) {
+      return step;
+    }
+    return {
+      ...record,
+      type:
+        record.action === "review_and_reply" ? "agent_review" : "agent_task",
+    };
+  });
+}
 
 export const EMPTY_EMAIL_AUTOMATION_MATCH: EmailAutomationMatch = {
   recipientAddress: null,

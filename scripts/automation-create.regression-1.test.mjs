@@ -16,11 +16,13 @@ test("the create automation action submits its form", async () => {
     /<Button\s+type="submit"/,
     "Base UI buttons default to type=button, so the create action must opt into form submission",
   );
-  assert.match(source, /disabled=\{\s*saving \|\|\s*!agentId/);
+  assert.match(source, /saving \|\|/);
+  assert.match(source, /triggerType === "schedule" && !agentId/);
+  assert.match(source, /!isEmailWorkflowDraftValid\(emailDraft\)/);
   assert.match(source, /Execution mode/);
   assert.match(
     source,
-    /<SelectItem value="review">Operational review<\/SelectItem>/,
+    /<SelectItem value="review">\s*Operational review\s*<\/SelectItem>/,
   );
   assert.match(source, /mode,/);
 });

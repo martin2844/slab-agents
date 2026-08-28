@@ -1,14 +1,17 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
+  ChevronDown,
   Clock3,
   LoaderCircle,
   Mail,
+  Pencil,
   Play,
   Plus,
   Sparkles,
+  Workflow,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -39,7 +42,7 @@ import {
 } from "@/components/operational-ui";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
-import { api } from "@/lib/client-api";
+import { api, ApiClientError } from "@/lib/client-api";
 import type {
   Agent,
   Automation,
@@ -48,6 +51,13 @@ import type {
   Run,
 } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
+import { useOperationalPolling } from "@/components/use-operational-polling";
+import {
+  defaultEmailWorkflowDraft,
+  EmailAutomationWorkflowEditor,
+  isEmailWorkflowDraftValid,
+  type EmailWorkflowDraft,
+} from "@/components/email-automation-workflow-editor";
 function CreateAutomation({
   agents,
   emailAccounts,
@@ -72,14 +82,16 @@ function CreateAutomation({
     [mode, setMode] = useState<Automation["mode"]>("review"),
     [triggerType, setTriggerType] =
       useState<Automation["triggerType"]>("schedule"),
-    [emailAccountId, setEmailAccountId] = useState(emailAccounts[0]?.id ?? ""),
+    [emailDraft, setEmailDraft] = useState<EmailWorkflowDraft>(() =>
+      defaultEmailWorkflowDraft({ agents, accounts: emailAccounts, emailAccess }),
+    ),
     [scheduleType, setScheduleType] = useState<"cron" | "manual">("cron");
   const eligibleEmailAgents = agents.filter((agent) =>
     emailAccess.some(
       (access) =>
         access.agentId === agent.id &&
         access.readEnabled &&
-        access.accountIds.includes(emailAccountId),
+        access.accountIds.includes(emailDraft.emailAccountId),
     ),
   );
   const availableAgents =
@@ -87,20 +99,6 @@ function CreateAutomation({
   const selectTrigger = (value: Automation["triggerType"]) => {
     setTriggerType(value);
     const choices = value === "email" ? eligibleEmailAgents : agents;
-    if (!choices.some((agent) => agent.id === agentId)) {
-      setAgentId(choices[0]?.id ?? "");
-    }
-  };
-  const selectEmailAccount = (value: string) => {
-    setEmailAccountId(value);
-    const choices = agents.filter((agent) =>
-      emailAccess.some(
-        (access) =>
-          access.agentId === agent.id &&
-          access.readEnabled &&
-          access.accountIds.includes(value),
-      ),
-    );
     if (!choices.some((agent) => agent.id === agentId)) {
       setAgentId(choices[0]?.id ?? "");
     }
@@ -113,16 +111,24 @@ function CreateAutomation({
       const result = await api<Automation>("/api/automations", {
         method: "POST",
         body: JSON.stringify({
-          name: form.get("name"),
-          agentId,
+          name: triggerType === "email" ? emailDraft.name : form.get("name"),
+          agentId:
+            triggerType === "email" ? emailDraft.steps[0]?.agentId : agentId,
           triggerType,
           cronExpression:
             triggerType === "schedule" && scheduleType === "cron"
               ? form.get("cron")
               : null,
-          emailAccountId: triggerType === "email" ? emailAccountId : null,
-          prompt: form.get("prompt"),
-          mode,
+          emailAccountId:
+            triggerType === "email" ? emailDraft.emailAccountId : null,
+          emailMatch:
+            triggerType === "email" ? emailDraft.emailMatch : undefined,
+          steps: triggerType === "email" ? emailDraft.steps : undefined,
+          prompt:
+            triggerType === "email"
+              ? emailDraft.steps[0]?.prompt
+              : form.get("prompt"),
+          mode: triggerType === "email" ? "task" : mode,
           enabled,
         }),
       });
@@ -153,7 +159,7 @@ function CreateAutomation({
           {template ? template.name : "New automation"}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-4xl">
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle className="font-heading text-3xl">
@@ -165,16 +171,18 @@ function CreateAutomation({
             </DialogDescription>
           </DialogHeader>
           <div className="mt-6 grid gap-5">
-            <label className="grid gap-2 text-sm font-semibold">
-              Name
-              <Input
-                name="name"
-                placeholder="Monday pipeline review"
-                defaultValue={template?.name}
-                required
-                autoFocus
-              />
-            </label>
+            {triggerType === "schedule" && (
+              <label className="grid gap-2 text-sm font-semibold">
+                Name
+                <Input
+                  name="name"
+                  placeholder="Monday pipeline review"
+                  defaultValue={template?.name}
+                  required
+                  autoFocus
+                />
+              </label>
+            )}
             <label className="grid gap-2 text-sm font-semibold">
               Trigger
               <Select
@@ -203,75 +211,60 @@ function CreateAutomation({
                 </span>
               )}
             </label>
-            {triggerType === "email" && (
-              <label className="grid gap-2 text-sm font-semibold">
-                Receiving account
-                <Select
-                  value={emailAccountId}
-                  onValueChange={selectEmailAccount}
-                  required
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose an Email account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {emailAccounts.map((account) => (
-                      <SelectItem key={account.id} value={account.id}>
-                        {account.displayName} · {account.emailAddress}
+            {triggerType === "email" ? (
+              <EmailAutomationWorkflowEditor
+                draft={emailDraft}
+                onChange={setEmailDraft}
+                agents={agents}
+                accounts={emailAccounts}
+                emailAccess={emailAccess}
+              />
+            ) : (
+              <>
+                <label className="grid gap-2 text-sm font-semibold">
+                  Agent
+                  <Select value={agentId} onValueChange={setAgentId} required>
+                    <SelectTrigger>
+                      <SelectValue>
+                        {selectedAgent
+                          ? `${selectedAgent.name} · ${selectedAgent.role}`
+                          : "Choose an agent"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableAgents.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name} · {a.role}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </label>
+                <label className="grid gap-2 text-sm font-semibold">
+                  Execution mode
+                  <Select
+                    value={mode}
+                    onValueChange={(value) =>
+                      setMode(value as Automation["mode"])
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="review">
+                        Operational review
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <span className="text-xs font-normal text-muted-foreground">
-                  Every newly discovered inbound message creates one durable
-                  run. Existing mailbox history is ignored.
-                </span>
-              </label>
+                      <SelectItem value="task">Specific task</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Review starts without an associated Work item. Task follows
+                    the prompt as a specific outcome.
+                  </span>
+                </label>
+              </>
             )}
-            <label className="grid gap-2 text-sm font-semibold">
-              Agent
-              <Select value={agentId} onValueChange={setAgentId} required>
-                <SelectTrigger>
-                  <SelectValue>
-                    {selectedAgent
-                      ? `${selectedAgent.name} · ${selectedAgent.role}`
-                      : "Choose an agent"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {availableAgents.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name} · {a.role}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {triggerType === "email" && !availableAgents.length && (
-                <span className="text-xs font-normal text-destructive">
-                  No agent can read this account. Assign Email read access on an
-                  agent first.
-                </span>
-              )}
-            </label>
-            <label className="grid gap-2 text-sm font-semibold">
-              Execution mode
-              <Select
-                value={mode}
-                onValueChange={(value) => setMode(value as Automation["mode"])}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="review">Operational review</SelectItem>
-                  <SelectItem value="task">Specific task</SelectItem>
-                </SelectContent>
-              </Select>
-              <span className="text-xs font-normal text-muted-foreground">
-                Review starts without an associated Work item. Task follows the
-                prompt as a specific outcome.
-              </span>
-            </label>
             {triggerType === "schedule" && (
               <label className="grid gap-2 text-sm font-semibold">
                 Timing
@@ -305,20 +298,18 @@ function CreateAutomation({
                 </span>
               </label>
             )}
-            <label className="grid gap-2 text-sm font-semibold">
-              Prompt
-              <Textarea
-                name="prompt"
-                placeholder={
-                  triggerType === "email"
-                    ? "Read the message, classify the request, and take the appropriate next action…"
-                    : "Review the B2B pipeline and flag every blocked opportunity…"
-                }
-                defaultValue={template?.prompt}
-                className="min-h-36"
-                required
-              />
-            </label>
+            {triggerType === "schedule" && (
+              <label className="grid gap-2 text-sm font-semibold">
+                Prompt
+                <Textarea
+                  name="prompt"
+                  placeholder="Review the B2B pipeline and flag every blocked opportunity…"
+                  defaultValue={template?.prompt}
+                  className="min-h-36"
+                  required
+                />
+              </label>
+            )}
             <div className="flex items-center justify-between border-y py-4">
               <div>
                 <p className="text-sm font-semibold">Enabled</p>
@@ -340,8 +331,9 @@ function CreateAutomation({
               type="submit"
               disabled={
                 saving ||
-                !agentId ||
-                (triggerType === "email" && !emailAccountId)
+                (triggerType === "schedule" && !agentId) ||
+                (triggerType === "email" &&
+                  !isEmailWorkflowDraftValid(emailDraft))
               }
             >
               {saving ? "Creating…" : "Create automation"}
@@ -352,6 +344,207 @@ function CreateAutomation({
     </Dialog>
   );
 }
+
+function EditEmailAutomation({
+  automation,
+  agents,
+  emailAccounts,
+  emailAccess,
+  onUpdated,
+}: {
+  automation: Automation;
+  agents: Agent[];
+  emailAccounts: EmailAccount[];
+  emailAccess: AutomationsData["emailAccess"];
+  onUpdated: (automation: Automation) => void;
+}) {
+  const draftFromAutomation = (value: Automation): EmailWorkflowDraft => ({
+    name: value.name,
+    emailAccountId: value.emailAccountId ?? "",
+    emailMatch: value.emailMatch,
+    steps: value.steps,
+  });
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState<EmailWorkflowDraft>(() =>
+    draftFromAutomation(automation),
+  );
+  const setDialogOpen = (next: boolean) => {
+    setOpen(next);
+    if (next) {
+      setDraft(draftFromAutomation(automation));
+    }
+  };
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draft.steps[0]) return;
+    setSaving(true);
+    try {
+      const updated = await api<Automation>(
+        `/api/automations/${automation.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: draft.name,
+            expectedWorkflowVersion: automation.workflowVersion,
+            agentId: draft.steps[0].agentId,
+            emailAccountId: draft.emailAccountId,
+            emailMatch: draft.emailMatch,
+            steps: draft.steps,
+            prompt: draft.steps[0].prompt,
+          }),
+        },
+      );
+      onUpdated(updated);
+      setOpen(false);
+      toast.success("Email workflow updated");
+    } catch (error) {
+      if (
+        error instanceof ApiClientError &&
+        error.code === "AUTOMATION_VERSION_CONFLICT"
+      ) {
+        try {
+          const latest = (
+            await api<Automation[]>("/api/automations")
+          ).find(({ id }) => id === automation.id);
+          if (latest) {
+            onUpdated(latest);
+            setDraft(draftFromAutomation(latest));
+          }
+        } catch {
+          // Keep the local draft visible if the refresh also fails.
+        }
+      }
+      toast.error(
+        error instanceof Error ? error.message : "Could not update workflow",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <Dialog open={open} onOpenChange={setDialogOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Pencil /> Edit
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-4xl">
+        <form onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle className="font-heading text-3xl">
+              Edit Email workflow
+            </DialogTitle>
+            <DialogDescription>
+              Changes apply to new executions. Runs already in progress keep
+              their versioned workflow snapshot.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-6">
+            <EmailAutomationWorkflowEditor
+              draft={draft}
+              onChange={setDraft}
+              agents={agents}
+              accounts={emailAccounts}
+              emailAccess={emailAccess}
+            />
+          </div>
+          <DialogFooter className="mt-6">
+            <Button
+              type="submit"
+              disabled={
+                saving || !isEmailWorkflowDraftValid(draft)
+              }
+            >
+              {saving ? "Saving…" : "Save workflow"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WorkflowExecutions({
+  executions,
+}: {
+  executions: AutomationsData["executions"];
+}) {
+  if (!executions.length) return null;
+  return (
+    <section className="mb-6 rounded-lg border bg-card">
+      <div className="flex items-center justify-between border-b px-4 py-3">
+        <div>
+          <h2 className="text-sm font-semibold">Recent Email workflows</h2>
+          <p className="text-xs text-muted-foreground">
+            Durable executions across agent handoffs and approvals.
+          </p>
+        </div>
+        <Workflow className="size-4 text-muted-foreground" />
+      </div>
+      <div className="divide-y">
+        {executions.slice(0, 8).map((execution) => {
+          const current = execution.steps[execution.currentStepIndex];
+          return (
+            <details key={execution.id} className="group px-4 py-3">
+              <summary className="flex cursor-pointer list-none items-center gap-3 [&::-webkit-details-marker]:hidden">
+                <StatusBadge status={execution.status} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">
+                    {execution.automationName}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {execution.event.from.address} · {execution.event.subject}
+                  </p>
+                </div>
+                <div className="hidden text-right text-xs text-muted-foreground sm:block">
+                  <p>
+                    {current
+                      ? `${current.agentName} · ${current.action.replaceAll("_", " ")}`
+                      : "No current step"}
+                  </p>
+                  <p>{formatDateTime(execution.createdAt)}</p>
+                </div>
+                <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="mt-3 grid gap-2 border-t pt-3">
+                {execution.steps.map((step) => (
+                  <div
+                    key={step.stepId}
+                    className="flex flex-wrap items-center gap-3 rounded-md bg-muted/35 px-3 py-2"
+                  >
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {step.stepIndex + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium">
+                        {step.agentName} · {step.action.replaceAll("_", " ")}
+                      </p>
+                      {step.error && (
+                        <p className="truncate text-[11px] text-destructive">
+                          {step.error}
+                        </p>
+                      )}
+                    </div>
+                    <StatusBadge status={step.status} />
+                    {step.runId && (
+                      <Button asChild variant="ghost" size="sm">
+                        <Link href={`/runs/${step.runId}`}>
+                          View run <ArrowUpRight />
+                        </Link>
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </details>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export function AutomationsView({
   initialData,
 }: {
@@ -360,9 +553,29 @@ export function AutomationsView({
   const [automations, setAutomations] = useState<Automation[] | null>(
       initialData.automations,
     ),
+    [executions, setExecutions] = useState(initialData.executions),
     [agents] = useState<Agent[]>(initialData.agents),
-    [error] = useState(""),
+    [error, setError] = useState(""),
     [runningId, setRunningId] = useState<string | null>(null);
+  const executionLoadGeneration = useRef(0);
+  useOperationalPolling(async () => {
+    const generation = ++executionLoadGeneration.current;
+    try {
+      const next = await api<Pick<AutomationsData, "executions">>(
+        "/api/automations?activity=1",
+      );
+      if (generation !== executionLoadGeneration.current) return;
+      setExecutions(next.executions);
+      setError("");
+    } catch (cause) {
+      if (generation !== executionLoadGeneration.current) return;
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not refresh Email workflows",
+      );
+    }
+  });
   const accountById = new Map(
     initialData.emailAccounts.map((account) => [account.id, account]),
   );
@@ -440,6 +653,7 @@ export function AutomationsView({
       )}
       {error && <ErrorState message={error} />}{" "}
       {!automations && !error && <LoadingState />}
+      <WorkflowExecutions executions={executions} />
       {automations &&
         (!automations.length ? (
           <EmptyState
@@ -494,7 +708,9 @@ export function AutomationsView({
                     <div className="max-w-sm">
                       <p className="truncate font-semibold">{item.name}</p>
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {item.prompt}
+                        {item.triggerType === "email"
+                          ? `${item.steps.length} agent ${item.steps.length === 1 ? "step" : "steps"} · workflow v${item.workflowVersion}`
+                          : item.prompt}
                       </p>
                     </div>
                   </td>
@@ -502,7 +718,7 @@ export function AutomationsView({
                     {item.agentName}
                   </td>
                   <td className={`${denseTableCell} text-xs capitalize`}>
-                    {item.mode}
+                    {item.triggerType === "email" ? "workflow" : item.mode}
                   </td>
                   <td className={`${denseTableCell} text-xs`}>
                     {item.triggerType === "email" ? (
@@ -544,6 +760,24 @@ export function AutomationsView({
                   </td>
                   <td className={`${denseTableCell} text-right`}>
                     <div className="flex items-center justify-end gap-2">
+                      {item.triggerType === "email" && (
+                        <EditEmailAutomation
+                          automation={item}
+                          agents={agents}
+                          emailAccounts={initialData.emailAccounts}
+                          emailAccess={initialData.emailAccess}
+                          onUpdated={(updated) =>
+                            setAutomations(
+                              (current) =>
+                                current?.map((automation) =>
+                                  automation.id === updated.id
+                                    ? updated
+                                    : automation,
+                                ) ?? null,
+                            )
+                          }
+                        />
+                      )}
                       {item.triggerType === "schedule" && (
                         <Button
                           variant="outline"

@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import {
   automationWorkflowStepsSchema,
   emailAutomationMatchSchema,
+  normalizePersistedAutomationWorkflowSteps,
 } from "@/lib/automation-workflow";
 import { db, now } from "@/lib/db/database";
 import { withImmediateTransaction } from "@/lib/db/transaction";
@@ -30,7 +31,9 @@ function mapExecution(row: Row): AutomationExecution {
     definition: {
       mode: rawDefinition.mode === "review" ? "review" : "task",
       emailMatch: emailAutomationMatchSchema.parse(rawDefinition.emailMatch),
-      steps: automationWorkflowStepsSchema.parse(rawDefinition.steps),
+      steps: automationWorkflowStepsSchema.parse(
+        normalizePersistedAutomationWorkflowSteps(rawDefinition.steps),
+      ),
     },
     event: JSON.parse(String(row.event_json)) as InboundEmailEvent,
     conversationKey: String(row.conversation_key),
@@ -84,6 +87,42 @@ export const automationExecutionRepository = {
         )
         .all(automationId, limit) as Row[]
     ).map(mapExecution);
+  },
+
+  listRecent(limit = 50) {
+    return (
+      db
+        .prepare(
+          `SELECT * FROM automation_executions
+           ORDER BY created_at DESC,rowid DESC LIMIT ?`,
+        )
+        .all(limit) as Row[]
+    ).map(mapExecution);
+  },
+
+  listRecentWithSteps(limit = 50) {
+    const executions = automationExecutionRepository.listRecent(limit);
+    if (!executions.length) return [];
+    const placeholders = executions.map(() => "?").join(",");
+    const steps = (
+      db
+        .prepare(
+          `SELECT * FROM automation_step_executions
+           WHERE execution_id IN (${placeholders})
+           ORDER BY execution_id,step_index`,
+        )
+        .all(...executions.map(({ id }) => id)) as Row[]
+    ).map(mapStep);
+    const stepsByExecution = new Map<string, AutomationStepExecution[]>();
+    for (const step of steps) {
+      const current = stepsByExecution.get(step.executionId) ?? [];
+      current.push(step);
+      stepsByExecution.set(step.executionId, current);
+    }
+    return executions.map((execution) => ({
+      ...execution,
+      steps: stepsByExecution.get(execution.id) ?? [],
+    }));
   },
 
   listActive() {
