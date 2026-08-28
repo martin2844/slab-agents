@@ -78,15 +78,38 @@ export const automationCreateSchema = z
     }
   });
 
-export const automationUpdateSchema = z.object({
-  enabled: z.boolean().optional(),
-  expectedWorkflowVersion: z.number().int().positive().optional(),
-  agentId: z.string().uuid().optional(),
-  name: z.string().trim().min(2).max(120).optional(),
-  cronExpression: cronExpressionSchema.nullable().optional(),
-  emailAccountId: z.string().min(1).max(200).nullable().optional(),
-  prompt: z.string().trim().min(2).max(20_000).optional(),
-  mode: z.enum(["review", "task"]).optional(),
-  emailMatch: emailAutomationMatchSchema.optional(),
-  steps: automationWorkflowStepsSchema.optional(),
-});
+const workflowDefinitionFields = [
+  "agentId",
+  "emailAccountId",
+  "prompt",
+  "mode",
+  "emailMatch",
+  "steps",
+] as const;
+
+export const automationUpdateSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    expectedWorkflowVersion: z.number().int().positive().optional(),
+    agentId: z.string().uuid().optional(),
+    name: z.string().trim().min(2).max(120).optional(),
+    cronExpression: cronExpressionSchema.nullable().optional(),
+    emailAccountId: z.string().min(1).max(200).nullable().optional(),
+    prompt: z.string().trim().min(2).max(20_000).optional(),
+    mode: z.enum(["review", "task"]).optional(),
+    emailMatch: emailAutomationMatchSchema.optional(),
+    steps: automationWorkflowStepsSchema.optional(),
+  })
+  .superRefine((input, context) => {
+    const changesWorkflowDefinition = workflowDefinitionFields.some(
+      (field) => input[field] !== undefined,
+    );
+    if (changesWorkflowDefinition && input.expectedWorkflowVersion === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["expectedWorkflowVersion"],
+        message:
+          "expectedWorkflowVersion is required when changing an automation workflow.",
+      });
+    }
+  });

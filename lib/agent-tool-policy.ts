@@ -11,7 +11,10 @@ export type McpToolPolicy = {
 export type PolicyAwareMcpServer = {
   name: string;
   url: string;
-  credentials?: { bearerToken: string };
+  credentials?: {
+    bearerToken: string;
+    headers?: Record<string, string>;
+  };
   approval?: McpToolPolicy;
 };
 

@@ -104,6 +104,91 @@ test("email events become durable, deduplicated automation occurrences", async (
   const createdAt = Date.parse(automation.createdAt);
   const beforeCreation = new Date(createdAt - 60_000).toISOString();
   const afterCreation = new Date(createdAt + 60_000).toISOString();
+  db.prepare("UPDATE automations SET workflow_steps_json=? WHERE id=?").run(
+    JSON.stringify([
+      { ...automation.steps[0], legacyUnrestricted: true },
+    ]),
+    automation.id,
+  );
+
+  const missingVersion = await automationPatchRoute.PATCH(
+    new Request(`http://localhost/api/automations/${automation.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "review", enabled: false }),
+    }),
+    { params: Promise.resolve({ id: automation.id }) },
+  );
+  assert.equal(missingVersion.status, 400);
+
+  const versionedEdit = await automationPatchRoute.PATCH(
+    new Request(`http://localhost/api/automations/${automation.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        mode: "review",
+        enabled: false,
+        expectedWorkflowVersion: 1,
+      }),
+    }),
+    { params: Promise.resolve({ id: automation.id }) },
+  );
+  assert.equal(versionedEdit.status, 200);
+  const versionedData = (await versionedEdit.json()).data;
+  assert.equal(versionedData.workflowVersion, 2);
+  assert.equal("legacyUnrestricted" in versionedData.steps[0], false);
+  const staleEdit = await automationPatchRoute.PATCH(
+    new Request(`http://localhost/api/automations/${automation.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        mode: "task",
+        enabled: false,
+        expectedWorkflowVersion: 1,
+      }),
+    }),
+    { params: Promise.resolve({ id: automation.id }) },
+  );
+  assert.equal(staleEdit.status, 409);
+  const restored = await automationPatchRoute.PATCH(
+    new Request(`http://localhost/api/automations/${automation.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        mode: "task",
+        enabled: false,
+        expectedWorkflowVersion: 2,
+      }),
+    }),
+    { params: Promise.resolve({ id: automation.id }) },
+  );
+  assert.equal(restored.status, 200);
+  db.prepare("UPDATE automations SET workflow_steps_json=? WHERE id=?").run(
+    JSON.stringify([
+      { ...automation.steps[0], legacyUnrestricted: true },
+    ]),
+    automation.id,
+  );
+  const promptEdit = await automationPatchRoute.PATCH(
+    new Request(`http://localhost/api/automations/${automation.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "Use the corrected executable instructions.",
+        expectedWorkflowVersion: 3,
+      }),
+    }),
+    { params: Promise.resolve({ id: automation.id }) },
+  );
+  assert.equal(promptEdit.status, 200);
+  const promptData = (await promptEdit.json()).data;
+  assert.equal(promptData.workflowVersion, 4);
+  assert.equal(
+    promptData.steps[0].prompt,
+    "Use the corrected executable instructions.",
+  );
+  assert.equal("legacyUnrestricted" in promptData.steps[0], false);
+  automationRepository.updateAutomation(automation.id, { enabled: true });
 
   const invalidPatch = await automationPatchRoute.PATCH(
     new Request(`http://localhost/api/automations/${automation.id}`, {
@@ -407,6 +492,54 @@ test("email events become durable, deduplicated automation occurrences", async (
   assert.match(pageData.emailError ?? "", /event 1\d{3} is waiting to retry/);
   assert.match(pageData.emailError ?? "", /runtime unavailable/);
   assert.match(pageData.emailError ?? "", /Next attempt after/);
+
+  db.prepare("DELETE FROM email_automation_occurrences").run();
+  const insertDeferred = db.prepare(
+    `INSERT INTO email_automation_occurrences
+     (automation_id,inbound_event_id,run_id,event_json,status,created_at)
+     VALUES (?,?,?,?,'pending',?)`,
+  );
+  const insertDeferredBatch = db.transaction(() => {
+    for (let offset = 0; offset < 1_001; offset += 1) {
+      const id = 2_000 + offset;
+      insertDeferred.run(
+        automation.id,
+        id,
+        randomUUID(),
+        JSON.stringify(event(id, afterCreation, { threadId: "busy-thread" })),
+        new Date(Date.parse(timestamp) + offset).toISOString(),
+      );
+    }
+  });
+  insertDeferredBatch();
+  const deferredCalls = [];
+  const deferredTick = () =>
+    tickEmailAutomations({
+      configured: () => true,
+      listEvents: async () => ({ items: [], nextCursor: null }),
+      startOccurrence: async (_automationId, inboundEventId) => {
+        deferredCalls.push(inboundEventId);
+        return { status: "deferred", reason: "conversation active" };
+      },
+      logError: () => assert.fail("deferral should not be an error"),
+    });
+  await deferredTick();
+  assert.equal(deferredCalls.length, 1_000);
+  await deferredTick();
+  assert.deepEqual(deferredCalls.slice(1_000), [3_000]);
+  db.prepare(
+    "UPDATE email_automation_occurrences SET next_attempt_at=? WHERE status='pending'",
+  ).run("2026-01-01T00:00:00.000Z");
+  insertDeferred.run(
+    automation.id,
+    3_001,
+    randomUUID(),
+    JSON.stringify(event(3_001, afterCreation, { threadId: "fresh-thread" })),
+    new Date().toISOString(),
+  );
+  const fairBatch = automationRepository.listPendingEmailOccurrences(1_000);
+  assert.ok(fairBatch.some(({ inboundEventId }) => inboundEventId === 3_001));
+  assert.ok(fairBatch.some(({ attemptCount }) => attemptCount > 0));
 });
 
 test("email trigger semantics frame message metadata as untrusted input", async () => {

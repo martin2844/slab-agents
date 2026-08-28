@@ -6,7 +6,7 @@ import { matchesEmailAutomation } from "@/lib/automation-workflow";
 import { emailAutomationBlockReason } from "@/lib/email-automation-policy";
 import {
   buildEmailWorkflowStepPrompt,
-  EMAIL_WORKFLOW_READ_ONLY_CONSTRAINTS,
+  emailWorkflowPolicyConstraints,
 } from "@/lib/email-workflow-prompt";
 import { assertEmailAutomationTarget } from "@/lib/email-automation-service";
 import { getInboundEmailAccount } from "@/lib/integrations/email-service";
@@ -46,6 +46,23 @@ function conversationKey(occurrence: EmailAutomationOccurrence) {
     .update("\0")
     .update(occurrence.event.threadId ?? occurrence.event.messageId)
     .digest("hex");
+}
+
+function hasExpectedReplyReceipt(
+  runId: string,
+  event: AutomationExecution["event"],
+) {
+  return runRepository.listRunEvents(runId).some(({ type, payload }) => {
+    const data = payload as Record<string, unknown>;
+    return (
+      type === "tool_completed" &&
+      data.server === "email" &&
+      data.tool === "email_reply" &&
+      data.success === true &&
+      data.targetAccountId === event.accountId &&
+      data.targetMessageId === event.messageId
+    );
+  });
 }
 
 function automationSkipReason(
@@ -133,11 +150,22 @@ function createStepRun(input: {
       inboundEventId: input.execution.event.id,
     });
   }
-  if (definition.action !== "review_and_reply") {
+  const policyConstraints = emailWorkflowPolicyConstraints(definition);
+  if (policyConstraints) {
     runRepository.addRunEvent(run.id, "automation_tool_policy_constraints", {
       executionId: input.execution.id,
       stepId: input.step.stepId,
-      overrides: EMAIL_WORKFLOW_READ_ONLY_CONSTRAINTS,
+      overrides: policyConstraints,
+    });
+  }
+  if (definition.action === "review_and_reply") {
+    runRepository.addRunEvent(run.id, "automation_tool_argument_constraints", {
+      executionId: input.execution.id,
+      stepId: input.step.stepId,
+      emailReply: {
+        accountId: input.execution.event.accountId,
+        messageId: input.execution.event.messageId,
+      },
     });
   }
   runRepository.addRunEvent(run.id, "automation_step_started", {
@@ -412,6 +440,32 @@ async function advanceExecution(
     );
     return;
   }
+  if (
+    current.action === "review_and_reply" &&
+    !hasExpectedReplyReceipt(run.id, execution.event)
+  ) {
+    const reason =
+      "The review step completed without a confirmed reply to the triggering email.";
+    automationExecutionRepository.failStep(
+      execution.id,
+      current.stepId,
+      "failed",
+      reason,
+    );
+    const finished = automationExecutionRepository.finishExecution(
+      execution.id,
+      "failed",
+      reason,
+    );
+    if (finished) {
+      runRepository.addRunEvent(run.id, "automation_execution_failed", {
+        executionId: execution.id,
+        stepId: current.stepId,
+        reason,
+      });
+    }
+    return;
+  }
   const newlyCompleted = automationExecutionRepository.completeStep(
     execution.id,
     current.stepId,
@@ -438,12 +492,43 @@ async function advanceExecution(
     return;
   }
 
-  await assertEmailAutomationTarget(
-    execution.definition.steps[0]!.agentId,
-    execution.event.accountId,
-    execution.definition.steps,
-    { getAccount: dependencies.getAccount },
-  );
+  try {
+    const remainingDefinitions = execution.definition.steps.slice(
+      next.stepIndex,
+    );
+    await assertEmailAutomationTarget(
+      next.agentId,
+      execution.event.accountId,
+      remainingDefinitions,
+      { getAccount: dependencies.getAccount },
+    );
+  } catch (error) {
+    if (
+      error instanceof OperationalError &&
+      error.code === "EMAIL_AUTOMATION_BLOCKED"
+    ) {
+      automationExecutionRepository.failStep(
+        execution.id,
+        next.stepId,
+        "failed",
+        error.message,
+      );
+      const finished = automationExecutionRepository.finishExecution(
+        execution.id,
+        "failed",
+        error.message,
+      );
+      if (finished) {
+        runRepository.addRunEvent(run.id, "automation_execution_failed", {
+          executionId: execution.id,
+          stepId: next.stepId,
+          reason: error.message,
+        });
+      }
+      return;
+    }
+    throw error;
+  }
   let nextRunId: string | null = null;
   withImmediateTransaction(() => {
     const latestExecution = automationExecutionRepository.getExecution(
@@ -483,7 +568,10 @@ export async function advanceEmailWorkflowExecutions(
     try {
       await advanceExecution(execution, dependencies);
     } catch (error) {
-      if (error instanceof OperationalError) {
+      if (
+        error instanceof OperationalError &&
+        error.code === "EMAIL_AUTOMATION_BLOCKED"
+      ) {
         const steps = automationExecutionRepository.listSteps(execution.id);
         const current = steps[execution.currentStepIndex];
         if (current) {

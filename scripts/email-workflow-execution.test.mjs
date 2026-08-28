@@ -32,6 +32,7 @@ test("inbound email workflows hand off durably and serialize a conversation", as
     { runRepository },
     { agentRepository },
     { startEmailAutomationRun, advanceEmailWorkflowExecutions },
+    { OperationalError },
     { storeEmailConnectorToken },
     { snapshotAgentToolPolicies, filterToolsByRunPolicy },
   ] = await Promise.all([
@@ -42,6 +43,7 @@ test("inbound email workflows hand off durably and serialize a conversation", as
     import("../lib/repositories/run-repository.ts"),
     import("../lib/repositories/agent-repository.ts"),
     import("../lib/email-workflow-execution-service.ts"),
+    import("../lib/operational-error.ts"),
     import("../lib/integrations/email-token-vault.ts"),
     import("../lib/agent-tool-policy.ts"),
   ]);
@@ -276,7 +278,11 @@ test("inbound email workflows hand off durably and serialize a conversation", as
   await advanceEmailWorkflowExecutions({
     ...dependencies,
     getAccount: async () => {
-      throw new Error("temporary account lookup failure");
+      throw new OperationalError(
+        "temporary account lookup failure",
+        "EMAIL_CONNECTOR_NOT_READY",
+        503,
+      );
     },
     logError: (message, error) => transientErrors.push({ message, error }),
   });
@@ -285,6 +291,9 @@ test("inbound email workflows hand off durably and serialize a conversation", as
     automationExecutionRepository.listSteps(execution.id)[1].runId,
     null,
   );
+  db.prepare(
+    "DELETE FROM agent_email_accounts WHERE agent_id=? AND account_id=?",
+  ).run(writerId, "account-1");
   await advanceEmailWorkflowExecutions(dependencies);
 
   const afterHandoff = automationExecutionRepository.listSteps(execution.id);
@@ -292,15 +301,45 @@ test("inbound email workflows hand off durably and serialize a conversation", as
   assert.ok(reviewRun);
   assert.notEqual(reviewRun.threadId, firstRun.threadId);
   assert.equal(startedRuns.length, 2);
+  db.prepare(
+    "INSERT INTO agent_email_accounts (agent_id,account_id) VALUES (?,?)",
+  ).run(writerId, "account-1");
   const reviewInput = conversationRepository.getRunInput(reviewRun.id)?.body;
   assert.match(reviewInput, /Here is the reviewed factual draft/);
   assert.match(reviewInput, /Review the draft and reply if it is safe/);
   assert.doesNotMatch(reviewInput, /changed future definition/);
-  assert.equal(
-    runRepository
-      .listRunEvents(reviewRun.id)
-      .some(({ type }) => type === "automation_tool_policy_constraints"),
-    false,
+  const reviewConstraints = runRepository
+    .listRunEvents(reviewRun.id)
+    .find(({ type }) => type === "automation_tool_policy_constraints");
+  assert.ok(reviewConstraints);
+  const replyTargetConstraint = runRepository
+    .listRunEvents(reviewRun.id)
+    .find(({ type }) => type === "automation_tool_argument_constraints");
+  assert.deepEqual(replyTargetConstraint?.payload.emailReply, {
+    accountId: "account-1",
+    messageId: "message-1",
+  });
+  const reviewer = agentRepository.getAgent(reviewerId);
+  snapshotAgentToolPolicies({
+    runId: reviewRun.id,
+    agent: reviewer,
+    servers: [
+      {
+        name: "email",
+        url: "http://email.test/mcp",
+        approval: { defaultMode: "approve", tools: {} },
+      },
+    ],
+    overrides: reviewConstraints.payload.overrides,
+  });
+  assert.deepEqual(
+    filterToolsByRunPolicy(reviewRun.id, "email", [
+      "email_search",
+      "email_create_draft",
+      "email_reply",
+      "email_send",
+    ]),
+    ["email_search", "email_reply"],
   );
   assert.equal(
     runRepository
@@ -326,6 +365,13 @@ test("inbound email workflows hand off durably and serialize a conversation", as
     "assistant",
     "Reply sent after approval.",
   );
+  runRepository.addRunEvent(reviewRun.id, "tool_completed", {
+    server: "email",
+    tool: "email_reply",
+    success: true,
+    targetAccountId: "account-1",
+    targetMessageId: "message-1",
+  });
   await advanceEmailWorkflowExecutions(dependencies);
   assert.equal(
     automationExecutionRepository.getExecution(execution.id)?.status,
@@ -350,4 +396,101 @@ test("inbound email workflows hand off durably and serialize a conversation", as
   assert.equal(secondExecution.status, "failed");
   assert.equal(automationExecutionRepository.listSteps(secondExecution.id)[1].runId, null);
   assert.equal(startedRuns.length, 3);
+
+  const replyOnly = automationRepository.createAutomation({
+    name: "Reply receipt required",
+    agentId: reviewerId,
+    triggerType: "email",
+    cronExpression: null,
+    emailAccountId: "account-1",
+    prompt: "Reply only after review.",
+    mode: "task",
+    enabled: true,
+    steps: [
+      {
+        id: "reply-only",
+        type: "agent_review",
+        agentId: reviewerId,
+        action: "review_and_reply",
+        prompt: "Reply only after review.",
+      },
+    ],
+  });
+  assert.equal(
+    automationRepository.recordEmailEventPage({
+      expectedCursor: 2,
+      events: [{ ...event(3), threadId: "missing-receipt-thread" }],
+      complete: false,
+    }),
+    true,
+  );
+  const noReceipt = await startEmailAutomationRun(
+    replyOnly.id,
+    3,
+    dependencies,
+  );
+  assert.equal(noReceipt.status, "dispatched");
+  runRepository.updateRun(noReceipt.run.id, "completed");
+  conversationRepository.addRunMessageOnce(
+    noReceipt.run.threadId,
+    noReceipt.run.id,
+    "assistant",
+    "I decided not to call the reply tool.",
+  );
+  runRepository.addRunEvent(noReceipt.run.id, "tool_failed", {
+    server: "email",
+    tool: "email_reply",
+    success: false,
+    targetAccountId: "account-1",
+    targetMessageId: "message-3",
+  });
+  runRepository.addRunEvent(noReceipt.run.id, "tool_completed", {
+    server: "email",
+    tool: "email_reply",
+    success: true,
+    targetAccountId: "account-1",
+    targetMessageId: "another-message",
+  });
+  await advanceEmailWorkflowExecutions(dependencies);
+  const noReceiptExecution = automationExecutionRepository.getExecution(
+    automationRepository.getEmailOccurrence(replyOnly.id, 3).executionId,
+  );
+  assert.equal(noReceiptExecution.status, "failed");
+  assert.match(noReceiptExecution.error, /without a confirmed reply/);
+
+  assert.equal(
+    automationRepository.recordEmailEventPage({
+      expectedCursor: 3,
+      events: [{ ...event(4), threadId: "revoked-access-thread" }],
+      complete: false,
+    }),
+    true,
+  );
+  const revoked = await startEmailAutomationRun(
+    automation.id,
+    4,
+    dependencies,
+  );
+  assert.equal(revoked.status, "dispatched");
+  runRepository.updateRun(revoked.run.id, "completed");
+  conversationRepository.addRunMessageOnce(
+    revoked.run.threadId,
+    revoked.run.id,
+    "assistant",
+    "Draft ready for review.",
+  );
+  db.prepare(
+    "DELETE FROM agent_email_accounts WHERE agent_id=? AND account_id=?",
+  ).run(reviewerId, "account-1");
+  await advanceEmailWorkflowExecutions(dependencies);
+  const revokedExecution = automationExecutionRepository.getExecution(
+    automationRepository.getEmailOccurrence(automation.id, 4).executionId,
+  );
+  const revokedSteps = automationExecutionRepository.listSteps(
+    revokedExecution.id,
+  );
+  assert.equal(revokedSteps[0].status, "completed");
+  assert.equal(revokedSteps[1].status, "failed");
+  assert.match(revokedSteps[1].error, /no longer has read access/);
+  assert.equal(revokedExecution.status, "failed");
 });

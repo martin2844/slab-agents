@@ -24,6 +24,7 @@ import {
   type RunnerEvent,
 } from "@/lib/runner";
 import { parseToolPolicyOverrides } from "@/lib/agent-tool-policy";
+import { parseEmailReplyToolConstraint } from "@/lib/email-workflow-tool-constraints";
 import { RunnerBudgetCompatibilityError } from "@/lib/runner-errors";
 import { RunnerStreamInterruptedError } from "@/lib/runner-transport";
 import { restoreRunProgress } from "@/lib/run-recovery-state";
@@ -430,6 +431,12 @@ export async function* executeRun(
     const toolPolicyOverrides = parseToolPolicyOverrides(
       toolConstraintPayload?.["overrides"],
     );
+    const argumentConstraintPayload = persistedRunEvents.findLast(
+      ({ type }) => type === "automation_tool_argument_constraints",
+    )?.payload as Record<string, unknown> | undefined;
+    const emailReplyToolConstraint = parseEmailReplyToolConstraint(
+      argumentConstraintPayload?.["emailReply"],
+    );
     const persistedProgress = restoreRunProgress(persistedRunEvents);
     let assistantBody = persistedProgress.assistantBody;
     let runnerRunId = leasedRun.runnerRunId ?? run.id;
@@ -493,6 +500,7 @@ export async function* executeRun(
           attachOnly: budgetAdmission.snapshot.status === "exceeded",
           runnerEventCursor,
           toolPolicyOverrides,
+          emailReplyToolConstraint,
         });
         if (budgetAdmission.snapshot.status === "exceeded") {
           await requestBudgetCancellation(attemptRunnerRunId);

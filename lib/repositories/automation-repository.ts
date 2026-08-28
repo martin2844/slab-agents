@@ -6,6 +6,7 @@ import { withImmediateTransaction } from "@/lib/db/transaction";
 import { assertAutomationTriggerConfiguration } from "@/lib/automation-trigger";
 import {
   automationWorkflowStepsSchema,
+  persistedAutomationWorkflowStepsSchema,
   defaultEmailWorkflow,
   emailAutomationMatchSchema,
   EMPTY_EMAIL_AUTOMATION_MATCH,
@@ -30,7 +31,7 @@ function mapAutomation(row: Row): Automation {
   const steps =
     triggerType === "email"
       ? row.workflow_steps_json
-        ? automationWorkflowStepsSchema.parse(
+        ? persistedAutomationWorkflowStepsSchema.parse(
             normalizePersistedAutomationWorkflowSteps(
               JSON.parse(String(row.workflow_steps_json)),
             ),
@@ -197,27 +198,54 @@ export const automationRepository = {
     const emailMatch = emailAutomationMatchSchema.parse(
       input.emailMatch ?? current.emailMatch,
     );
-    const steps =
-      nextTriggerType === "email"
-        ? automationWorkflowStepsSchema.parse(
-            input.steps ??
-              (current.steps.length
-                ? current.steps
-                : defaultEmailWorkflow({
-                    automationId: current.id,
-                    agentId: current.agentId,
-                    prompt: current.prompt,
-                  })),
-          )
-        : [];
     const workflowChanged =
       input.agentId !== undefined ||
       input.emailAccountId !== undefined ||
+      input.prompt !== undefined ||
+      input.mode !== undefined ||
       input.emailMatch !== undefined ||
       input.steps !== undefined;
+    let steps =
+      nextTriggerType === "email"
+        ? (input.steps
+            ? automationWorkflowStepsSchema.parse(input.steps)
+            : (workflowChanged
+                ? automationWorkflowStepsSchema
+                : persistedAutomationWorkflowStepsSchema
+              ).parse(
+                current.steps.length
+                  ? current.steps
+                  : defaultEmailWorkflow({
+                      automationId: current.id,
+                      agentId: current.agentId,
+                      prompt: current.prompt,
+                    }),
+              ))
+        : [];
+    if (nextTriggerType === "email" && !input.steps && steps[0]) {
+      steps = automationWorkflowStepsSchema.parse([
+        {
+          ...steps[0],
+          ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
+          ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
+        },
+        ...steps.slice(1),
+      ]);
+    }
+    const nextAgentId = input.agentId ?? current.agentId;
+    if (nextTriggerType === "email" && steps[0]?.agentId !== nextAgentId) {
+      throw new OperationalError(
+        "The first workflow step must use the automation agent.",
+        "INVALID_AUTOMATION_TRIGGER",
+      );
+    }
+    const nextPrompt =
+      nextTriggerType === "email"
+        ? steps[0]!.prompt
+        : (input.prompt ?? current.prompt);
     const values = [
       input.name ?? current.name,
-      input.agentId ?? current.agentId,
+      nextAgentId,
       input.triggerType ?? current.triggerType,
       input.cronExpression === undefined
         ? current.cronExpression
@@ -228,7 +256,7 @@ export const automationRepository = {
       JSON.stringify(emailMatch),
       workflowChanged ? 1 : 0,
       nextTriggerType === "email" ? JSON.stringify(steps) : null,
-      input.prompt ?? current.prompt,
+      nextPrompt,
       input.mode ?? current.mode,
       (input.enabled ?? current.enabled) ? 1 : 0,
       input.lastRunAt === undefined ? current.lastRunAt : input.lastRunAt,
@@ -357,9 +385,20 @@ export const automationRepository = {
     return (
       db
         .prepare(
-          `SELECT * FROM email_automation_occurrences
-           WHERE status='pending' AND (next_attempt_at IS NULL OR next_attempt_at<=?)
-           ORDER BY created_at,automation_id,inbound_event_id
+          `WITH ready AS (
+             SELECT *,ROW_NUMBER() OVER (
+               PARTITION BY CASE WHEN attempt_count=0 THEN 0 ELSE 1 END
+               ORDER BY COALESCE(next_attempt_at,created_at),created_at,
+                        automation_id,inbound_event_id
+             ) lane_position
+             FROM email_automation_occurrences
+             WHERE status='pending'
+               AND (next_attempt_at IS NULL OR next_attempt_at<=?)
+           )
+           SELECT * FROM ready
+           ORDER BY lane_position,
+                    CASE WHEN attempt_count=0 THEN 0 ELSE 1 END,
+                    automation_id,inbound_event_id
            LIMIT ?`,
         )
         .all(now(), limit) as Row[]
@@ -443,6 +482,26 @@ export const automationRepository = {
       )
       .run(
         message.slice(0, 500),
+        new Date(Date.now() + delayMs).toISOString(),
+        automationId,
+        inboundEventId,
+        runId,
+      ).changes;
+  },
+  deferEmailOccurrence(
+    automationId: string,
+    inboundEventId: number,
+    runId: string,
+    delayMs = 30_000,
+  ) {
+    return db
+      .prepare(
+        `UPDATE email_automation_occurrences
+         SET attempt_count=attempt_count+1,next_attempt_at=?,last_error=NULL
+         WHERE automation_id=? AND inbound_event_id=? AND run_id=?
+           AND status='pending'`,
+      )
+      .run(
         new Date(Date.now() + delayMs).toISOString(),
         automationId,
         inboundEventId,

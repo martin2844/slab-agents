@@ -126,11 +126,18 @@ async function dispatchPending(
         .slice(offset, offset + DISPATCH_CONCURRENCY)
         .map(async (occurrence) => {
           try {
-            await startOccurrence(
+            const result = await startOccurrence(
               occurrence.automationId,
               occurrence.inboundEventId,
               { getAccount: cachedGetAccount },
             );
+            if (result.status === "deferred") {
+              automationRepository.deferEmailOccurrence(
+                occurrence.automationId,
+                occurrence.inboundEventId,
+                occurrence.runId,
+              );
+            }
           } catch (error) {
             const message =
               error instanceof Error

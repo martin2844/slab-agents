@@ -7,6 +7,7 @@ import type {
 import type {
   AutomationWorkflowStep,
   EmailAutomationMatch,
+  PersistedAutomationWorkflowStep,
 } from "@/lib/automation-workflow";
 
 export type Agent = {
@@ -141,7 +142,7 @@ export type Automation = {
   emailAccountId: string | null;
   emailMatch: EmailAutomationMatch;
   workflowVersion: number;
-  steps: AutomationWorkflowStep[];
+  steps: PersistedAutomationWorkflowStep[];
   prompt: string;
   mode: AutomationMode;
   enabled: boolean;
@@ -985,7 +986,7 @@ export type AutomationExecution = {
   definition: {
     mode: Extract<RunMode, "review" | "task">;
     emailMatch: EmailAutomationMatch;
-    steps: AutomationWorkflowStep[];
+    steps: PersistedAutomationWorkflowStep[];
   };
   event: InboundEmailEvent;
   conversationKey: string;

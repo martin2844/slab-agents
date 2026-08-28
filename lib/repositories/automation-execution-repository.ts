@@ -3,7 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import {
-  automationWorkflowStepsSchema,
+  persistedAutomationWorkflowStepsSchema,
   emailAutomationMatchSchema,
   normalizePersistedAutomationWorkflowSteps,
 } from "@/lib/automation-workflow";
@@ -31,7 +31,7 @@ function mapExecution(row: Row): AutomationExecution {
     definition: {
       mode: rawDefinition.mode === "review" ? "review" : "task",
       emailMatch: emailAutomationMatchSchema.parse(rawDefinition.emailMatch),
-      steps: automationWorkflowStepsSchema.parse(
+      steps: persistedAutomationWorkflowStepsSchema.parse(
         normalizePersistedAutomationWorkflowSteps(rawDefinition.steps),
       ),
     },

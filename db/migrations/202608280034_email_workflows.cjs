@@ -37,6 +37,7 @@ exports.up = async function up(knex) {
           type: "agent_task",
           agentId: automation.agent_id,
           action: "analyze",
+          legacyUnrestricted: true,
           prompt: automation.prompt,
         },
       ]),

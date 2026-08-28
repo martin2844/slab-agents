@@ -28,8 +28,17 @@ export const automationWorkflowStepSchema = z.object({
   prompt: z.string().trim().min(2).max(20_000),
 });
 
-export const automationWorkflowStepsSchema = z
-  .array(automationWorkflowStepSchema)
+const persistedAutomationWorkflowStepSchema =
+  automationWorkflowStepSchema.extend({
+    /** Migration-only compatibility marker. Never accepted by public APIs. */
+    legacyUnrestricted: z.literal(true).optional(),
+  });
+
+function workflowStepsSchema<T extends typeof automationWorkflowStepSchema>(
+  stepSchema: T,
+) {
+  return z
+  .array(stepSchema)
   .min(1)
   .max(8)
   .superRefine((steps, context) => {
@@ -74,12 +83,23 @@ export const automationWorkflowStepsSchema = z
       });
     }
   });
+}
+
+export const automationWorkflowStepsSchema = workflowStepsSchema(
+  automationWorkflowStepSchema,
+);
+export const persistedAutomationWorkflowStepsSchema = workflowStepsSchema(
+  persistedAutomationWorkflowStepSchema,
+);
 
 export type EmailAutomationMatch = z.infer<
   typeof emailAutomationMatchSchema
 >;
 export type AutomationWorkflowStep = z.infer<
   typeof automationWorkflowStepSchema
+>;
+export type PersistedAutomationWorkflowStep = z.infer<
+  typeof persistedAutomationWorkflowStepSchema
 >;
 
 export function nextAutomationWorkflowStepId(

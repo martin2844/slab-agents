@@ -147,11 +147,21 @@ Email automations consume the metadata-only inbound event feed from
 `slab-email`. The feed cursor and one dispatch intent per
 `(automation, inbound event)` are committed atomically before a run starts, so
 restarts neither lose the cursor nor create duplicate runs. An automation only
-matches events discovered after it was created. Its agent must have read access
-to the selected account and must not have `email_get_message` set to No access.
-The generated task identifies the account and message, instructs the agent to
-fetch the full message through its scoped Email tools, and treats message
-content as untrusted external input.
+matches events discovered after it was created. Recipient, sender,
+sender-domain, and subject filters select messages before execution. Each
+matching message starts a versioned workflow of one to eight ordered agent
+steps. Analyze and Draft steps cannot write Email; an optional final
+Review-and-reply step uses the original thread and remains subject to the final
+agent's connector send policy and operator approval. Every step gets a fresh
+runtime thread plus a bounded handoff from the preceding step. Agents must have
+read access to the selected account and must not have `email_get_message` set to
+No access.
+
+Workflow definitions are snapshotted at execution start, so edits affect only
+new executions. Executions for the same automation and email conversation are
+serialized, while unrelated conversations may proceed normally. The
+Automations page shows execution and step status with links to the underlying
+Runs.
 
 The full operator and failure-state contract is documented in
 [`docs/email-automations-and-tool-control-plane.md`](docs/email-automations-and-tool-control-plane.md).
@@ -271,11 +281,12 @@ mode. Runs for one agent are serialized through the durable SQLite-backed FIFO;
 different agents may execute concurrently. Work event idempotency remains
 persisted in SQLite.
 
-Inbound Email automations use the same task/review modes, but require one
-durably captured Email event and cannot be started manually without message
-context. Pending Email occurrences are revalidated against the automation,
-agent, mailbox access, and granular Email tool policy immediately before the
-run is created.
+Inbound Email automations require one durably captured Email event and cannot be
+started manually without message context. Multi-step workflow steps use task
+Runs; a one-step workflow retains its configured task/review mode. Pending Email
+occurrences are revalidated against the automation, every step agent, mailbox
+access, and granular Email tool policy immediately before the first Run is
+created. Later steps are revalidated before they start.
 
 ```bash
 npm run migrate:latest

@@ -64,6 +64,10 @@ import type {
 } from "@/lib/codex-auth-contract";
 import { codexLoginIdPattern } from "@/lib/codex-auth-contract";
 import { issueDocsRunAccess } from "@/lib/docs-access";
+import {
+  emailReplyConstraintHeaders,
+  type EmailReplyToolConstraint,
+} from "@/lib/email-workflow-tool-constraints";
 
 export type { RunnerEvent } from "@/lib/runner-transport";
 
@@ -379,6 +383,7 @@ export async function startRunnerRun(
     attachOnly?: boolean;
     runnerEventCursor?: number;
     toolPolicyOverrides?: Record<string, McpToolPolicy>;
+    emailReplyToolConstraint?: EmailReplyToolConstraint | null;
   },
   dependencies: RunnerRuntimeDependencies = {},
 ) {
@@ -480,6 +485,28 @@ export async function startRunnerRun(
   ]) {
     exposedToolsByServer.set(server.name, snapshot.tools);
   }
+  const emailServer: PolicyAwareMcpServer | null = emailMcp
+    ? {
+        ...emailMcp,
+        approval: {
+          defaultMode: emailMcp.approval.defaultMode,
+          tools: { ...emailMcp.approval.tools } as Record<
+            string,
+            McpToolPolicy["defaultMode"]
+          >,
+        },
+        ...(input.emailReplyToolConstraint
+          ? {
+              credentials: {
+                ...emailMcp.credentials,
+                headers: emailReplyConstraintHeaders(
+                  input.emailReplyToolConstraint,
+                ),
+              },
+            }
+          : {}),
+      }
+    : null;
   const liveMcpServers: PolicyAwareMcpServer[] = [
     {
       name: "work" as const,
@@ -492,7 +519,7 @@ export async function startRunnerRun(
       ...(docsAccess ? { credentials: { bearerToken: docsAccess.token } } : {}),
     },
     ...(posthogMcp ? [posthogMcp] : []),
-    ...(emailMcp ? [emailMcp] : []),
+    ...(emailServer ? [emailServer] : []),
     ...calendarMcpServers,
     ...customMcpServers,
   ];

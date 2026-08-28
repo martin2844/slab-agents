@@ -93,6 +93,82 @@ test("email workflow schemas keep reply execution linear and bounded", async () 
   );
 });
 
+test("public automation inputs strip migration-only flags and require workflow CAS", async () => {
+  const { automationCreateSchema, automationUpdateSchema } = await import(
+    "../lib/api-schemas/automation.ts"
+  );
+  const agentId = "11111111-1111-4111-8111-111111111111";
+  const step = {
+    id: "draft",
+    type: "agent_task",
+    agentId,
+    action: "draft_reply",
+    legacyUnrestricted: true,
+    prompt: "Draft a reply.",
+  };
+  const created = automationCreateSchema.parse({
+    name: "Inbound reply",
+    agentId,
+    triggerType: "email",
+    cronExpression: null,
+    emailAccountId: "account-1",
+    prompt: "Draft a reply.",
+    mode: "task",
+    steps: [step],
+  });
+  assert.equal("legacyUnrestricted" in created.steps[0], false);
+
+  assert.equal(
+    automationUpdateSchema.safeParse({ mode: "review" }).success,
+    false,
+  );
+  const updated = automationUpdateSchema.parse({
+    expectedWorkflowVersion: 2,
+    steps: [step],
+  });
+  assert.equal("legacyUnrestricted" in updated.steps[0], false);
+  assert.equal(
+    automationUpdateSchema.safeParse({ enabled: false }).success,
+    true,
+  );
+  assert.equal(
+    automationUpdateSchema.safeParse({ prompt: "Change the instructions." })
+      .success,
+    false,
+  );
+});
+
+test("workflow policy constraints preserve legacy behavior and restrict new replies", async () => {
+  const { emailWorkflowPolicyConstraints } = await import(
+    "../lib/email-workflow-prompt.ts"
+  );
+  const agentId = "11111111-1111-4111-8111-111111111111";
+  assert.equal(
+    emailWorkflowPolicyConstraints({
+      id: "legacy",
+      type: "agent_task",
+      agentId,
+      action: "analyze",
+      legacyUnrestricted: true,
+      prompt: "Keep the previous automation behavior.",
+    }),
+    null,
+  );
+  assert.deepEqual(
+    emailWorkflowPolicyConstraints({
+      id: "reply",
+      type: "agent_review",
+      agentId,
+      action: "review_and_reply",
+      prompt: "Review and reply.",
+    })?.email.tools,
+    {
+      email_send: "deny",
+      email_create_draft: "deny",
+    },
+  );
+});
+
 test("migration converts existing email automations into one-step workflows", async (t) => {
   const { knex } = await temporaryDatabase(t, "slab-email-workflow-migrate-");
   const target = "202608280033_knowledge_source_access.cjs";
@@ -146,6 +222,7 @@ test("migration converts existing email automations into one-step workflows", as
       type: "agent_task",
       agentId,
       action: "analyze",
+      legacyUnrestricted: true,
       prompt: "Triage the email.",
     },
   ]);
@@ -307,15 +384,29 @@ test("repository versions workflow edits without versioning scheduler state", as
   assert.equal(reassigned?.emailAccountId, "account-2");
   assert.equal(reassigned?.workflowVersion, 3);
 
-  const firstConcurrentEdit = automationRepository.updateAutomation(email.id, {
+  const modeEdit = automationRepository.updateAutomation(email.id, {
     expectedWorkflowVersion: 3,
-    emailMatch: { ...email.emailMatch, senderDomain: "first.example" },
+    mode: "review",
   });
-  assert.equal(firstConcurrentEdit?.workflowVersion, 4);
+  assert.equal(modeEdit?.workflowVersion, 4);
   assert.throws(
     () =>
       automationRepository.updateAutomation(email.id, {
         expectedWorkflowVersion: 3,
+        mode: "task",
+      }),
+    (error) => error?.code === "AUTOMATION_VERSION_CONFLICT",
+  );
+
+  const firstConcurrentEdit = automationRepository.updateAutomation(email.id, {
+    expectedWorkflowVersion: 4,
+    emailMatch: { ...email.emailMatch, senderDomain: "first.example" },
+  });
+  assert.equal(firstConcurrentEdit?.workflowVersion, 5);
+  assert.throws(
+    () =>
+      automationRepository.updateAutomation(email.id, {
+        expectedWorkflowVersion: 4,
         emailMatch: { ...email.emailMatch, senderDomain: "stale.example" },
       }),
     (error) => error?.code === "AUTOMATION_VERSION_CONFLICT",
@@ -323,6 +414,71 @@ test("repository versions workflow edits without versioning scheduler state", as
   assert.equal(
     automationRepository.getAutomation(email.id)?.emailMatch.senderDomain,
     "first.example",
+  );
+
+  const currentStep = automationRepository.getAutomation(email.id)?.steps[0];
+  assert.ok(currentStep);
+  db.prepare("UPDATE automations SET workflow_steps_json=? WHERE id=?").run(
+    JSON.stringify([
+      {
+        ...currentStep,
+        action: "analyze",
+        legacyUnrestricted: true,
+      },
+    ]),
+    email.id,
+  );
+  const legacy = automationRepository.getAutomation(email.id);
+  assert.equal(legacy.steps[0].legacyUnrestricted, true);
+  const modeEditedLegacy = automationRepository.updateAutomation(email.id, {
+    expectedWorkflowVersion: 5,
+    mode: "task",
+  });
+  assert.equal("legacyUnrestricted" in modeEditedLegacy.steps[0], false);
+
+  db.prepare("UPDATE automations SET workflow_steps_json=? WHERE id=?").run(
+    JSON.stringify([{ ...legacy.steps[0], legacyUnrestricted: true }]),
+    email.id,
+  );
+  const filterEditedLegacy = automationRepository.updateAutomation(email.id, {
+    expectedWorkflowVersion: 6,
+    emailMatch: { ...email.emailMatch, senderDomain: "edited.example" },
+  });
+  assert.equal("legacyUnrestricted" in filterEditedLegacy.steps[0], false);
+
+  db.prepare("UPDATE automations SET workflow_steps_json=? WHERE id=?").run(
+    JSON.stringify([{ ...legacy.steps[0], legacyUnrestricted: true }]),
+    email.id,
+  );
+  const editedLegacy = automationRepository.updateAutomation(email.id, {
+    expectedWorkflowVersion: 7,
+    steps: [
+      {
+        ...legacy.steps[0],
+        action: "draft_reply",
+        prompt: "Draft the current deliverable.",
+      },
+    ],
+  });
+  assert.equal("legacyUnrestricted" in editedLegacy.steps[0], false);
+
+  db.prepare("UPDATE automations SET workflow_steps_json=? WHERE id=?").run(
+    JSON.stringify([{ ...legacy.steps[0], legacyUnrestricted: true }]),
+    email.id,
+  );
+  const promptEditedLegacy = automationRepository.updateAutomation(email.id, {
+    expectedWorkflowVersion: 8,
+    prompt: "Use the corrected executable instructions.",
+  });
+  assert.equal(promptEditedLegacy?.workflowVersion, 9);
+  assert.equal(
+    promptEditedLegacy?.steps[0]?.prompt,
+    "Use the corrected executable instructions.",
+  );
+  assert.equal(promptEditedLegacy?.prompt, promptEditedLegacy?.steps[0]?.prompt);
+  assert.equal(
+    "legacyUnrestricted" in promptEditedLegacy.steps[0],
+    false,
   );
 
   db.prepare("UPDATE automations SET workflow_steps_json=? WHERE id=?").run(

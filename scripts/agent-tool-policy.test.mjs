@@ -33,6 +33,7 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
     { settingsRepository },
     { startRunnerRun },
     { buildAgentToolCatalog },
+    { storeEmailConnectorToken },
     { db },
     toolPolicyRoute,
   ] = await Promise.all([
@@ -44,6 +45,7 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
     import("../lib/repositories/settings-repository.ts"),
     import("../lib/runner.ts"),
     import("../lib/agent-tool-catalog.ts"),
+    import("../lib/integrations/email-token-vault.ts"),
     import("../lib/db/database.ts"),
     import("../app/api/agents/[id]/tool-policies/route.ts"),
   ]);
@@ -367,6 +369,34 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
   settingsRepository.set("runner_url", "http://runner.test");
   settingsRepository.set("work_mcp_url", "http://127.0.0.1:9/mcp");
   settingsRepository.set("docs_mcp_url", "http://127.0.0.1:9/mcp");
+  const timestamp = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO email_integrations
+     (id,service_url,status,last_tested_at,last_error,created_at,updated_at)
+     VALUES ('email',?,'connected',?,NULL,?,?)`,
+  ).run("http://email.test", timestamp, timestamp, timestamp);
+  db.prepare(
+    `INSERT INTO agent_email_access
+     (agent_id,profile_id,profile_name,read_enabled,draft_enabled,send_enabled,send_policy,token_id,token_prefix,token_created_at,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    guarded.id,
+    "profile-test",
+    "Test email",
+    1,
+    1,
+    1,
+    "approval_required",
+    "token-test",
+    "slab_test",
+    timestamp,
+    timestamp,
+    timestamp,
+  );
+  db.prepare(
+    "INSERT INTO agent_email_accounts (agent_id,account_id) VALUES (?,?)",
+  ).run(guarded.id, "account-test");
+  storeEmailConnectorToken("token-test", "scoped-email-secret");
   const thread = conversationRepository.createThread(
     guarded.id,
     "Policy transport",
@@ -393,6 +423,10 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
         issueKey: null,
         policy: "Use the assigned tools only.",
       },
+      emailReplyToolConstraint: {
+        accountId: "account-test",
+        messageId: "message-test",
+      },
     },
     {
       fetcher: async (url, init = {}) => {
@@ -416,6 +450,18 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
     {
       defaultMode: "deny",
       tools: { get_issue: "approve", assign_issue: "deny" },
+    },
+  );
+  assert.deepEqual(
+    runnerBody.mcpServers.find(({ name }) => name === "email").credentials,
+    {
+      bearerToken: "scoped-email-secret",
+      headers: {
+        "X-Slab-Reply-Account-Sha256":
+          "d86f70b3c693a77a2bed6e40c741e09cd5b82d09a97a3346b7a718d609c89224",
+        "X-Slab-Reply-Message-Sha256":
+          "dbe78f550dedd48491a3e1a377c81750a6f353dbf16441ae34e660c74d4c672a",
+      },
     },
   );
   assert.equal(runner.capabilitySnapshot.toolPolicies.snapshotId, runnerRun.id);

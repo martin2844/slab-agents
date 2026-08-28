@@ -1,4 +1,7 @@
-import type { AutomationWorkflowStep } from "@/lib/automation-workflow";
+import type {
+  AutomationWorkflowStep,
+  PersistedAutomationWorkflowStep,
+} from "@/lib/automation-workflow";
 import type { InboundEmailEvent } from "@/lib/types";
 
 const MAX_HANDOFF_CHARACTERS = 24_000;
@@ -79,3 +82,22 @@ export const EMAIL_WORKFLOW_READ_ONLY_CONSTRAINTS = {
     },
   },
 };
+
+export const EMAIL_WORKFLOW_REPLY_CONSTRAINTS = {
+  email: {
+    defaultMode: "approve" as const,
+    tools: {
+      email_send: "deny" as const,
+      email_create_draft: "deny" as const,
+    },
+  },
+};
+
+export function emailWorkflowPolicyConstraints(
+  step: PersistedAutomationWorkflowStep,
+) {
+  if (step.legacyUnrestricted) return null;
+  return step.action === "review_and_reply"
+    ? EMAIL_WORKFLOW_REPLY_CONSTRAINTS
+    : EMAIL_WORKFLOW_READ_ONLY_CONSTRAINTS;
+}

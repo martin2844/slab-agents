@@ -1142,21 +1142,27 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
               mailbox with no agent access profile produces no Email tools.
             </Callout>
             <Callout
-              title="Turn each new message into one durable Run"
+              title="Turn each new message into a durable workflow"
               icon={Workflow}
             >
               Open Automations, choose Incoming email, select the receiving
-              account and an eligible agent, then write the focused prompt. Only
+              account, configure optional sender/recipient/subject filters, and
+              add up to eight ordered agent steps. Analyze and Draft steps are
+              read-only; an optional final Review and reply step answers in the
+              original thread and still follows that agent&apos;s Email send
+              policy. Human approval remains separate from agent review. Only
               messages discovered after the automation is created match. Slab
-              stores one deduplicated dispatch intent, rechecks mailbox and
-              connector readiness, and retries transient failures without
-              holding up scheduled automations. The Run receives bounded,
-              untrusted metadata and reads the complete message through its
+              stores one deduplicated execution, snapshots the workflow version,
+              serializes messages from the same conversation, and retries
+              transient failures without holding up scheduled automations. Each
+              step starts a fresh runtime thread, receives a bounded handoff
+              from the previous step, and reads the complete message through its
               scoped{" "}
               <code className="font-mono text-foreground">
                 email_get_message
               </code>{" "}
-              tool.
+              tool. Recent executions and every linked Run remain visible on
+              the Automations page.
               <span className="mt-3 block">
                 <Button size="sm" variant="outline" asChild>
                   <Link href="/automations">Configure Email automation</Link>
@@ -1877,12 +1883,14 @@ chat message B
               >
                 Confirm the automation is enabled, the Email integration is
                 Connected, the selected mailbox is enabled and readable, and the
-                assigned agent has that account plus email_get_message set to
-                Ask or Allow. The automation ignores mailbox history from before
-                its creation. The warning on Automations reports a current
-                feed/integration error or a pending dispatch failure with its
-                next retry time. Transient failures retry with backoff and do
-                not block cron schedules.
+                agents in every step have that account plus email_get_message
+                set to Ask or Allow. A final reply agent also needs send access,
+                a non-disabled send policy, and email_reply access. The
+                automation ignores mailbox history from before its creation.
+                The warning on Automations reports a current feed/integration
+                error or a pending dispatch failure with its next retry time.
+                Transient failures retry with backoff and do not block cron
+                schedules.
               </TroubleshootingItem>
               <TroubleshootingItem
                 title="A run waits for approval"
