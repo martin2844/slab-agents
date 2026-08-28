@@ -58,6 +58,8 @@ function mapSource(row: Row): KnowledgeSourceRecord {
     githubAppId: row.github_app_id ? String(row.github_app_id) : null,
     enabled: bool(row.enabled),
     version: Number(row.version),
+    accessVersion: Number(row.access_version ?? 1),
+    agentIds: [],
     syncIntervalMinutes:
       row.sync_interval_minutes === null ||
       row.sync_interval_minutes === undefined
@@ -97,6 +99,45 @@ function mapItem(row: Row): KnowledgeSourceItemRecord {
   };
 }
 
+function listAgentIds(sourceId: string): string[] {
+  return (
+    db
+      .prepare(
+        "SELECT agent_id FROM agent_knowledge_source_access WHERE source_id=? ORDER BY agent_id",
+      )
+      .all(sourceId) as Array<{ agent_id: string }>
+  ).map(({ agent_id }) => agent_id);
+}
+
+function withAccess(source: KnowledgeSourceRecord): KnowledgeSourceRecord {
+  return { ...source, agentIds: listAgentIds(source.id) };
+}
+
+function mapSourcesWithAccess(rows: Row[]): KnowledgeSourceRecord[] {
+  const sources = rows.map(mapSource);
+  if (sources.length === 0) return [];
+  const placeholders = sources.map(() => "?").join(",");
+  const accessRows = db
+    .prepare(
+      `SELECT source_id,agent_id FROM agent_knowledge_source_access
+       WHERE source_id IN (${placeholders}) ORDER BY agent_id`,
+    )
+    .all(...sources.map(({ id }) => id)) as Array<{
+    source_id: string;
+    agent_id: string;
+  }>;
+  const bySource = new Map<string, string[]>();
+  for (const row of accessRows) {
+    const ids = bySource.get(row.source_id) ?? [];
+    ids.push(row.agent_id);
+    bySource.set(row.source_id, ids);
+  }
+  return sources.map((source) => ({
+    ...source,
+    agentIds: bySource.get(source.id) ?? [],
+  }));
+}
+
 function mapGithubApp(row: Row): GitHubSourceAppRecord {
   return {
     id: String(row.id),
@@ -119,21 +160,38 @@ function mapGithubApp(row: Row): GitHubSourceAppRecord {
 
 export const sourceRepository = {
   listSources() {
-    return (
-      db.prepare("SELECT * FROM knowledge_sources ORDER BY name").all() as Row[]
-    ).map(mapSource);
+    return mapSourcesWithAccess(
+      db
+        .prepare("SELECT * FROM knowledge_sources ORDER BY name")
+        .all() as Row[],
+    );
   },
   getSource(id: string) {
     const row = db
       .prepare("SELECT * FROM knowledge_sources WHERE id=?")
       .get(id) as Row | undefined;
-    return row ? mapSource(row) : null;
+    return row ? withAccess(mapSource(row)) : null;
   },
   getSourceBySlug(slug: string) {
     const row = db
       .prepare("SELECT * FROM knowledge_sources WHERE slug=?")
       .get(slug) as Row | undefined;
-    return row ? mapSource(row) : null;
+    return row ? withAccess(mapSource(row)) : null;
+  },
+  listAgentIds,
+  listSourcesForAgent(agentId: string) {
+    return (
+      db
+        .prepare(
+          `SELECT knowledge_sources.*
+           FROM knowledge_sources
+           JOIN agent_knowledge_source_access access
+             ON access.source_id=knowledge_sources.id
+           WHERE access.agent_id=? AND knowledge_sources.enabled=1
+           ORDER BY knowledge_sources.name`,
+        )
+        .all(agentId) as Row[]
+    ).map((row) => ({ ...mapSource(row), agentIds: [agentId] }));
   },
   createSource(input: {
     name: string;
@@ -144,27 +202,31 @@ export const sourceRepository = {
     githubAppId: string | null;
     enabled: boolean;
     syncIntervalMinutes: number | null;
+    agentIds?: string[];
   }) {
     const id = randomUUID();
     const timestamp = now();
-    db.prepare(
-      `INSERT INTO knowledge_sources
-        (id,name,slug,kind,config_json,credentials_ciphertext,github_app_id,enabled,version,sync_interval_minutes,status,item_count,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,1,?,?,0,?,?)`,
-    ).run(
-      id,
-      input.name,
-      input.slug,
-      input.kind,
-      JSON.stringify(input.config),
-      input.credentialsCiphertext,
-      input.githubAppId,
-      Number(input.enabled),
-      input.syncIntervalMinutes,
-      input.enabled ? "never_synced" : "disabled",
-      timestamp,
-      timestamp,
-    );
+    db.transaction(() => {
+      db.prepare(
+        `INSERT INTO knowledge_sources
+          (id,name,slug,kind,config_json,credentials_ciphertext,github_app_id,enabled,version,sync_interval_minutes,status,item_count,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,1,?,?,0,?,?)`,
+      ).run(
+        id,
+        input.name,
+        input.slug,
+        input.kind,
+        JSON.stringify(input.config),
+        input.credentialsCiphertext,
+        input.githubAppId,
+        Number(input.enabled),
+        input.syncIntervalMinutes,
+        input.enabled ? "never_synced" : "disabled",
+        timestamp,
+        timestamp,
+      );
+      sourceRepository.replaceAgentAccess(id, input.agentIds ?? [], timestamp);
+    })();
     return sourceRepository.getSource(id)!;
   },
   updateSource(input: {
@@ -176,28 +238,81 @@ export const sourceRepository = {
     githubAppId: string | null;
     enabled: boolean;
     syncIntervalMinutes: number | null;
+    expectedAccessVersion?: number;
+    agentIds?: string[];
   }) {
     const status = input.enabled ? "never_synced" : "disabled";
-    const result = db
-      .prepare(
-        `UPDATE knowledge_sources
-         SET name=?,config_json=?,credentials_ciphertext=?,github_app_id=?,enabled=?,
-             sync_interval_minutes=?,status=?,last_error=NULL,version=version+1,updated_at=?
-         WHERE id=? AND version=? AND status NOT IN ('syncing','deleting')`,
-      )
-      .run(
-        input.name,
-        JSON.stringify(input.config),
-        input.credentialsCiphertext,
-        input.githubAppId,
-        Number(input.enabled),
-        input.syncIntervalMinutes,
-        status,
-        now(),
-        input.id,
-        input.expectedVersion,
-      );
-    return result.changes === 1 ? sourceRepository.getSource(input.id) : null;
+    const current = sourceRepository.getSource(input.id);
+    if (!current) return null;
+    const expectedAccessVersion =
+      input.expectedAccessVersion ?? current.accessVersion;
+    const agentIds = input.agentIds ?? current.agentIds;
+    const updated = db.transaction(() => {
+      const result = db
+        .prepare(
+          `UPDATE knowledge_sources
+           SET name=?,config_json=?,credentials_ciphertext=?,github_app_id=?,enabled=?,
+               sync_interval_minutes=?,status=?,last_error=NULL,version=version+1,
+               access_version=access_version+1,updated_at=?
+           WHERE id=? AND version=? AND access_version=?
+             AND status NOT IN ('syncing','deleting')`,
+        )
+        .run(
+          input.name,
+          JSON.stringify(input.config),
+          input.credentialsCiphertext,
+          input.githubAppId,
+          Number(input.enabled),
+          input.syncIntervalMinutes,
+          status,
+          now(),
+          input.id,
+          input.expectedVersion,
+          expectedAccessVersion,
+        );
+      if (result.changes !== 1) return false;
+      sourceRepository.replaceAgentAccess(input.id, agentIds);
+      return true;
+    })();
+    return updated ? sourceRepository.getSource(input.id) : null;
+  },
+  replaceAgentAccess(sourceId: string, agentIds: string[], timestamp = now()) {
+    db.prepare(
+      "DELETE FROM agent_knowledge_source_access WHERE source_id=?",
+    ).run(sourceId);
+    const insert = db.prepare(
+      `INSERT INTO agent_knowledge_source_access(source_id,agent_id,created_at)
+       VALUES (?,?,?)`,
+    );
+    for (const agentId of [...new Set(agentIds)].sort()) {
+      insert.run(sourceId, agentId, timestamp);
+    }
+  },
+  setAgentAccess(input: {
+    sourceId: string;
+    agentId: string;
+    enabled: boolean;
+    expectedAccessVersion: number;
+  }) {
+    const updated = db.transaction(() => {
+      const current = sourceRepository.getSource(input.sourceId);
+      if (!current || current.accessVersion !== input.expectedAccessVersion)
+        return false;
+      const next = new Set(current.agentIds);
+      if (input.enabled) next.add(input.agentId);
+      else next.delete(input.agentId);
+      const result = db
+        .prepare(
+          `UPDATE knowledge_sources
+           SET access_version=access_version+1,updated_at=?
+           WHERE id=? AND access_version=?`,
+        )
+        .run(now(), input.sourceId, input.expectedAccessVersion);
+      if (result.changes !== 1) return false;
+      sourceRepository.replaceAgentAccess(input.sourceId, [...next]);
+      return true;
+    })();
+    return updated ? sourceRepository.getSource(input.sourceId) : null;
   },
   beginDelete(id: string, expectedVersion: number) {
     const current = sourceRepository.getSource(id);

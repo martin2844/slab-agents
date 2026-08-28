@@ -21,6 +21,7 @@ import type {
 } from "@/lib/types";
 import type { KnowledgeSourceInput } from "@/lib/api-schemas/source";
 import { mapWithConcurrency } from "@/lib/async";
+import { agentRepository } from "@/lib/repositories/agent-repository";
 
 const AUTHOR = "Slab Sources";
 const MAX_DOCUMENT_CHARACTERS = 1_900_000;
@@ -152,13 +153,23 @@ function uniqueSlug(name: string) {
 
 export function getSourcesPageData(): SourcesPageData {
   return {
-    sources: sourceRepository.listSources().map(publicSource),
+    sources: listKnowledgeSources(),
     githubApps: sourceRepository.listGithubApps().map((record) => {
       const app = { ...record };
       delete (app as Partial<typeof record>).privateKeyCiphertext;
       return app;
     }),
+    agents: agentRepository.listAgents().map(({ id, name, role, enabled }) => ({
+      id,
+      name,
+      role,
+      enabled,
+    })),
   };
+}
+
+export function listKnowledgeSources(): KnowledgeSource[] {
+  return sourceRepository.listSources().map(publicSource);
 }
 
 export function getKnowledgeSource(id: string) {
@@ -179,6 +190,13 @@ export function saveKnowledgeSource(input: KnowledgeSourceInput) {
     input.kind === "github" && input.authType === "github_app"
       ? input.githubAppId
       : null;
+  const agentIds = input.agentIds ?? current?.agentIds ?? [];
+  const knownAgentIds = new Set(
+    agentRepository.listAgents().map((agent) => agent.id),
+  );
+  if (agentIds.some((agentId) => !knownAgentIds.has(agentId))) {
+    throw badRequest("One or more selected agents no longer exist.");
+  }
 
   if (!current) {
     return publicSource(
@@ -191,6 +209,7 @@ export function saveKnowledgeSource(input: KnowledgeSourceInput) {
         githubAppId,
         enabled: input.enabled,
         syncIntervalMinutes: input.syncIntervalMinutes,
+        agentIds,
       }),
     );
   }
@@ -204,6 +223,8 @@ export function saveKnowledgeSource(input: KnowledgeSourceInput) {
     githubAppId,
     enabled: input.enabled,
     syncIntervalMinutes: input.syncIntervalMinutes,
+    expectedAccessVersion: input.expectedAccessVersion ?? current.accessVersion,
+    agentIds,
   });
   if (!updated)
     throw conflict(
@@ -309,6 +330,7 @@ async function ensureRoot(source: KnowledgeSourceRecord) {
         title: source.name,
         body,
         tags,
+        collection_id: source.id,
         author: AUTHOR,
       }),
       created: false,
@@ -325,6 +347,7 @@ async function ensureRoot(source: KnowledgeSourceRecord) {
         title: source.name,
         body,
         tags,
+        collection_id: source.id,
         author: AUTHOR,
       }),
       created: false,
@@ -337,6 +360,7 @@ async function ensureRoot(source: KnowledgeSourceRecord) {
       body,
       parent_id: null,
       tags,
+      collection_id: source.id,
       author: AUTHOR,
     }),
     created: true,
@@ -359,6 +383,7 @@ async function createOrRecoverChild(
   return {
     document: await DocsClient.create({
       ...input,
+      collection_id: source.id,
       slug: docSlug(source, item.externalId),
     }),
     created: true,
@@ -383,6 +408,11 @@ export async function syncKnowledgeSource(id: string) {
   );
   heartbeat.unref();
   try {
+    await DocsClient.ensureCollection({
+      id: source.id,
+      name: source.name,
+      kind: "source",
+    });
     const fetched = await fetchKnowledgeSource(
       source.config,
       await sourceAccess(source),
@@ -475,6 +505,7 @@ export async function syncKnowledgeSource(id: string) {
               body,
               parent_id: root.id,
               tags,
+              collection_id: source.id,
               author: AUTHOR,
             }),
             created: false,
@@ -579,12 +610,36 @@ export async function deleteKnowledgeSource(
       "SOURCE_VERSION_CONFLICT",
     );
   try {
+    // A source may be deleted before its first sync has materialized a Docs
+    // collection. Ensure the idempotent collection exists so deletion remains
+    // recoverable for both never-synced and previously-synced sources.
+    await DocsClient.ensureCollection({
+      id: source.id,
+      name: source.name,
+      kind: "source",
+    });
     if (archiveDocuments) {
       for (const item of sourceRepository.listItems(id))
         await DocsClient.archive(item.documentId);
       if (source.rootDocumentId)
         await DocsClient.archive(source.rootDocumentId);
+    } else {
+      for (const item of sourceRepository.listItems(id)) {
+        await DocsClient.update(item.documentId, {
+          collection_id: "workspace",
+          parent_id: null,
+          author: AUTHOR,
+        });
+      }
+      if (source.rootDocumentId) {
+        await DocsClient.update(source.rootDocumentId, {
+          collection_id: "workspace",
+          parent_id: null,
+          author: AUTHOR,
+        });
+      }
     }
+    await DocsClient.archiveCollection(id);
     if (!sourceRepository.finishDelete(id, source.version)) {
       throw conflict(
         "Source deletion ownership was lost.",

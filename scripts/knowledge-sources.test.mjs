@@ -34,10 +34,13 @@ test("knowledge sources migrate, version writes are guarded, and secrets stay en
   await migrations.destroy();
   process.env.SLAB_WORKSPACE_DB = filename;
 
-  const [{ sourceRepository }, secrets] = await Promise.all([
-    import("../lib/repositories/source-repository.ts"),
-    import("../lib/secrets.ts"),
-  ]);
+  const [{ sourceRepository }, { agentRepository }, secrets, docsAccess] =
+    await Promise.all([
+      import("../lib/repositories/source-repository.ts"),
+      import("../lib/repositories/agent-repository.ts"),
+      import("../lib/secrets.ts"),
+      import("../lib/docs-access.ts"),
+    ]);
   const plaintext = "reader-secret-that-must-not-leak";
   const ciphertext = secrets.encryptLocalSecret(
     JSON.stringify({ secret: plaintext }),
@@ -92,6 +95,72 @@ test("knowledge sources migrate, version writes are guarded, and secrets stay en
   });
   assert.equal(updated.version, 2);
   assert.equal(updated.name, "Current");
+
+  const sales = agentRepository.createAgent({
+    name: "Sales",
+    slug: "sales-source-test",
+    role: "Sales",
+    instructions: "Use only the sources assigned to this agent.",
+    model: "default",
+    enabled: true,
+    fullAccess: false,
+  });
+  const assigned = sourceRepository.setAgentAccess({
+    sourceId: updated.id,
+    agentId: sales.id,
+    enabled: true,
+    expectedAccessVersion: updated.accessVersion,
+  });
+  assert.deepEqual(assigned.agentIds, [sales.id]);
+  assert.equal(assigned.accessVersion, updated.accessVersion + 1);
+  assert.equal(
+    sourceRepository.setAgentAccess({
+      sourceId: updated.id,
+      agentId: sales.id,
+      enabled: false,
+      expectedAccessVersion: updated.accessVersion,
+    }),
+    null,
+    "stale ACL writes cannot replace a newer assignment",
+  );
+
+  let tokenRequest;
+  const runAccess = await docsAccess.issueDocsRunAccess({
+    runId: "run-source-snapshot",
+    agentId: sales.id,
+    docsMcpUrl: "http://docs.test/mcp",
+    adminApiKey: "master-docs-key",
+    fetcher: async (url, init) => {
+      assert.equal(String(url), "http://docs.test/api/access-tokens");
+      assert.equal(
+        new Headers(init.headers).get("authorization"),
+        "Bearer master-docs-key",
+      );
+      tokenRequest = JSON.parse(String(init.body));
+      return Response.json({
+        data: {
+          token: "scoped-token-never-snapshotted",
+          expiresAt: "2026-01-02T00:00:00.000Z",
+        },
+        error: null,
+      });
+    },
+  });
+  assert.deepEqual(tokenRequest.readCollectionIds, ["workspace", updated.id]);
+  assert.deepEqual(tokenRequest.writeCollectionIds, ["workspace"]);
+  assert.equal(runAccess.token, "scoped-token-never-snapshotted");
+  assert.equal(
+    JSON.stringify(runAccess.snapshot).includes(runAccess.token),
+    false,
+  );
+  assert.deepEqual(runAccess.snapshot.sources, [
+    {
+      collectionId: updated.id,
+      sourceId: updated.id,
+      name: "Current",
+      accessVersion: assigned.accessVersion,
+    },
+  ]);
 
   const app = sourceRepository.createGithubApp("Private docs", null);
   const state = "opaque-browser-state";
@@ -191,6 +260,19 @@ test("knowledge sources migrate, version writes are guarded, and secrets stay en
     return document;
   };
   DocsClient.archive = async (id) => ({ id });
+  const documentCollections = new Set();
+  DocsClient.ensureCollection = async ({ id }) => {
+    documentCollections.add(id);
+    return { id };
+  };
+  DocsClient.archiveCollection = async (id) => {
+    assert.equal(
+      documentCollections.has(id),
+      true,
+      "deletion materializes a never-synced source collection before archiving it",
+    );
+    return { id };
+  };
   DocsClient.list = async ({ tag } = {}) =>
     [...documents.values()].filter(
       (document) =>
@@ -897,5 +979,8 @@ test("Sources UI exposes the full operational setup without a generic HTTP tool"
   assert.match(source, /Save and sync/);
   assert.match(source, /Test again/);
   assert.match(source, /Could not refresh Sources/);
+  assert.match(source, /Agent access/);
+  assert.match(source, /read this source in new runs/);
+  assert.match(source, /Source-managed\s+documents remain read-only/);
   assert.doesNotMatch(source, /http_request/);
 });

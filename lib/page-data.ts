@@ -7,6 +7,7 @@ import { integrationRepository } from "@/lib/repositories/integration-repository
 import { agentToolPolicyRepository } from "@/lib/repositories/agent-tool-policy-repository";
 import { emailAccessRepository } from "@/lib/repositories/email-access-repository";
 import { runRepository } from "@/lib/repositories/run-repository";
+import { listKnowledgeSources } from "@/lib/sources/service";
 
 import { DocsClient } from "@/lib/mcp/docs-client";
 import { WorkClient } from "@/lib/mcp/work-client";
@@ -156,6 +157,7 @@ export function getAgentDetailPageData(
   const integrations = integrationRepository.listIntegrations();
   return {
     agent,
+    knowledgeSources: listKnowledgeSources(),
     integrations,
     toolPolicies: agentToolPolicyRepository.listForAgent(agent.id),
     toolCatalog: buildAgentToolCatalog({

@@ -853,9 +853,9 @@ export function HowItWorksGuide() {
                   Sync creates one source root and managed child documents.
                 </Step>
                 <Step number="03" title="Use through Docs">
-                  Agents search and read the mirrored documents through their
-                  existing Docs capability. No extra source tool is added to a
-                  run.
+                  Choose which agents can read each source. New runs receive a
+                  short-lived Docs token for the shared workspace and only those
+                  assigned collections; no extra source tool is added.
                 </Step>
               </ol>
               <div className="space-y-3">
@@ -863,9 +863,9 @@ export function HowItWorksGuide() {
         ↓ server-side sync
 Slab Agents (encrypted credentials)
         ↓ Docs MCP
-Slab Docs (provenance + revisions)
-        ↓ existing capability
-Agent`}</CodeBlock>
+Slab Docs (collections + revisions)
+        ↓ run-scoped token
+Assigned agent`}</CodeBlock>
                 <Callout title="Private GitHub repositories" icon={ShieldCheck}>
                   Connect creates a GitHub App using GitHub&apos;s manifest
                   flow. Select only the repositories Slab may read. The App

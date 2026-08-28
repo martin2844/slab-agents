@@ -9,6 +9,7 @@ import { integrationRepository } from "@/lib/repositories/integration-repository
 import { agentToolPolicyRepository } from "@/lib/repositories/agent-tool-policy-repository";
 import { emailAccessRepository } from "@/lib/repositories/email-access-repository";
 import { buildAgentToolCatalog } from "@/lib/agent-tool-catalog";
+import { listKnowledgeSources } from "@/lib/sources/service";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -31,6 +32,7 @@ export async function GET(
   return Response.json({
     data: {
       agent,
+      knowledgeSources: listKnowledgeSources(),
       integrations,
       toolPolicies: agentToolPolicyRepository.listForAgent(agent.id),
       toolCatalog: buildAgentToolCatalog({

@@ -47,6 +47,8 @@ import { formatDateTime } from "@/lib/utils";
 type SourceDraft = {
   id?: string;
   version?: number;
+  accessVersion?: number;
+  agentIds: string[];
   kind: KnowledgeSourceKind;
   name: string;
   enabled: boolean;
@@ -71,6 +73,7 @@ const labelClass = "text-xs font-[550] text-muted-foreground";
 function blankDraft(kind: KnowledgeSourceKind): SourceDraft {
   return {
     kind,
+    agentIds: [],
     name: "",
     enabled: true,
     syncIntervalMinutes: "360",
@@ -96,6 +99,8 @@ function editDraft(source: KnowledgeSource): SourceDraft {
     ...draft,
     id: source.id,
     version: source.version,
+    accessVersion: source.accessVersion,
+    agentIds: source.agentIds,
     name: source.name,
     enabled: source.enabled,
     syncIntervalMinutes: source.syncIntervalMinutes?.toString() ?? "",
@@ -136,6 +141,8 @@ function sourcePayload(draft: SourceDraft) {
     name: draft.name,
     enabled: draft.enabled,
     expectedVersion: draft.version,
+    expectedAccessVersion: draft.accessVersion,
+    agentIds: draft.agentIds,
     syncIntervalMinutes: draft.syncIntervalMinutes
       ? Number(draft.syncIntervalMinutes)
       : null,
@@ -390,13 +397,14 @@ export function SourcesView({
         </div>
         {data.sources.length ? (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
+            <table className="w-full min-w-[900px] text-left text-sm">
               <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
                 <tr>
                   {[
                     "Source",
                     "Documents",
                     "Status",
+                    "Agent access",
                     "Last sync",
                     "Schedule",
                     "Actions",
@@ -435,6 +443,11 @@ export function SourcesView({
                     </td>
                     <td className="px-4 py-3">
                       <SourceStatus source={source} />
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {source.agentIds.length
+                        ? `${source.agentIds.length} agent${source.agentIds.length === 1 ? "" : "s"}`
+                        : "Private"}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
                       {source.lastSyncedAt
@@ -510,8 +523,8 @@ export function SourcesView({
             <Globe2 className="mx-auto size-6 text-muted-foreground" />
             <h3 className="mt-3 text-sm font-[650]">No external sources yet</h3>
             <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-              Connect WordPress, GitHub, or a website sitemap. Agents keep
-              reading all synchronized content through Docs.
+              Connect WordPress, GitHub, or a website sitemap, then choose which
+              agents may read it.
             </p>
           </div>
         )}
@@ -667,6 +680,7 @@ export function SourcesView({
           key={draft.id ?? `new-${draft.kind}`}
           initialDraft={draft}
           apps={data.githubApps}
+          agents={data.agents}
           onClose={() => setDraft(null)}
           onSaved={async () => {
             setDraft(null);
@@ -749,11 +763,13 @@ function Field({
 function SourceEditor({
   initialDraft,
   apps,
+  agents,
   onClose,
   onSaved,
 }: {
   initialDraft: SourceDraft;
   apps: GitHubSourceApp[];
+  agents: SourcesPageData["agents"];
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -1010,6 +1026,51 @@ function SourceEditor({
             />
             Source enabled
           </label>
+          <div className="space-y-2 sm:col-span-2">
+            <div>
+              <p className={labelClass}>Agent access</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Selected agents can read this source in new runs. Source-managed
+                documents remain read-only.
+              </p>
+            </div>
+            <div className="divide-y rounded-md border">
+              {agents.length ? (
+                agents.map((agent) => (
+                  <label
+                    key={agent.id}
+                    className="flex items-center justify-between gap-3 px-3 py-2.5"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-[600]">
+                        {agent.name}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {agent.role}
+                        {!agent.enabled ? " · disabled" : ""}
+                      </span>
+                    </span>
+                    <Switch
+                      checked={value.agentIds.includes(agent.id)}
+                      onCheckedChange={(checked) =>
+                        set(
+                          "agentIds",
+                          checked
+                            ? [...new Set([...value.agentIds, agent.id])]
+                            : value.agentIds.filter((id) => id !== agent.id),
+                        )
+                      }
+                      aria-label={`${agent.name} access to ${value.name || "source"}`}
+                    />
+                  </label>
+                ))
+              ) : (
+                <p className="px-3 py-4 text-sm text-muted-foreground">
+                  Create an agent before assigning source access.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

@@ -28,6 +28,8 @@ const common = {
   enabled: z.boolean().default(true),
   syncIntervalMinutes: syncInterval,
   expectedVersion: z.number().int().positive().optional(),
+  expectedAccessVersion: z.number().int().positive().optional(),
+  agentIds: z.array(z.string().uuid()).max(100).optional(),
   secret: sourceSecret,
 };
 
