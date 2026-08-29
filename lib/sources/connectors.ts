@@ -19,6 +19,11 @@ import {
   htmlToMarkdown,
   webpageToDocument,
 } from "@/lib/sources/source-content";
+import {
+  formatGitHubFileBody,
+  githubFileDescriptor,
+  normalizeGitHubFileSelectors,
+} from "@/lib/sources/github-files";
 
 export type FetchedSourceItem = {
   externalId: string;
@@ -174,20 +179,7 @@ function githubHeaders(token?: string): SourceHttpCredentials {
   return { authType: token ? "bearer" : "none", secret: token };
 }
 
-function normalizedExtensions(values: string[]) {
-  return new Set(
-    values.map((value) => `.${value.replace(/^\./, "").toLowerCase()}`),
-  );
-}
-
-function githubPathIncluded(
-  path: string,
-  prefixes: string[],
-  extensions: Set<string>,
-) {
-  const lower = path.toLowerCase();
-  const extension = lower.includes(".") ? `.${lower.split(".").pop()}` : "";
-  if (!extensions.has(extension)) return false;
+function githubPathIncluded(path: string, prefixes: string[]) {
   if (!prefixes.length) return true;
   return prefixes.some((prefix) => {
     const normalized = prefix.replace(/^\/+|\/+$/g, "");
@@ -229,18 +221,25 @@ async function fetchGitHub(
       400,
     );
   }
-  const extensions = normalizedExtensions(config.extensions);
-  const matching = tree.data.tree.filter(
-    (entry) =>
-      entry.type === "blob" &&
-      typeof entry.path === "string" &&
-      typeof entry.sha === "string" &&
-      githubPathIncluded(entry.path, config.pathPrefixes, extensions),
+  const selectors = normalizeGitHubFileSelectors(config.extensions);
+  const matching = tree.data.tree.flatMap((entry) => {
+    if (
+      entry.type !== "blob" ||
+      typeof entry.path !== "string" ||
+      typeof entry.sha !== "string" ||
+      !githubPathIncluded(entry.path, config.pathPrefixes)
+    ) {
+      return [];
+    }
+    const descriptor = githubFileDescriptor(entry.path, selectors);
+    return descriptor ? [{ entry, descriptor }] : [];
+  });
+  const oversized = matching.find(
+    ({ entry }) => (entry.size ?? 0) > 1024 * 1024,
   );
-  const oversized = matching.find((entry) => (entry.size ?? 0) > 1024 * 1024);
-  if (oversized?.path) {
+  if (oversized?.entry.path) {
     throw new OperationalError(
-      `GitHub file ${oversized.path} exceeds the 1 MiB document limit. Narrow the configured paths.`,
+      `GitHub file ${oversized.entry.path} exceeds the 1 MiB document limit. Narrow the configured paths.`,
       "SOURCE_DOCUMENT_TOO_LARGE",
       400,
     );
@@ -251,7 +250,7 @@ async function fetchGitHub(
   const items: FetchedSourceItem[] = await mapWithConcurrency(
     blobs,
     5,
-    async (entry) => {
+    async ({ entry, descriptor }) => {
       const path = entry.path!;
       const blobUrl = new URL(
         `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/git/blobs/${encodeURIComponent(entry.sha!)}`,
@@ -273,21 +272,35 @@ async function fetchGitHub(
           502,
         );
       }
-      const body = Buffer.from(
+      const decoded = Buffer.from(
         blob.data.content.replace(/\s/g, ""),
         "base64",
-      ).toString("utf8");
+      );
+      let body: string;
+      try {
+        body = new TextDecoder("utf-8", { fatal: true }).decode(decoded);
+      } catch {
+        throw new OperationalError(
+          `GitHub file ${path} is not valid UTF-8 text.`,
+          "SOURCE_INVALID_RESPONSE",
+          502,
+        );
+      }
       addToBudget(body);
       return {
         externalId: path,
-        title: (path.split("/").pop() ?? path).slice(0, 200),
-        body,
+        title: path.slice(0, 200),
+        body: formatGitHubFileBody(body, descriptor),
         canonicalUrl: `https://github.com/${owner}/${repository}/blob/${encodeURIComponent(config.branch)}/${path
           .split("/")
           .map(encodeURIComponent)
           .join("/")}`,
         remoteUpdatedAt: null,
-        tags: ["github"],
+        tags: [
+          "github",
+          descriptor.kind === "code" ? "repository-code" : "repository-docs",
+          `language:${descriptor.language}`,
+        ],
       } satisfies FetchedSourceItem;
     },
   );

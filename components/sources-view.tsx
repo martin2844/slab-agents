@@ -43,6 +43,10 @@ import type {
   SourcesPageData,
 } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
+import {
+  DEFAULT_GITHUB_SOURCE_SELECTORS,
+  GITHUB_DOCUMENT_EXTENSIONS,
+} from "@/lib/sources/github-files";
 
 type SourceDraft = {
   id?: string;
@@ -86,9 +90,10 @@ function blankDraft(kind: KnowledgeSourceKind): SourceDraft {
     branch: "main",
     githubAppId: "",
     contentTypes: "posts, pages",
-    pathPrefixes: kind === "github" ? "docs, README.md" : "",
-    extensions: "md, mdx, txt",
-    maxDocuments: "200",
+    pathPrefixes: "",
+    extensions:
+      kind === "github" ? DEFAULT_GITHUB_SOURCE_SELECTORS.join(", ") : "",
+    maxDocuments: kind === "github" ? "500" : "200",
   };
 }
 
@@ -648,7 +653,7 @@ export function SourcesView({
               [
                 "github",
                 "GitHub repository",
-                "Markdown and text files from public or private repositories.",
+                "Code and documentation from public or private repositories.",
                 GitBranch,
               ],
               [
@@ -1184,6 +1189,36 @@ function GitHubFields({
           onChange={(event) => set("extensions", event.target.value)}
         />
       </Field>
+      <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            set("pathPrefixes", "");
+            set("extensions", DEFAULT_GITHUB_SOURCE_SELECTORS.join(", "));
+            set("maxDocuments", "500");
+          }}
+        >
+          Code + docs
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            set("pathPrefixes", "docs, README.md");
+            set("extensions", GITHUB_DOCUMENT_EXTENSIONS.join(", "));
+          }}
+        >
+          Docs only
+        </Button>
+        <p className="text-xs leading-5 text-muted-foreground">
+          Code + docs mirrors searchable source files with repository paths.
+          Common credential files, dependencies, generated output, lockfiles,
+          and binaries stay excluded.
+        </p>
+      </div>
     </>
   );
 }

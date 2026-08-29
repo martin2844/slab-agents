@@ -63,13 +63,31 @@ Markdown, and follows WordPress pagination up to the configured document limit.
 
 ## GitHub repositories
 
-GitHub sources read selected Markdown and text blobs from one branch.
+GitHub sources read selected code and documentation from one branch. This lets
+engineering agents search the repository through Docs, open an exact file, and
+reason from its repository-relative path without receiving a generic GitHub or
+shell tool.
 
 - Public repositories can use **Public repository**.
 - A fine-grained personal access token can be used for a private repository,
   but a GitHub App is preferred.
-- Path prefixes such as `docs` or `handbook` scope the indexed tree.
-- Extensions such as `md,mdx,txt` define the accepted document formats.
+- **Code + docs** indexes the repository's common source, configuration, and
+  documentation formats. **Docs only** restores the narrower documentation
+  preset.
+- Path prefixes such as `src`, `apps/web`, or `docs` scope the indexed tree. An
+  empty path scope considers the full repository.
+- File selectors accept extensions such as `ts,tsx,py,go,md` and exact
+  extensionless names such as `Dockerfile`.
+- Code documents preserve whitespace inside a fenced block, use the full path
+  as the title, and carry `repository-code` plus language metadata. Markdown
+  remains native Markdown.
+- Dependency directories, build output, minified assets, source maps, lockfiles,
+  common credential files, private keys, and non-UTF-8 content are rejected
+  before they become Docs.
+- The path policy is not a secret scanner. A credential committed inside an
+  ordinary source file remains repository content, so grant source access only
+  to agents that may read that repository and remove committed secrets at the
+  origin.
 - Individual files over 1 MiB and truncated repository trees are rejected or
   require a narrower path scope.
 

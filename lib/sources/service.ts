@@ -266,14 +266,21 @@ function rootBody(source: KnowledgeSourceRecord) {
   return [
     `# ${source.name}`,
     "",
-    "This document groups knowledge synchronized by Slab Sources.",
+    source.config.kind === "github"
+      ? "This document groups repository code and documentation synchronized by Slab Sources."
+      : "This document groups knowledge synchronized by Slab Sources.",
     "",
     `- Source type: ${source.kind}`,
     `- Source: ${location}`,
     "- Managed automatically: yes",
+    source.config.kind === "github"
+      ? `- Branch: ${source.config.branch}`
+      : null,
     "",
     "Child documents are refreshed from the external source. Edit the source configuration instead of these generated copies.",
-  ].join("\n");
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
 }
 
 function contentHash(item: FetchedSourceItem, body: string) {

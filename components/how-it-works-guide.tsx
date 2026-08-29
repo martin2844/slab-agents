@@ -834,7 +834,7 @@ export function HowItWorksGuide() {
               <ProviderCard
                 icon={Code2}
                 title="GitHub repositories"
-                copy="Index selected Markdown and text paths. Public repositories work directly; private repositories use a read-only GitHub App or fine-grained token."
+                copy="Index selected code and documentation with repository paths and language metadata. Public repositories work directly; private repositories use a read-only GitHub App or fine-grained token."
               />
               <ProviderCard
                 icon={Network}

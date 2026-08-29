@@ -596,6 +596,55 @@ test("source schema rejects credential-bearing URLs and unsafe limits", () => {
   );
 });
 
+test("GitHub source defaults include code while the file policy excludes unsafe repository noise", async () => {
+  const {
+    DEFAULT_GITHUB_SOURCE_SELECTORS,
+    formatGitHubFileBody,
+    githubFileDescriptor,
+    normalizeGitHubFileSelectors,
+  } = await import("../lib/sources/github-files.ts");
+  const parsed = knowledgeSourceInputSchema.parse({
+    kind: "github",
+    name: "Application repository",
+    repository: "slab/example",
+  });
+  assert.equal(parsed.pathPrefixes.length, 0);
+  assert.deepEqual(parsed.extensions, DEFAULT_GITHUB_SOURCE_SELECTORS);
+
+  const selectors = normalizeGitHubFileSelectors(parsed.extensions);
+  assert.deepEqual(githubFileDescriptor("src/app.ts", selectors), {
+    kind: "code",
+    language: "typescript",
+  });
+  assert.deepEqual(githubFileDescriptor("docs/runbook.md", selectors), {
+    kind: "document",
+    language: "markdown",
+  });
+  assert.deepEqual(githubFileDescriptor("Dockerfile", selectors), {
+    kind: "code",
+    language: "dockerfile",
+  });
+  for (const path of [
+    ".env",
+    ".npmrc",
+    "config/private.pem",
+    "node_modules/pkg/index.js",
+    "dist/app.js",
+    "package-lock.json",
+    "public/app.min.js",
+    "public/app.js.map",
+  ]) {
+    assert.equal(githubFileDescriptor(path, selectors), null, path);
+  }
+  assert.equal(
+    formatGitHubFileBody("const fence = ```;", {
+      kind: "code",
+      language: "typescript",
+    }),
+    "````typescript\nconst fence = ```;\n````",
+  );
+});
+
 test("source HTTP injects auth server-side and blocks cross-origin redirects", async (t) => {
   const { fetchSourceText } = await import("../lib/sources/source-http.ts");
   const originalFetch = globalThis.fetch;
@@ -808,6 +857,82 @@ test("WordPress, GitHub, and sitemap connectors expose bounded semantic document
   assert.equal(website.complete, true);
 });
 
+test("GitHub connector mirrors searchable code with paths and language metadata", async (t) => {
+  const { fetchKnowledgeSource } = await import("../lib/sources/connectors.ts");
+  const { DEFAULT_GITHUB_SOURCE_SELECTORS } =
+    await import("../lib/sources/github-files.ts");
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const blobs = new Map([
+    ["code", "export function add(a: number, b: number) { return a + b; }"],
+    ["docs", "# Architecture"],
+  ]);
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    if (url.pathname.endsWith("/git/trees/main")) {
+      return Response.json({
+        truncated: false,
+        tree: [
+          { path: "src/math.ts", type: "blob", sha: "code", size: 62 },
+          { path: "docs/architecture.md", type: "blob", sha: "docs", size: 14 },
+          { path: ".env", type: "blob", sha: "env", size: 20 },
+          {
+            path: "node_modules/pkg/index.js",
+            type: "blob",
+            sha: "dep",
+            size: 20,
+          },
+          { path: "package-lock.json", type: "blob", sha: "lock", size: 20 },
+        ],
+      });
+    }
+    const sha = url.pathname.split("/").pop();
+    assert.equal(blobs.has(sha), true, `unexpected blob ${sha}`);
+    return Response.json({
+      encoding: "base64",
+      content: Buffer.from(blobs.get(sha)).toString("base64"),
+    });
+  };
+  const result = await fetchKnowledgeSource(
+    {
+      kind: "github",
+      repository: "slab/example",
+      branch: "main",
+      authType: "none",
+      pathPrefixes: [],
+      extensions: DEFAULT_GITHUB_SOURCE_SELECTORS,
+      maxDocuments: 500,
+    },
+    {},
+  );
+  assert.equal(result.complete, true);
+  assert.deepEqual(
+    result.items.map(({ externalId, title }) => ({
+      externalId,
+      title,
+    })),
+    [
+      {
+        externalId: "src/math.ts",
+        title: "src/math.ts",
+      },
+      {
+        externalId: "docs/architecture.md",
+        title: "docs/architecture.md",
+      },
+    ],
+  );
+  assert.match(result.items[0].body, /^```typescript\nexport function/);
+  assert.deepEqual(result.items[0].tags, [
+    "github",
+    "repository-code",
+    "language:typescript",
+  ]);
+  assert.equal(result.items[1].body, "# Architecture");
+});
+
 test("website sitemap failures and capped traversal never authorize stale pruning", async (t) => {
   const { fetchKnowledgeSource } = await import("../lib/sources/connectors.ts");
   const originalFetch = globalThis.fetch;
@@ -981,6 +1106,8 @@ test("Sources UI exposes the full operational setup without a generic HTTP tool"
   assert.match(source, /Could not refresh Sources/);
   assert.match(source, /Agent access/);
   assert.match(source, /read this source in new runs/);
+  assert.match(source, /Code \+ docs/);
+  assert.match(source, /repository paths/);
   assert.match(source, /Source-managed\s+documents remain read-only/);
   assert.doesNotMatch(source, /http_request/);
 });

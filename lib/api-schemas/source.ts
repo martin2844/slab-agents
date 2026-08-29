@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_GITHUB_SOURCE_SELECTORS } from "../sources/github-files.ts";
 
 const httpUrl = z.url().refine((value) => {
   const url = new URL(value);
@@ -74,8 +75,8 @@ export const githubSourceInputSchema = z.object({
         .max(20),
     )
     .min(1)
-    .max(40)
-    .default(["md", "mdx", "txt"]),
+    .max(80)
+    .default(DEFAULT_GITHUB_SOURCE_SELECTORS),
   maxDocuments,
 });
 
