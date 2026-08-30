@@ -9,6 +9,7 @@ import { authStatus } from "@/lib/auth/service";
 import { configuredPublicOrigin } from "@/lib/request-origin";
 import { listRuntimeCatalog } from "@/lib/runtime-service";
 import { getBudgetConfiguration } from "@/lib/budget-control";
+import { getOperatorNotificationState } from "@/lib/operator-notification-service";
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 export default async function SettingsPage({
@@ -26,6 +27,8 @@ export default async function SettingsPage({
       ? "runtime"
       : query.tab === "email"
         ? "email"
+      : query.tab === "notifications"
+        ? "notifications"
       : query.tab === "calendar"
         ? "calendar"
         : query.tab === "memory"
@@ -40,6 +43,7 @@ export default async function SettingsPage({
       initialSettings={getPublicSettings()}
       initialSetup={getSetupStatus()}
       initialEmail={await getEmailIntegrationState()}
+      initialNotifications={getOperatorNotificationState()}
       initialCalendars={listCalendarIntegrations()}
       auth={authStatus()}
       agents={agentRepository.listAgents()}

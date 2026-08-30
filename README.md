@@ -166,6 +166,14 @@ Runs.
 The full operator and failure-state contract is documented in
 [`docs/email-automations-and-tool-control-plane.md`](docs/email-automations-and-tool-control-plane.md).
 
+## Operator notifications
+
+Settings → Notifications can send deterministic Email alerts for pending
+approvals, failed Runs, blocked Work, unhealthy integrations, and failed system
+updates. Delivery uses a durable, idempotent outbox and a dedicated send-only
+Email profile. Stale attention states are revalidated immediately before send.
+See [`docs/operator-notifications.md`](docs/operator-notifications.md).
+
 ## Calendar integrations
 
 Calendar is another optional workspace capability managed directly by
@@ -375,3 +383,7 @@ npm run build:check
 - Automations run only while the Next.js process is alive.
 - No multi-tenancy, organization RBAC, or agent-to-agent chat.
 - Runner is restricted to `localhost`, `127.0.0.1`, or `::1`.
+
+## License
+
+[MIT](LICENSE)

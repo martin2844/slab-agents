@@ -53,6 +53,57 @@ export type RemoteConnectorToken = {
   prefix: string;
 };
 
+export async function sendEmailWithConnectorToken(input: {
+  serviceUrl: string;
+  bearerToken: string;
+  accountId: string;
+  expectedFrom: string;
+  to: string;
+  subject: string;
+  text: string;
+  idempotencyKey: string;
+}) {
+  const response = await fetch(
+    `${normalizeEmailServiceUrl(input.serviceUrl)}/api/mail/send`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${input.bearerToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        accountId: input.accountId,
+        expectedFrom: input.expectedFrom,
+        to: [input.to],
+        subject: input.subject,
+        text: input.text,
+        idempotencyKey: input.idempotencyKey,
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: { message?: string; code?: string };
+    } | null;
+    throw new OperationalError(
+      redactIntegrationText(
+        payload?.error?.message ||
+          `Email service returned ${response.status} ${response.statusText}.`,
+        [input.bearerToken],
+      ),
+      payload?.error?.code ?? "EMAIL_NOTIFICATION_FAILED",
+      502,
+    );
+  }
+  return (await response.json()) as {
+    status: "sent" | "already_sent";
+    messageId?: string;
+  };
+}
+
 function adminKey() {
   const value = readSecret("SLAB_EMAIL_ADMIN_KEY", "SLAB_EMAIL_ADMIN_KEY_FILE");
   if (!value) {

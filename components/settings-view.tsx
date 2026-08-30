@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Check,
   BrainCircuit,
+  BellRing,
   CalendarDays,
   EyeOff,
   LoaderCircle,
@@ -22,6 +23,7 @@ import { EmailIntegrationEditor } from "@/components/email-integration-editor";
 import { CalendarIntegrationEditor } from "@/components/calendar-integration-editor";
 import { RuntimeSettings } from "@/components/runtime-settings";
 import { BudgetSettings } from "@/components/budget-settings";
+import { OperatorNotificationsSettings } from "@/components/operator-notifications-settings";
 import { PageHeader } from "@/components/page-header";
 import { ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +46,7 @@ import type {
   WorkspaceSettings,
   RuntimeCatalogItem,
   BudgetConfiguration,
+  OperatorNotificationState,
 } from "@/lib/types";
 
 type Service = "work" | "docs" | "runner" | "codex";
@@ -53,6 +56,7 @@ export function SettingsView({
   initialSettings,
   initialSetup,
   initialEmail,
+  initialNotifications,
   initialCalendars,
   auth,
   agents,
@@ -67,6 +71,7 @@ export function SettingsView({
   initialSettings: WorkspaceSettings;
   initialSetup: SetupStatus;
   initialEmail: EmailIntegrationState;
+  initialNotifications: OperatorNotificationState;
   initialCalendars: Integration[];
   auth: { required: boolean; configured: boolean };
   agents: Agent[];
@@ -74,6 +79,7 @@ export function SettingsView({
     | "connections"
     | "runtime"
     | "email"
+    | "notifications"
     | "calendar"
     | "memory"
     | "security";
@@ -260,6 +266,9 @@ export function SettingsView({
           <TabsTrigger value="connections">Connections</TabsTrigger>
           <TabsTrigger value="runtime">Runtime</TabsTrigger>
           <TabsTrigger value="email">Email</TabsTrigger>
+          <TabsTrigger value="notifications">
+            <BellRing /> Notifications
+          </TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
           <TabsTrigger value="memory">Memory</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
@@ -432,6 +441,13 @@ export function SettingsView({
               </div>
             ) : null}
           </section>
+        </TabsContent>
+
+        <TabsContent value="notifications">
+          <OperatorNotificationsSettings
+            initialState={initialNotifications}
+            accounts={email.accounts}
+          />
         </TabsContent>
 
         <TabsContent value="calendar">

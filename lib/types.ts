@@ -941,6 +941,54 @@ export type EmailIntegrationState = {
   assignments: AgentEmailAccess[];
 };
 
+export type OperatorNotificationKind =
+  | "approval_waiting"
+  | "run_failed"
+  | "work_blocked"
+  | "integration_unhealthy"
+  | "system_update_failed";
+
+export type OperatorNotificationSettings = {
+  enabled: boolean;
+  enabledAt: string | null;
+  recipientEmail: string;
+  accountId: string | null;
+  profileId: string | null;
+  tokenId: string | null;
+  tokenPrefix: string | null;
+  tokenCreatedAt: string | null;
+  lastTestedAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type OperatorNotificationDelivery = {
+  id: string;
+  dedupeKey: string;
+  kind: OperatorNotificationKind;
+  resourceType: string;
+  resourceId: string;
+  subject: string;
+  body: string;
+  status: "pending" | "sending" | "sent" | "failed" | "cancelled";
+  attemptCount: number;
+  nextAttemptAt: string;
+  lastError: string | null;
+  createdAt: string;
+  sentAt: string | null;
+};
+
+export type OperatorNotificationState = {
+  enabled: boolean;
+  recipientEmail: string;
+  accountId: string | null;
+  tokenPrefix: string | null;
+  lastTestedAt: string | null;
+  lastError: string | null;
+  recentDeliveries: OperatorNotificationDelivery[];
+};
+
 export type InboundEmailEvent = {
   id: number;
   accountId: string;

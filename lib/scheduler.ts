@@ -7,6 +7,7 @@ import { dueAutomation } from "@/lib/automation-schedule";
 import { tickEmailAutomations } from "@/lib/email-automation-dispatcher";
 import { tickSystemUpdates } from "@/lib/system-update-service";
 import { tickKnowledgeSources } from "@/lib/sources/scheduler";
+import { tickOperatorNotifications } from "@/lib/operator-notification-service";
 
 const state = globalThis as unknown as {
   slabScheduler?: NodeJS.Timeout;
@@ -26,6 +27,9 @@ export async function tickScheduler() {
     });
     void tickKnowledgeSources().catch((error) => {
       console.error("[scheduler] Knowledge source tick:", error);
+    });
+    void tickOperatorNotifications().catch((error) => {
+      console.error("[scheduler] Operator notification tick:", error);
     });
     const current = new Date();
     for (const occurrence of automationRepository.listPendingAutomationOccurrences()) {
