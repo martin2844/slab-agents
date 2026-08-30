@@ -25,10 +25,15 @@ The MVP notification set covers:
   the selected account.
 - The one-time raw connector token is encrypted in the local token vault and is
   never stored in SQLite or returned to the browser.
+- Each scoped token records its issuing Email service URL. Token rotation and
+  failed provisioning retain that authority with durable revocation work until
+  it confirms the obsolete token is gone.
 - Immediately before delivery, Slab revalidates that the approval, block, or
   failure still needs attention. Resolved events are cancelled rather than
   delivered stale.
 - Notification delivery never changes the Run or Work state that produced it.
+- Disabling notifications cancels unclaimed deliveries. A delivery already in
+  flight may finish and records its real terminal status in the audit history.
 
 Notifications include compact links to the relevant local Slab page. They do
 not include tool payloads, prompts, mailbox bodies, credentials, or stack

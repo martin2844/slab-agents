@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -26,6 +26,10 @@ test("operator attention is delivered once through a scoped Email profile", asyn
   await migrations.destroy();
 
   const sent = [];
+  const revokedTokens = [];
+  let tokenCount = 0;
+  let sendPause = null;
+  let failNextRevocation = false;
   const server = createServer(async (request, response) => {
     const body = [];
     for await (const chunk of request) body.push(chunk);
@@ -72,19 +76,56 @@ test("operator attention is delivered once through a scoped Email profile", asyn
       return;
     }
     if (
-      request.url === "/api/access-profiles/profile-1/tokens" &&
-      request.method === "POST"
+      request.url === "/api/access-profiles/profile-1" &&
+      request.method === "PATCH"
     ) {
       response.setHeader("Content-Type", "application/json");
       response.end(JSON.stringify({
-        id: "notification-token",
-        prefix: "slab_notify",
-        token: "connector-secret",
+        id: "profile-1",
+        ...input,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       }));
       return;
     }
+    if (
+      request.url === "/api/access-profiles/profile-1/tokens" &&
+      request.method === "POST"
+    ) {
+      tokenCount += 1;
+      const tokenId = tokenCount === 1 ? "notification-token" : `notification-token-${tokenCount}`;
+      response.setHeader("Content-Type", "application/json");
+      response.end(JSON.stringify({
+        id: tokenId,
+        prefix: "slab_notify",
+        token: `connector-secret-${tokenCount}`,
+      }));
+      return;
+    }
+    if (
+      request.url?.startsWith("/api/access-profiles/profile-1/tokens/") &&
+      request.method === "DELETE"
+    ) {
+      if (failNextRevocation) {
+        failNextRevocation = false;
+        response.statusCode = 503;
+        response.setHeader("Content-Type", "application/json");
+        response.end(JSON.stringify({
+          error: { code: "TEMPORARY_FAILURE", message: "revocation unavailable" },
+        }));
+        return;
+      }
+      revokedTokens.push(request.url.split("/").at(-1));
+      response.statusCode = 204;
+      response.end();
+      return;
+    }
     if (request.url === "/api/mail/send" && request.method === "POST") {
-      assert.equal(request.headers.authorization, "Bearer connector-secret");
+      assert.equal(request.headers.authorization, "Bearer connector-secret-1");
+      if (sendPause) {
+        sendPause.started();
+        await sendPause.wait;
+      }
       sent.push(input);
       response.setHeader("Content-Type", "application/json");
       response.end(JSON.stringify({ status: "sent", messageId: `message-${sent.length}` }));
@@ -126,12 +167,13 @@ test("operator attention is delivered once through a scoped Email profile", asyn
     .prepare("SELECT * FROM operator_notification_settings WHERE id=1")
     .get();
   assert.equal(persisted.token_id, "notification-token");
+  assert.equal(persisted.token_service_url, `http://127.0.0.1:${address.port}`);
   assert.equal(JSON.stringify(persisted).includes("connector-secret"), false);
   const encryptedToken = await readFile(
     path.join(directory, "email-connector-tokens", "notification-token.enc"),
     "utf8",
   );
-  assert.equal(encryptedToken.includes("connector-secret"), false);
+  assert.equal(encryptedToken.includes("connector-secret-1"), false);
 
   const eventTimestamp = new Date(Date.now() + 1_000).toISOString();
   db.prepare(
@@ -239,4 +281,158 @@ test("operator attention is delivered once through a scoped Email profile", asyn
     operatorNotificationRepository.getDelivery(interrupted.id)?.status,
     "pending",
   );
+  await service.tickOperatorNotifications();
+  assert.equal(
+    operatorNotificationRepository.getDelivery(interrupted.id)?.status,
+    "sent",
+  );
+
+  const inFlight = operatorNotificationRepository.enqueue({
+    dedupeKey: "run-failed:disable-in-flight",
+    kind: "run_failed",
+    resourceType: "run",
+    resourceId: "run-failed",
+    subject: "In-flight delivery",
+    body: "This delivery is already claimed.",
+  });
+  assert.ok(inFlight);
+  let notifyStarted;
+  let releaseSend;
+  const started = new Promise((resolve) => {
+    notifyStarted = resolve;
+  });
+  const wait = new Promise((resolve) => {
+    releaseSend = resolve;
+  });
+  sendPause = { started: notifyStarted, wait };
+  const deliveryTick = service.tickOperatorNotifications();
+  await started;
+  const enabledSettings = operatorNotificationRepository.getSettings();
+  operatorNotificationRepository.saveSettings({
+    ...enabledSettings,
+    enabled: false,
+  });
+  releaseSend();
+  await deliveryTick;
+  sendPause = null;
+  assert.equal(
+    operatorNotificationRepository.getDelivery(inFlight.id)?.status,
+    "sent",
+    "disabling must not misreport an already dispatched email as cancelled",
+  );
+
+  const vaultDirectory = path.join(directory, "email-connector-tokens");
+  await rm(vaultDirectory, { recursive: true, force: true });
+  await writeFile(vaultDirectory, "blocks vault directory creation");
+  failNextRevocation = true;
+  await assert.rejects(
+    service.saveOperatorNotificationSettings({
+      enabled: true,
+      recipientEmail: "operator@example.com",
+      accountId: "account-1",
+    }),
+  );
+  assert.deepEqual(revokedTokens, []);
+  assert.deepEqual(
+    operatorNotificationRepository.listDueTokenRevocations().map(({ tokenId }) => tokenId),
+    ["notification-token-2"],
+    "a failed remote revocation must remain durable",
+  );
+  assert.equal(
+    operatorNotificationRepository.getSettings().tokenId,
+    "notification-token",
+    "failed vault persistence must not replace durable token metadata",
+  );
+  await rm(vaultDirectory, { force: true });
+  db.prepare("UPDATE email_integrations SET service_url=? WHERE id='email'").run(
+    "http://127.0.0.1:1",
+  );
+  await service.tickOperatorNotifications();
+  assert.deepEqual(revokedTokens, ["notification-token-2"]);
+  assert.deepEqual(operatorNotificationRepository.listDueTokenRevocations(), []);
+
+  const replacementRevocations = [];
+  const replacementServer = createServer(async (request, response) => {
+    const body = [];
+    for await (const chunk of request) body.push(chunk);
+    const input = body.length
+      ? JSON.parse(Buffer.concat(body).toString("utf8"))
+      : null;
+    response.setHeader("Content-Type", "application/json");
+    if (request.url === "/api/accounts" && request.method === "GET") {
+      response.end(JSON.stringify([{
+        id: "account-1",
+        provider: "imap_smtp",
+        emailAddress: "replacement@example.com",
+        displayName: "Replacement",
+        enabled: true,
+        capabilities: {
+          read: true,
+          search: true,
+          draft: true,
+          send: true,
+          reply: true,
+          threads: true,
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }]));
+      return;
+    }
+    if (request.url === "/api/access-profiles" && request.method === "POST") {
+      response.end(JSON.stringify({
+        id: "replacement-profile",
+        ...input,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
+      return;
+    }
+    if (
+      request.url === "/api/access-profiles/replacement-profile/tokens" &&
+      request.method === "POST"
+    ) {
+      response.end(JSON.stringify({
+        id: "replacement-token",
+        prefix: "replacement",
+        token: "replacement-secret",
+      }));
+      return;
+    }
+    if (request.method === "DELETE") {
+      replacementRevocations.push(request.url);
+      response.statusCode = 204;
+      response.end();
+      return;
+    }
+    response.statusCode = 404;
+    response.end(JSON.stringify({ error: { message: "not found" } }));
+  });
+  await new Promise((resolve) => replacementServer.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => replacementServer.close(resolve)));
+  const replacementAddress = replacementServer.address();
+  assert(replacementAddress && typeof replacementAddress !== "string");
+  const replacementUrl = `http://127.0.0.1:${replacementAddress.port}`;
+  db.prepare(
+    "UPDATE email_integrations SET service_url=?,status='connected' WHERE id='email'",
+  ).run(replacementUrl);
+
+  await service.saveOperatorNotificationSettings({
+    enabled: true,
+    recipientEmail: "operator@example.com",
+    accountId: "account-1",
+  });
+
+  assert.deepEqual(
+    revokedTokens,
+    ["notification-token-2", "notification-token"],
+    "the previous token must be revoked at the service that issued it",
+  );
+  assert.deepEqual(
+    replacementRevocations,
+    [],
+    "an idempotent replacement service must never receive the old token revocation",
+  );
+  assert.equal(operatorNotificationRepository.getSettings().tokenId, "replacement-token");
+  assert.equal(operatorNotificationRepository.getSettings().tokenServiceUrl, replacementUrl);
 });

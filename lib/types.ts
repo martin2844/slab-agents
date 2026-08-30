@@ -957,6 +957,7 @@ export type OperatorNotificationSettings = {
   tokenId: string | null;
   tokenPrefix: string | null;
   tokenCreatedAt: string | null;
+  tokenServiceUrl: string | null;
   lastTestedAt: string | null;
   lastError: string | null;
   createdAt: string;

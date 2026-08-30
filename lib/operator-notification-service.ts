@@ -69,6 +69,73 @@ function emailClient() {
   return { integration, client: new EmailAdminClient(integration.serviceUrl) };
 }
 
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function deleteVaultTokenBestEffort(tokenId: string) {
+  try {
+    deleteEmailConnectorToken(tokenId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function revokeTokenOrSchedule(
+  serviceUrl: string,
+  profileId: string,
+  tokenId: string,
+) {
+  const client = new EmailAdminClient(serviceUrl);
+  try {
+    await client.revokeToken(profileId, tokenId);
+    if (!deleteVaultTokenBestEffort(tokenId)) {
+      throw new Error("Scoped Email token was revoked but local vault cleanup failed.");
+    }
+    operatorNotificationRepository.completeTokenRevocation(tokenId);
+  } catch (error) {
+    operatorNotificationRepository.scheduleTokenRevocation({
+      profileId,
+      tokenId,
+      serviceUrl,
+      error: errorMessage(error, "Scoped Email token revocation failed."),
+    });
+  }
+}
+
+async function retryTokenRevocations() {
+  const revocations = operatorNotificationRepository.listDueTokenRevocations();
+  if (revocations.length === 0) return;
+  for (const revocation of revocations) {
+    const client = new EmailAdminClient(revocation.serviceUrl);
+    try {
+      await client.revokeToken(revocation.profileId, revocation.tokenId);
+    } catch (error) {
+      if (!String(error).toLowerCase().includes("not found")) {
+        const retryAt = new Date(
+          Date.now() + Math.min(60 * 60_000, 30_000 * 2 ** revocation.attemptCount),
+        ).toISOString();
+        operatorNotificationRepository.postponeTokenRevocation(
+          revocation.tokenId,
+          errorMessage(error, "Scoped Email token revocation failed."),
+          retryAt,
+        );
+        continue;
+      }
+    }
+    if (!deleteVaultTokenBestEffort(revocation.tokenId)) {
+      operatorNotificationRepository.postponeTokenRevocation(
+        revocation.tokenId,
+        "Scoped Email token was revoked but local vault cleanup failed.",
+        new Date(Date.now() + 60_000).toISOString(),
+      );
+      continue;
+    }
+    operatorNotificationRepository.completeTokenRevocation(revocation.tokenId);
+  }
+}
+
 export function getOperatorNotificationState() {
   return publicState();
 }
@@ -92,7 +159,8 @@ export async function saveOperatorNotificationSettings(input: {
     throw new OperationalError("Select the Email account that sends notifications.");
   }
 
-  const { client } = emailClient();
+  const { integration, client } = emailClient();
+  const sameTokenAuthority = current.tokenServiceUrl === integration.serviceUrl;
   const accounts = await client.listAccounts();
   const account = accounts.find(({ id }) => id === input.accountId);
   if (!account?.enabled || !account.capabilities.send) {
@@ -111,7 +179,7 @@ export async function saveOperatorNotificationSettings(input: {
     accountIds: [account.id],
   };
   let profile;
-  if (current.profileId) {
+  if (current.profileId && sameTokenAuthority) {
     try {
       profile = await client.updateProfile(current.profileId, profileInput);
     } catch (error) {
@@ -122,9 +190,11 @@ export async function saveOperatorNotificationSettings(input: {
     profile = await client.createProfile(profileInput);
   }
 
-  let tokenId = profile.id === current.profileId ? current.tokenId : null;
-  let tokenPrefix = profile.id === current.profileId ? current.tokenPrefix : null;
-  let tokenCreatedAt = profile.id === current.profileId ? current.tokenCreatedAt : null;
+  let tokenId = profile.id === current.profileId && sameTokenAuthority ? current.tokenId : null;
+  let tokenPrefix = profile.id === current.profileId && sameTokenAuthority ? current.tokenPrefix : null;
+  let tokenCreatedAt = profile.id === current.profileId && sameTokenAuthority
+    ? current.tokenCreatedAt
+    : null;
   if (tokenId) {
     try {
       readEmailConnectorToken(tokenId);
@@ -133,15 +203,15 @@ export async function saveOperatorNotificationSettings(input: {
     }
   }
   let createdToken: Awaited<ReturnType<EmailAdminClient["createToken"]>> | null = null;
-  if (!tokenId) {
-    createdToken = await client.createToken(profile.id);
-    storeEmailConnectorToken(createdToken.id, createdToken.token);
-    tokenId = createdToken.id;
-    tokenPrefix = createdToken.prefix;
-    tokenCreatedAt = new Date().toISOString();
-  }
-
   try {
+    if (!tokenId) {
+      createdToken = await client.createToken(profile.id);
+      storeEmailConnectorToken(createdToken.id, createdToken.token);
+      tokenId = createdToken.id;
+      tokenPrefix = createdToken.prefix;
+      tokenCreatedAt = new Date().toISOString();
+    }
+
     operatorNotificationRepository.saveSettings({
       enabled: true,
       recipientEmail: input.recipientEmail,
@@ -150,18 +220,25 @@ export async function saveOperatorNotificationSettings(input: {
       tokenId,
       tokenPrefix,
       tokenCreatedAt,
+      tokenServiceUrl: integration.serviceUrl,
       lastError: null,
     });
   } catch (error) {
     if (createdToken) {
-      await client.revokeToken(profile.id, createdToken.id).catch(() => undefined);
-      deleteEmailConnectorToken(createdToken.id);
+      await revokeTokenOrSchedule(
+        integration.serviceUrl,
+        profile.id,
+        createdToken.id,
+      );
     }
     throw error;
   }
   if (current.tokenId && current.tokenId !== tokenId) {
-    await client.revokeToken(current.profileId!, current.tokenId).catch(() => undefined);
-    deleteEmailConnectorToken(current.tokenId);
+    await revokeTokenOrSchedule(
+      current.tokenServiceUrl ?? integration.serviceUrl,
+      current.profileId!,
+      current.tokenId,
+    );
   }
   return publicState();
 }
@@ -313,6 +390,7 @@ export async function tickOperatorNotifications() {
   if (workerState.slabOperatorNotificationsBusy) return;
   workerState.slabOperatorNotificationsBusy = true;
   try {
+    await retryTokenRevocations();
     operatorNotificationRepository.recoverStaleClaims(
       new Date(Date.now() - STALE_DELIVERY_CLAIM_MS).toISOString(),
     );

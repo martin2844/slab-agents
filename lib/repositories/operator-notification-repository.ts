@@ -19,6 +19,7 @@ function mapSettings(row: Row): OperatorNotificationSettings {
     tokenId: row.token_id ? String(row.token_id) : null,
     tokenPrefix: row.token_prefix ? String(row.token_prefix) : null,
     tokenCreatedAt: row.token_created_at ? String(row.token_created_at) : null,
+    tokenServiceUrl: row.token_service_url ? String(row.token_service_url) : null,
     lastTestedAt: row.last_tested_at ? String(row.last_tested_at) : null,
     lastError: row.last_error ? String(row.last_error) : null,
     createdAt: String(row.created_at),
@@ -61,6 +62,7 @@ export const operatorNotificationRepository = {
     tokenId: string | null;
     tokenPrefix: string | null;
     tokenCreatedAt: string | null;
+    tokenServiceUrl: string | null;
     lastTestedAt?: string | null;
     lastError?: string | null;
   }) {
@@ -71,7 +73,8 @@ export const operatorNotificationRepository = {
          WHEN ?=0 THEN NULL
          ELSE enabled_at END,
        recipient_email=?,account_id=?,profile_id=?,token_id=?,
-       token_prefix=?,token_created_at=?,last_tested_at=COALESCE(?,last_tested_at),
+       token_prefix=?,token_created_at=?,token_service_url=?,
+       last_tested_at=COALESCE(?,last_tested_at),
        last_error=?,updated_at=? WHERE id=1`,
     ).run(
       Number(input.enabled),
@@ -84,13 +87,14 @@ export const operatorNotificationRepository = {
       input.tokenId,
       input.tokenPrefix,
       input.tokenCreatedAt,
+      input.tokenServiceUrl,
       input.lastTestedAt ?? null,
       input.lastError ?? null,
       now(),
     );
     if (!input.enabled) {
       db.prepare(
-        "UPDATE operator_notification_outbox SET status='cancelled',last_error='Notifications disabled' WHERE status IN ('pending','sending')",
+        "UPDATE operator_notification_outbox SET status='cancelled',last_error='Notifications disabled' WHERE status='pending'",
       ).run();
     }
     return operatorNotificationRepository.getSettings();
@@ -202,6 +206,60 @@ export const operatorNotificationRepository = {
         "SELECT * FROM operator_notification_outbox ORDER BY created_at DESC,id DESC LIMIT ?",
       ).all(Math.max(1, Math.min(100, Math.trunc(limit)))) as Row[]
     ).map(mapDelivery);
+  },
+
+  scheduleTokenRevocation(input: {
+    profileId: string;
+    tokenId: string;
+    serviceUrl: string;
+    error: string;
+  }) {
+    const timestamp = now();
+    db.prepare(
+      `INSERT INTO operator_notification_token_revocations
+       (token_id,profile_id,service_url,attempt_count,next_attempt_at,last_error,created_at)
+       VALUES (?,?,?,0,?,?,?)
+       ON CONFLICT(token_id) DO UPDATE SET
+         profile_id=excluded.profile_id,
+         service_url=excluded.service_url,
+         next_attempt_at=excluded.next_attempt_at,
+         last_error=excluded.last_error`,
+    ).run(
+      input.tokenId,
+      input.profileId,
+      input.serviceUrl,
+      timestamp,
+      input.error.slice(0, 500),
+      timestamp,
+    );
+  },
+
+  listDueTokenRevocations(limit = 20) {
+    return (
+      db.prepare(
+        `SELECT token_id,profile_id,service_url,attempt_count FROM operator_notification_token_revocations
+         WHERE next_attempt_at <= ? ORDER BY created_at,token_id LIMIT ?`,
+      ).all(now(), Math.max(1, Math.min(100, Math.trunc(limit)))) as Row[]
+    ).map((row) => ({
+      tokenId: String(row.token_id),
+      profileId: String(row.profile_id),
+      serviceUrl: String(row.service_url),
+      attemptCount: Number(row.attempt_count),
+    }));
+  },
+
+  postponeTokenRevocation(tokenId: string, error: string, retryAt: string) {
+    db.prepare(
+      `UPDATE operator_notification_token_revocations
+       SET attempt_count=attempt_count+1,next_attempt_at=?,last_error=?
+       WHERE token_id=?`,
+    ).run(retryAt, error.slice(0, 500), tokenId);
+  },
+
+  completeTokenRevocation(tokenId: string) {
+    db.prepare(
+      "DELETE FROM operator_notification_token_revocations WHERE token_id=?",
+    ).run(tokenId);
   },
 
   isStillActionable(delivery: OperatorNotificationDelivery) {
