@@ -20,6 +20,10 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
 jobs:
   validate:
     runs-on: ubuntu-24.04

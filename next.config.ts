@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-import { resolveNextDistDir } from "./lib/next-dist-dir";
+import { resolveNextDistDir } from "./lib/next-dist-dir.ts";
 
 const nextConfig: NextConfig = {
   output: "standalone",
