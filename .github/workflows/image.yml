@@ -107,7 +107,7 @@ jobs:
           labels: |
             org.opencontainers.image.title=Slab Agents
             org.opencontainers.image.description=Local control plane for Slab agents, Work, Docs, and integrations
-            org.opencontainers.image.licenses=NOASSERTION
+            org.opencontainers.image.licenses=MIT
       - id: build
         uses: docker/build-push-action@v6
         with:
