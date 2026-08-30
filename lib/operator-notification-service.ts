@@ -33,7 +33,27 @@ function publicState(): OperatorNotificationState {
     tokenPrefix: settings.tokenPrefix,
     lastTestedAt: settings.lastTestedAt,
     lastError: settings.lastError,
-    recentDeliveries: operatorNotificationRepository.listRecent(),
+    recentDeliveries: operatorNotificationRepository.listRecent().map(
+      ({
+        id,
+        kind,
+        subject,
+        status,
+        attemptCount,
+        lastError,
+        createdAt,
+        sentAt,
+      }) => ({
+        id,
+        kind,
+        subject,
+        status,
+        attemptCount,
+        lastError,
+        createdAt,
+        sentAt,
+      }),
+    ),
   };
 }
 

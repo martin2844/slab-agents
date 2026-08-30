@@ -193,6 +193,9 @@ test("operator attention is delivered once through a scoped Email profile", asyn
   assert.ok(sent.every(({ expectedFrom }) => expectedFrom === "slab@example.com"));
   assert.ok(sent.some(({ text }) => text.includes("https://agents.example.com/runs/run-approval")));
   assert.equal(operatorNotificationRepository.listRecent().length, 5);
+  const publicDelivery = service.getOperatorNotificationState().recentDeliveries[0];
+  assert.equal("body" in publicDelivery, false);
+  assert.equal("dedupeKey" in publicDelivery, false);
 
   await service.tickOperatorNotifications();
   assert.equal(sent.length, 5, "attention notifications must be deduplicated");

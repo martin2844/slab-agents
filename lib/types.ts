@@ -986,7 +986,19 @@ export type OperatorNotificationState = {
   tokenPrefix: string | null;
   lastTestedAt: string | null;
   lastError: string | null;
-  recentDeliveries: OperatorNotificationDelivery[];
+  recentDeliveries: Array<
+    Pick<
+      OperatorNotificationDelivery,
+      | "id"
+      | "kind"
+      | "subject"
+      | "status"
+      | "attemptCount"
+      | "lastError"
+      | "createdAt"
+      | "sentAt"
+    >
+  >;
 };
 
 export type InboundEmailEvent = {
