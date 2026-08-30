@@ -1,14 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { BellRing, LoaderCircle, MailCheck, Save } from "lucide-react";
+import { LoaderCircle, MailCheck, Save } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/client-api";
 import { formatDateTime } from "@/lib/utils";
-import type {
-  EmailAccount,
-  OperatorNotificationState,
-} from "@/lib/types";
+import type { EmailAccount, OperatorNotificationState } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { SettingRow, SettingSection } from "@/components/settings-layout";
 
 export function OperatorNotificationsSettings({
   initialState,
@@ -55,6 +53,9 @@ export function OperatorNotificationsSettings({
         },
       );
       setState(updated);
+      setEnabled(updated.enabled);
+      setRecipientEmail(updated.recipientEmail);
+      setAccountId(updated.accountId ?? "");
       toast.success(
         updated.enabled
           ? "Operator notifications enabled"
@@ -62,9 +63,7 @@ export function OperatorNotificationsSettings({
       );
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Could not save notifications",
+        error instanceof Error ? error.message : "Could not save notifications",
       );
     } finally {
       setSaving(false);
@@ -89,43 +88,47 @@ export function OperatorNotificationsSettings({
     }
   }
 
-  return (
-    <section className="max-w-4xl rounded-lg border bg-card p-4 sm:p-5">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-        <div className="flex gap-3">
-          <BellRing className="mt-0.5 size-4" />
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold">Operator notifications</h2>
-              <Badge variant={state.enabled ? "secondary" : "outline"}>
-                {state.enabled ? "Enabled" : "Disabled"}
-              </Badge>
-            </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Email the operator when an approval, failure, blocked item,
-              unhealthy integration, or system update needs attention.
-            </p>
-          </div>
-        </div>
-        <Switch
-          checked={enabled}
-          onCheckedChange={setEnabled}
-          aria-label="Enable operator notifications"
-        />
-      </div>
+  const dirty =
+    enabled !== state.enabled ||
+    recipientEmail !== state.recipientEmail ||
+    accountId !== (state.accountId ?? "");
 
-      <div className="mt-4 grid gap-3 border-y py-4 sm:grid-cols-2">
-        <label className="grid gap-1.5 text-xs font-semibold">
-          Notify
+  return (
+    <div className="space-y-7">
+      <SettingSection
+        title="Operator notifications"
+        description="Receive an email when an approval, failure, blocked item, integration, or update needs attention."
+      >
+        <SettingRow
+          title="Email notifications"
+          description="Turn operational alerts on or off without removing their configuration."
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Badge variant={enabled ? "secondary" : "outline"}>
+              {enabled ? "On" : "Off"}
+            </Badge>
+            <Switch
+              checked={enabled}
+              onCheckedChange={setEnabled}
+              aria-label="Enable operator notifications"
+            />
+          </div>
+        </SettingRow>
+        <SettingRow
+          title="Recipient"
+          description="Where operational notifications should be delivered."
+        >
           <Input
             type="email"
             value={recipientEmail}
             onChange={(event) => setRecipientEmail(event.target.value)}
             placeholder="operator@example.com"
           />
-        </label>
-        <label className="grid gap-1.5 text-xs font-semibold">
-          Send from
+        </SettingRow>
+        <SettingRow
+          title="Send from"
+          description="Mailbox Slab uses for operator notifications."
+        >
           <Select value={accountId} onValueChange={setAccountId}>
             <SelectTrigger>
               <SelectValue placeholder="Select a connected mailbox" />
@@ -138,49 +141,43 @@ export function OperatorNotificationsSettings({
               ))}
             </SelectContent>
           </Select>
-        </label>
-      </div>
-
-      {senders.length === 0 ? (
-        <p className="mt-3 text-xs text-destructive">
-          Connect an Email account with send capability before enabling
-          notifications.
-        </p>
-      ) : null}
-      {state.lastError ? (
-        <p className="mt-3 text-xs text-destructive">{state.lastError}</p>
-      ) : null}
-
-      <div className="mt-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-        <p className="text-xs text-muted-foreground">
-          {state.lastTestedAt
-            ? `Last tested ${formatDateTime(state.lastTestedAt)}`
-            : "Not tested yet"}
-          {state.tokenPrefix ? ` · scoped token ${state.tokenPrefix}…` : ""}
-        </p>
-        <div className="flex gap-2">
+        </SettingRow>
+        <SettingRow
+          title="Delivery test"
+          description={`${
+            state.lastTestedAt
+              ? `Last tested ${formatDateTime(state.lastTestedAt)}`
+              : "No test notification has been sent yet."
+          }${state.tokenPrefix ? ` · scoped token ${state.tokenPrefix}…` : ""}`}
+        >
           <Button
             variant="outline"
             onClick={test}
             disabled={!state.enabled || testing}
           >
-            {testing ? <LoaderCircle className="animate-spin" /> : <MailCheck />}
-            Send test
+            {testing ? (
+              <LoaderCircle className="animate-spin" />
+            ) : (
+              <MailCheck />
+            )}
+            Send test notification
           </Button>
-          <Button
-            onClick={save}
-            disabled={saving || !recipientEmail || (enabled && !accountId)}
-          >
-            {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
-            Save
-          </Button>
-        </div>
-      </div>
+        </SettingRow>
+      </SettingSection>
+
+      {senders.length === 0 ? (
+        <p className="text-xs text-destructive">
+          Connect an Email account with send capability before enabling
+          notifications.
+        </p>
+      ) : null}
+      {state.lastError ? (
+        <p className="text-xs text-destructive">{state.lastError}</p>
+      ) : null}
 
       {state.recentDeliveries.length > 0 ? (
-        <div className="mt-5 border-t pt-4">
-          <h3 className="text-xs font-semibold">Recent deliveries</h3>
-          <div className="mt-2 divide-y border-y">
+        <SettingSection title="Recent deliveries">
+          <div className="divide-y">
             {state.recentDeliveries.slice(0, 8).map((delivery) => (
               <div
                 key={delivery.id}
@@ -193,15 +190,46 @@ export function OperatorNotificationsSettings({
                   </p>
                 </div>
                 <Badge
-                  variant={delivery.status === "failed" ? "destructive" : "outline"}
+                  variant={
+                    delivery.status === "failed" ? "destructive" : "outline"
+                  }
                 >
                   {delivery.status}
                 </Badge>
               </div>
             ))}
           </div>
+        </SettingSection>
+      ) : null}
+
+      {dirty ? (
+        <div className="sticky bottom-4 z-20 flex justify-center">
+          <div className="flex w-full max-w-xl items-center justify-between gap-3 rounded-lg border bg-primary px-3 py-2 text-primary-foreground shadow-lg">
+            <span className="text-sm font-medium">Unsaved changes</span>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
+                onClick={() => {
+                  setEnabled(state.enabled);
+                  setRecipientEmail(state.recipientEmail);
+                  setAccountId(state.accountId ?? "");
+                }}
+              >
+                Discard
+              </Button>
+              <Button
+                variant="signal"
+                onClick={save}
+                disabled={saving || !recipientEmail || (enabled && !accountId)}
+              >
+                {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
+                Save changes
+              </Button>
+            </div>
+          </div>
         </div>
       ) : null}
-    </section>
+    </div>
   );
 }

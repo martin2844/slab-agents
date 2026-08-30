@@ -7,6 +7,8 @@ import {
   BrainCircuit,
   BellRing,
   CalendarDays,
+  ChevronRight,
+  CircleDollarSign,
   EyeOff,
   LoaderCircle,
   KeyRound,
@@ -16,6 +18,7 @@ import {
   Server,
   ShieldCheck,
   TerminalSquare,
+  UserRound,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,6 +28,7 @@ import { RuntimeSettings } from "@/components/runtime-settings";
 import { BudgetSettings } from "@/components/budget-settings";
 import { OperatorNotificationsSettings } from "@/components/operator-notifications-settings";
 import { PageHeader } from "@/components/page-header";
+import { SettingRow, SettingSection } from "@/components/settings-layout";
 import { ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,8 +40,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import { api } from "@/lib/client-api";
+import {
+  clearSettingsCallback,
+  settingsPageUrl,
+  type SettingsPage,
+} from "@/lib/settings-navigation";
 import type {
   Agent,
   EmailIntegrationState,
@@ -51,6 +60,98 @@ import type {
 
 type Service = "work" | "docs" | "runner" | "codex";
 type State = "idle" | "testing" | "connected" | "error";
+
+const SETTINGS_PAGES: Record<
+  SettingsPage,
+  { label: string; description: string }
+> = {
+  connections: {
+    label: "Connections",
+    description: "Connect Slab to operational work and company knowledge.",
+  },
+  operator: {
+    label: "Operator",
+    description:
+      "Configure the human identity and agent responsible for coordination.",
+  },
+  runtime: {
+    label: "Runtime",
+    description: "Configure how agents execute work.",
+  },
+  budgets: {
+    label: "Models & budgets",
+    description:
+      "Control run limits, agent overrides, and model cost accounting.",
+  },
+  memory: {
+    label: "Memory",
+    description: "Configure optional durable recall for agent conversations.",
+  },
+  email: {
+    label: "Email",
+    description: "Manage mailboxes and agent communication permissions.",
+  },
+  notifications: {
+    label: "Notifications",
+    description:
+      "Choose how Slab alerts the operator when attention is required.",
+  },
+  calendar: {
+    label: "Calendar",
+    description: "Connect schedules and assign calendar access to agents.",
+  },
+  security: {
+    label: "Security",
+    description: "Review workspace boundaries and operator access.",
+  },
+};
+
+const SETTINGS_GROUPS: Array<{
+  label: string;
+  pages: Array<{ page: SettingsPage; icon: typeof Server }>;
+}> = [
+  {
+    label: "Workspace",
+    pages: [
+      { page: "connections", icon: PlugZap },
+      { page: "operator", icon: UserRound },
+    ],
+  },
+  {
+    label: "Agents & runtime",
+    pages: [
+      { page: "runtime", icon: TerminalSquare },
+      { page: "budgets", icon: CircleDollarSign },
+      { page: "memory", icon: BrainCircuit },
+    ],
+  },
+  {
+    label: "Communication",
+    pages: [
+      { page: "email", icon: Mail },
+      { page: "notifications", icon: BellRing },
+      { page: "calendar", icon: CalendarDays },
+    ],
+  },
+  {
+    label: "Access",
+    pages: [{ page: "security", icon: ShieldCheck }],
+  },
+];
+
+function editableWorkspaceSettings(settings: WorkspaceSettings) {
+  return {
+    workMcpUrl: settings.workMcpUrl,
+    docsMcpUrl: settings.docsMcpUrl,
+    runnerUrl: settings.runnerUrl,
+    operatorDisplayName: settings.operatorDisplayName,
+    coordinationReviewer: settings.coordinationReviewer,
+    memoryProvider: settings.memoryProvider,
+    honchoUrl: settings.honchoUrl,
+    honchoWorkspaceId: settings.honchoWorkspaceId,
+    memoryMaxContextTokens: settings.memoryMaxContextTokens,
+  };
+}
 
 export function SettingsView({
   initialSettings,
@@ -75,14 +176,7 @@ export function SettingsView({
   initialCalendars: Integration[];
   auth: { required: boolean; configured: boolean };
   agents: Agent[];
-  initialTab:
-    | "connections"
-    | "runtime"
-    | "email"
-    | "notifications"
-    | "calendar"
-    | "memory"
-    | "security";
+  initialTab: SettingsPage;
   initialEmailOpen: boolean;
   initialCalendarOpen: boolean;
   initialCalendarResult: "connected" | "failed" | null;
@@ -102,6 +196,17 @@ export function SettingsView({
   const [settings, setSettings] = useState<WorkspaceSettings | null>(
     initialSettings,
   );
+  const [savedSettings, setSavedSettings] = useState(initialSettings);
+  const [navigation, setNavigation] = useState({
+    initialTab,
+    activePage: initialTab,
+  });
+  const activePage =
+    navigation.initialTab === initialTab ? navigation.activePage : initialTab;
+  const [saving, setSaving] = useState(false);
+  const [managedConnection, setManagedConnection] = useState<
+    "work" | "docs" | "runner" | null
+  >(null);
   const [error] = useState("");
   const [workKey, setWorkKey] = useState("");
   const [docsKey, setDocsKey] = useState("");
@@ -149,6 +254,7 @@ export function SettingsView({
       }),
     });
     setSettings(updated);
+    setSavedSettings(updated);
     setWorkKey("");
     setDocsKey("");
     setHonchoKey("");
@@ -181,6 +287,7 @@ export function SettingsView({
   }
 
   async function save() {
+    setSaving(true);
     try {
       await persistSettings();
       toast.success("Settings saved");
@@ -188,7 +295,26 @@ export function SettingsView({
       toast.error(
         cause instanceof Error ? cause.message : "Could not save settings",
       );
+    } finally {
+      setSaving(false);
     }
+  }
+
+  function navigate(page: SettingsPage) {
+    setNavigation({ initialTab, activePage: page });
+    window.history.replaceState(
+      null,
+      "",
+      settingsPageUrl(window.location.href, page),
+    );
+  }
+
+  function clearCallbackResult(parameter: "email" | "calendar") {
+    window.history.replaceState(
+      null,
+      "",
+      clearSettingsCallback(window.location.href, parameter),
+    );
   }
 
   async function test(service: Service) {
@@ -250,540 +376,602 @@ export function SettingsView({
   if (error) return <ErrorState message={error} />;
   if (!settings) return <LoadingState />;
 
+  const hasUnsavedChanges =
+    workKey.length > 0 ||
+    docsKey.length > 0 ||
+    honchoKey.length > 0 ||
+    JSON.stringify(editableWorkspaceSettings(settings)) !==
+      JSON.stringify(editableWorkspaceSettings(savedSettings));
+  const page = SETTINGS_PAGES[activePage];
+
   return (
     <>
       <PageHeader
         title="Settings"
-        description={`${initialSetup.connected}/${initialSetup.total} systems healthy · configuration stored locally`}
-        actions={
-          <Button onClick={save}>
-            <Save /> Save changes
-          </Button>
-        }
+        description="Manage how Slab operates. Configuration and credentials stay server-side."
       />
-      <Tabs defaultValue={initialTab} className="space-y-5">
-        <TabsList className="h-9 w-full justify-start overflow-x-auto rounded-lg border bg-card p-1 sm:w-auto">
-          <TabsTrigger value="connections">Connections</TabsTrigger>
-          <TabsTrigger value="runtime">Runtime</TabsTrigger>
-          <TabsTrigger value="email">Email</TabsTrigger>
-          <TabsTrigger value="notifications">
-            <BellRing /> Notifications
-          </TabsTrigger>
-          <TabsTrigger value="calendar">Calendar</TabsTrigger>
-          <TabsTrigger value="memory">Memory</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
-        </TabsList>
+      <div className="grid min-w-0 gap-7 lg:grid-cols-[11.5rem_minmax(0,1fr)] lg:items-start">
+        <SettingsNavigation
+          activePage={activePage}
+          hasWorkspaceChanges={hasUnsavedChanges}
+          onNavigate={navigate}
+        />
+        <main className="min-w-0">
+          <div className="mb-5">
+            <h2 className="text-xl font-semibold tracking-[-0.025em]">
+              {page.label}
+            </h2>
+            <p className="mt-1 text-sm leading-5 text-muted-foreground">
+              {page.description}
+            </p>
+          </div>
 
-        <TabsContent value="connections" className="space-y-4">
-          <section className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 sm:p-5">
-            <label className="grid gap-1.5 text-xs font-semibold">
-              Operator display name
-              <Input
-                value={settings.operatorDisplayName}
-                onChange={(event) =>
-                  setSettings({
-                    ...settings,
-                    operatorDisplayName: event.target.value,
-                  })
+          {activePage === "connections" ? (
+            <SettingSection
+              title="Workspace sources"
+              description={`${initialSetup.connected}/${initialSetup.total} core systems are currently healthy.`}
+            >
+              <ConnectionPanel
+                title="Work · Slab"
+                description="Issues, projects, and operational coordination."
+                icon={Server}
+                state={status.work}
+                url={settings.workMcpUrl}
+                setUrl={(value) =>
+                  setSettings({ ...settings, workMcpUrl: value })
+                }
+                secret={workKey}
+                setSecret={setWorkKey}
+                configured={settings.workApiKeyConfigured}
+                onTest={() => test("work")}
+                open={managedConnection === "work"}
+                onOpenChange={(open) =>
+                  setManagedConnection(open ? "work" : null)
                 }
               />
-            </label>
-            <label className="grid gap-1.5 text-xs font-semibold">
-              Coordination reviewer
-              <Input
-                value={settings.coordinationReviewer}
-                onChange={(event) =>
-                  setSettings({
-                    ...settings,
-                    coordinationReviewer: event.target.value,
-                  })
+              <ConnectionPanel
+                title="Docs · Slab Docs"
+                description="Company knowledge and durable operating context."
+                icon={PlugZap}
+                state={status.docs}
+                url={settings.docsMcpUrl}
+                setUrl={(value) =>
+                  setSettings({ ...settings, docsMcpUrl: value })
                 }
-                placeholder="Agent slug, name, or ID"
+                secret={docsKey}
+                setSecret={setDocsKey}
+                configured={settings.docsApiKeyConfigured}
+                onTest={() => test("docs")}
+                open={managedConnection === "docs"}
+                onOpenChange={(open) =>
+                  setManagedConnection(open ? "docs" : null)
+                }
               />
-            </label>
-          </section>
-          <ConnectionPanel
-            title="Work · Slab"
-            description="Operational work via remote MCP"
-            icon={Server}
-            state={status.work}
-            url={settings.workMcpUrl}
-            setUrl={(value) => setSettings({ ...settings, workMcpUrl: value })}
-            secret={workKey}
-            setSecret={setWorkKey}
-            configured={settings.workApiKeyConfigured}
-            onTest={() => test("work")}
-          />
-          <ConnectionPanel
-            title="Docs · Slab Docs"
-            description="Company knowledge via remote MCP"
-            icon={PlugZap}
-            state={status.docs}
-            url={settings.docsMcpUrl}
-            setUrl={(value) => setSettings({ ...settings, docsMcpUrl: value })}
-            secret={docsKey}
-            setSecret={setDocsKey}
-            configured={settings.docsApiKeyConfigured}
-            onTest={() => test("docs")}
-          />
-        </TabsContent>
+            </SettingSection>
+          ) : null}
 
-        <TabsContent value="runtime">
-          <section className="rounded-lg border bg-card p-4 sm:p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex gap-3">
-                <TerminalSquare className="mt-0.5 size-4" />
-                <div>
-                  <h2 className="text-sm font-semibold">Runner</h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Loopback-only execution service
-                  </p>
-                </div>
-              </div>
-              <ConnectionBadge state={status.runner} />
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-              <label className="grid gap-1.5 text-xs font-semibold">
-                Runner URL
-                <Input
-                  value={settings.runnerUrl}
-                  onChange={(event) =>
-                    setSettings({ ...settings, runnerUrl: event.target.value })
-                  }
-                  type="url"
-                />
-              </label>
-              <Button
-                variant="outline"
-                onClick={() => test("runner")}
-                disabled={status.runner === "testing"}
+          {activePage === "operator" ? (
+            <SettingSection
+              title="Operator identity"
+              description="Identity Slab uses when coordinating this workspace."
+            >
+              <SettingRow
+                title="Display name"
+                description="How agents refer to you in operational interactions."
               >
-                {status.runner === "testing" ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <PlugZap />
-                )}{" "}
-                Test connection
-              </Button>
+                <Input
+                  className="md:max-w-sm"
+                  value={settings.operatorDisplayName}
+                  onChange={(event) =>
+                    setSettings({
+                      ...settings,
+                      operatorDisplayName: event.target.value,
+                    })
+                  }
+                />
+              </SettingRow>
+              <SettingRow
+                title="Coordination reviewer"
+                description="Agent responsible for resolving coordination issues."
+              >
+                <Input
+                  className="md:max-w-sm"
+                  list="coordination-reviewer-options"
+                  value={settings.coordinationReviewer}
+                  onChange={(event) =>
+                    setSettings({
+                      ...settings,
+                      coordinationReviewer: event.target.value,
+                    })
+                  }
+                  placeholder="Agent slug, name, or ID"
+                />
+                <datalist id="coordination-reviewer-options">
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.slug}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </datalist>
+              </SettingRow>
+            </SettingSection>
+          ) : null}
+
+          {activePage === "runtime" ? (
+            <div className="space-y-7">
+              <SettingSection
+                title="Execution service"
+                description="The private runner that starts and supervises agent runtimes."
+              >
+                <SettingRow
+                  title="Runner"
+                  description="Local execution boundary used by every configured runtime."
+                >
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <ConnectionBadge state={status.runner} />
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {settings.runnerUrl}
+                        </span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setManagedConnection(
+                            managedConnection === "runner" ? null : "runner",
+                          )
+                        }
+                      >
+                        Manage <ChevronRight />
+                      </Button>
+                    </div>
+                    {managedConnection === "runner" ? (
+                      <div className="grid gap-3 rounded-md bg-muted p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                        <label className="grid gap-1.5 text-xs font-semibold">
+                          Runner URL
+                          <Input
+                            value={settings.runnerUrl}
+                            onChange={(event) =>
+                              setSettings({
+                                ...settings,
+                                runnerUrl: event.target.value,
+                              })
+                            }
+                            type="url"
+                          />
+                        </label>
+                        <Button
+                          variant="outline"
+                          onClick={() => test("runner")}
+                          disabled={status.runner === "testing"}
+                        >
+                          {status.runner === "testing" ? (
+                            <LoaderCircle className="animate-spin" />
+                          ) : (
+                            <PlugZap />
+                          )}
+                          Test connection
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                </SettingRow>
+              </SettingSection>
+              <RuntimeSettings initialRuntimes={initialRuntimes} />
             </div>
-            <RuntimeSettings initialRuntimes={initialRuntimes} />
+          ) : null}
+
+          {activePage === "budgets" ? (
             <BudgetSettings
               initialBudget={initialBudget}
               agents={agents}
               runtimes={initialRuntimes}
             />
-          </section>
-        </TabsContent>
+          ) : null}
 
-        <TabsContent value="email">
-          <section className="rounded-lg border bg-card p-4 sm:p-5">
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-              <div className="flex gap-3">
-                <Mail className="mt-0.5 size-4" />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-semibold">Email service</h2>
-                    <Badge variant="secondary">Optional</Badge>
-                  </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Workspace mailboxes and agent-scoped read, draft, and send
-                    policies
-                  </p>
-                </div>
-              </div>
-              <EmailConnectionBadge state={email} />
-            </div>
-            <div className="mt-4 grid gap-4 border-y py-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center">
-              <div className="min-w-0">
-                <span className="block text-xs text-muted-foreground">
-                  Service
-                </span>
-                <strong className="block truncate">
-                  {email.serviceUrl || "Not configured"}
-                </strong>
-              </div>
-              <div>
-                <span className="block text-xs text-muted-foreground">
-                  Mailboxes
-                </span>
-                <strong>{email.accounts.length}</strong>
-              </div>
-              <div>
-                <span className="block text-xs text-muted-foreground">
-                  Agent profiles
-                </span>
-                <strong>{email.assignments.length}</strong>
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setGmailCallbackUrl(
-                    `${window.location.origin}/api/integrations/email/google/callback`,
-                  );
-                  setEmailOpen(true);
-                }}
-              >
-                <Mail /> Configure email
-              </Button>
-            </div>
-            {email.accounts.length > 0 && email.assignments.length === 0 ? (
-              <div className="mt-4 flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm sm:flex-row sm:items-center sm:justify-between dark:border-amber-900 dark:bg-amber-950/30">
-                <div>
-                  <p className="font-semibold">No agent can use Email yet</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Assign a mailbox and permissions to an agent. The capability
-                    becomes available on that agent&apos;s next run.
-                  </p>
-                </div>
-                <Button variant="outline" onClick={() => setEmailOpen(true)}>
-                  Assign agent access
-                </Button>
-              </div>
-            ) : null}
-          </section>
-        </TabsContent>
-
-        <TabsContent value="notifications">
-          <OperatorNotificationsSettings
-            initialState={initialNotifications}
-            accounts={email.accounts}
-          />
-        </TabsContent>
-
-        <TabsContent value="calendar">
-          <section className="rounded-lg border bg-card p-4 sm:p-5">
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-              <div className="flex gap-3">
-                <CalendarDays className="mt-0.5 size-4" />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-semibold">Calendar</h2>
-                    <Badge variant="secondary">Optional</Badge>
-                  </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Google, Microsoft, CalDAV, Cal.com, and read-only shared
-                    calendars
-                  </p>
-                </div>
-              </div>
-              <Badge
-                variant={
-                  calendars.some(
-                    (integration) =>
-                      integration.enabled && integration.status === "failed",
-                  )
-                    ? "destructive"
-                    : "secondary"
+          {activePage === "email" ? (
+            <SettingSection
+              title="Email service"
+              description="Connect mailboxes so agents can read, draft, and send according to their permissions."
+            >
+              <SettingRow
+                title={email.configured ? "slab-email" : "Email service"}
+                description={
+                  email.configured
+                    ? `${email.accounts.length} mailboxes · ${email.assignments.length} agent profiles`
+                    : "No email service is connected yet."
                 }
               >
-                {
-                  calendars.filter(
-                    (integration) =>
-                      integration.enabled && integration.status === "connected",
-                  ).length
-                }{" "}
-                healthy
-              </Badge>
-            </div>
-            <div className="mt-4 grid gap-4 border-y py-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center">
-              <div className="min-w-0">
-                <span className="block text-xs text-muted-foreground">
-                  Providers
-                </span>
-                <strong className="block truncate capitalize">
-                  {calendars.length
-                    ? [
-                        ...new Set(
-                          calendars.map(({ provider }) =>
-                            provider.replace("calendar_", ""),
-                          ),
-                        ),
-                      ].join(", ")
-                    : "Not configured"}
-                </strong>
-              </div>
-              <div>
-                <span className="block text-xs text-muted-foreground">
-                  Accounts
-                </span>
-                <strong>{calendars.length}</strong>
-              </div>
-              <div>
-                <span className="block text-xs text-muted-foreground">
-                  Agent access
-                </span>
-                <strong>
-                  {
-                    new Set(
-                      calendars.flatMap((integration) =>
-                        Object.keys(integration.permissions),
-                      ),
-                    ).size
-                  }
-                </strong>
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (!configuredCalendarCallbackOrigin)
-                    setCalendarCallbackOrigin(window.location.origin);
-                  setCalendarOpen(true);
-                }}
-              >
-                <CalendarDays /> Configure calendar
-              </Button>
-            </div>
-            {calendars.length > 0 &&
-            calendars.every(
-              (integration) =>
-                Object.keys(integration.permissions).length === 0,
-            ) ? (
-              <div className="mt-4 flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm sm:flex-row sm:items-center sm:justify-between dark:border-amber-900 dark:bg-amber-950/30">
-                <div>
-                  <p className="font-semibold">No agent can use Calendar yet</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Assign at least one connected account. New permissions apply
-                    on the next run.
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (!configuredCalendarCallbackOrigin)
-                      setCalendarCallbackOrigin(window.location.origin);
-                    setCalendarOpen(true);
-                  }}
-                >
-                  Assign agent access
-                </Button>
-              </div>
-            ) : null}
-          </section>
-        </TabsContent>
-
-        <TabsContent value="memory">
-          <section className="max-w-4xl rounded-lg border bg-card p-4 sm:p-5">
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-              <div className="flex gap-3">
-                <BrainCircuit className="mt-0.5 size-4" />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-semibold">
-                      Persistent agent memory
-                    </h2>
-                    <Badge variant="secondary">Optional</Badge>
-                  </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Honcho remembers operator preferences and corrections across
-                    conversations. Work, Docs, Email, and integrations remain the
-                    sources of truth. Disabling recall does not delete data already
-                    stored by the provider.
-                  </p>
-                </div>
-              </div>
-              {settings.memoryProvider === "disabled" ? (
-                <Badge variant="outline">Disabled</Badge>
-              ) : (
-                <ConnectionBadge state={memoryState} />
-              )}
-            </div>
-
-            <div className="mt-4 grid gap-3 border-y py-4 sm:grid-cols-2">
-              <label className="grid gap-1.5 text-xs font-semibold">
-                Provider
-                <Select
-                  value={settings.memoryProvider}
-                  onValueChange={(value) => {
-                    if (value !== "disabled" && value !== "honcho") return;
-                    setSettings({ ...settings, memoryProvider: value });
-                    setMemoryState("idle");
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="disabled">Disabled</SelectItem>
-                    <SelectItem value="honcho">Honcho</SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
-              <label className="grid gap-1.5 text-xs font-semibold">
-                Workspace ID
-                <Input
-                  value={settings.honchoWorkspaceId}
-                  onChange={(event) =>
-                    setSettings({
-                      ...settings,
-                      honchoWorkspaceId: event.target.value,
-                    })
-                  }
-                  disabled={settings.memoryProvider === "disabled"}
-                />
-              </label>
-              <label className="grid gap-1.5 text-xs font-semibold sm:col-span-2">
-                Honcho URL
-                <Input
-                  value={settings.honchoUrl}
-                  onChange={(event) =>
-                    setSettings({ ...settings, honchoUrl: event.target.value })
-                  }
-                  type="url"
-                  disabled={settings.memoryProvider === "disabled"}
-                />
-              </label>
-              <label className="grid gap-1.5 text-xs font-semibold">
-                API key
-                <div className="relative">
-                  <Input
-                    value={honchoKey}
-                    onChange={(event) => setHonchoKey(event.target.value)}
-                    type="password"
-                    placeholder={
-                      settings.honchoApiKeyConfigured
-                        ? "Configured · enter to replace"
-                        : "Optional for unauthenticated self-hosting"
-                    }
-                    disabled={settings.memoryProvider === "disabled"}
-                  />
-                  <EyeOff className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                </div>
-              </label>
-              <label className="grid gap-1.5 text-xs font-semibold">
-                Maximum recalled context
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={settings.memoryMaxContextTokens}
-                    onChange={(event) =>
-                      setSettings({
-                        ...settings,
-                        memoryMaxContextTokens: Number(event.target.value),
-                      })
-                    }
-                    type="number"
-                    min={200}
-                    max={4000}
-                    disabled={settings.memoryProvider === "disabled"}
-                  />
-                  <span className="whitespace-nowrap text-xs text-muted-foreground">
-                    tokens
-                  </span>
-                </div>
-              </label>
-            </div>
-
-            <div className="mt-4 flex flex-col justify-between gap-3 text-xs text-muted-foreground sm:flex-row sm:items-center">
-              <p>
-                Only operator-authored chat messages are recorded. Raw tool
-                outputs and generated Work events are excluded.
-              </p>
-              <Button
-                variant="outline"
-                onClick={testMemory}
-                disabled={
-                  settings.memoryProvider === "disabled" ||
-                  memoryState === "testing"
-                }
-              >
-                {memoryState === "testing" ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <PlugZap />
-                )}
-                Test connection
-              </Button>
-            </div>
-          </section>
-        </TabsContent>
-
-        <TabsContent value="security">
-          <section className="max-w-3xl rounded-lg border bg-card p-4 sm:p-5">
-            <div className="flex gap-3">
-              <ShieldCheck className="mt-0.5 size-4 text-success" />
-              <div>
-                <h2 className="text-sm font-semibold">
-                  Server-side security boundary
-                </h2>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  The browser never receives MCP credentials. React talks only
-                  to Next route handlers; MCP clients and Runner requests
-                  execute in the Node.js runtime.
-                </p>
-              </div>
-            </div>
-            <dl className="mt-4 divide-y border-y text-sm">
-              {[
-                ["Workspace", "Single user · local"],
-                ["Work source", "Slab"],
-                ["Docs source", "Slab Docs"],
-                ["Agent runtime", "Configured per agent"],
-                ["Runner boundary", "127.0.0.1"],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="flex min-h-11 items-center justify-between gap-4"
-                >
-                  <dt className="text-muted-foreground">{label}</dt>
-                  <dd className="font-medium">{value}</dd>
-                </div>
-              ))}
-            </dl>
-            {auth.required && auth.configured ? (
-              <form
-                onSubmit={changePassword}
-                className="mt-5 grid gap-3 border-t pt-4 sm:grid-cols-3"
-              >
-                <label className="grid gap-1.5 text-xs font-semibold">
-                  Current password
-                  <Input
-                    type="password"
-                    autoComplete="current-password"
-                    value={currentPassword}
-                    onChange={(event) => setCurrentPassword(event.target.value)}
-                    required
-                  />
-                </label>
-                <label className="grid gap-1.5 text-xs font-semibold">
-                  New password
-                  <Input
-                    type="password"
-                    autoComplete="new-password"
-                    value={newPassword}
-                    onChange={(event) => setNewPassword(event.target.value)}
-                    minLength={12}
-                    required
-                  />
-                </label>
-                <label className="grid gap-1.5 text-xs font-semibold">
-                  Confirm password
-                  <Input
-                    type="password"
-                    autoComplete="new-password"
-                    value={confirmPassword}
-                    onChange={(event) => setConfirmPassword(event.target.value)}
-                    minLength={12}
-                    required
-                  />
-                </label>
-                <div className="sm:col-span-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <EmailConnectionBadge state={email} />
                   <Button
-                    type="submit"
                     variant="outline"
-                    disabled={passwordSaving}
+                    onClick={() => {
+                      setGmailCallbackUrl(
+                        `${window.location.origin}/api/integrations/email/google/callback`,
+                      );
+                      setEmailOpen(true);
+                    }}
                   >
-                    {passwordSaving ? (
-                      <LoaderCircle className="animate-spin" />
-                    ) : (
-                      <KeyRound />
-                    )}
-                    {passwordSaving ? "Changing…" : "Change password"}
+                    <Mail /> Manage email
                   </Button>
                 </div>
-              </form>
-            ) : null}
-          </section>
-        </TabsContent>
-      </Tabs>
+              </SettingRow>
+              {email.accounts.length > 0 && email.assignments.length === 0 ? (
+                <div className="flex flex-col gap-3 py-3.5 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold">No agent can use Email yet</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Assign a mailbox and permissions to an agent. The
+                      capability becomes available on that agent&apos;s next
+                      run.
+                    </p>
+                  </div>
+                  <Button variant="outline" onClick={() => setEmailOpen(true)}>
+                    Assign agent access
+                  </Button>
+                </div>
+              ) : null}
+            </SettingSection>
+          ) : null}
+
+          {activePage === "notifications" ? (
+            <OperatorNotificationsSettings
+              initialState={initialNotifications}
+              accounts={email.accounts}
+            />
+          ) : null}
+
+          {activePage === "calendar" ? (
+            <SettingSection
+              title="Calendar"
+              description="Google, Microsoft, CalDAV, Cal.com, and read-only shared calendars."
+            >
+              <SettingRow
+                title={
+                  calendars.length ? "Calendar accounts" : "Calendar service"
+                }
+                description={
+                  calendars.length
+                    ? `${calendars.length} accounts · ${
+                        new Set(
+                          calendars.flatMap((integration) =>
+                            Object.keys(integration.permissions),
+                          ),
+                        ).size
+                      } agents with access`
+                    : "No calendar provider is connected yet."
+                }
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Badge
+                    variant={
+                      calendars.some(
+                        (integration) =>
+                          integration.enabled &&
+                          integration.status === "failed",
+                      )
+                        ? "destructive"
+                        : "secondary"
+                    }
+                  >
+                    {
+                      calendars.filter(
+                        (integration) =>
+                          integration.enabled &&
+                          integration.status === "connected",
+                      ).length
+                    }{" "}
+                    healthy
+                  </Badge>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (!configuredCalendarCallbackOrigin)
+                        setCalendarCallbackOrigin(window.location.origin);
+                      setCalendarOpen(true);
+                    }}
+                  >
+                    <CalendarDays /> Manage calendar
+                  </Button>
+                </div>
+              </SettingRow>
+              {calendars.length > 0 &&
+              calendars.every(
+                (integration) =>
+                  Object.keys(integration.permissions).length === 0,
+              ) ? (
+                <div className="flex flex-col gap-3 py-3.5 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold">
+                      No agent can use Calendar yet
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Assign at least one connected account. New permissions
+                      apply on the next run.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (!configuredCalendarCallbackOrigin)
+                        setCalendarCallbackOrigin(window.location.origin);
+                      setCalendarOpen(true);
+                    }}
+                  >
+                    Assign agent access
+                  </Button>
+                </div>
+              ) : null}
+            </SettingSection>
+          ) : null}
+
+          {activePage === "memory" ? (
+            <SettingSection
+              title="Persistent agent memory"
+              description="Optional recall for operator preferences and corrections. Work, Docs, and integrations remain sources of truth."
+            >
+              <SettingRow
+                title="Memory provider"
+                description="Disabling recall does not delete data already stored by the provider."
+              >
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={settings.memoryProvider}
+                    onValueChange={(value) => {
+                      if (value !== "disabled" && value !== "honcho") return;
+                      setSettings({ ...settings, memoryProvider: value });
+                      setMemoryState("idle");
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="disabled">Disabled</SelectItem>
+                      <SelectItem value="honcho">Honcho</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {settings.memoryProvider === "disabled" ? (
+                    <Badge variant="outline">Disabled</Badge>
+                  ) : (
+                    <ConnectionBadge state={memoryState} />
+                  )}
+                </div>
+              </SettingRow>
+              <SettingRow
+                title="Honcho connection"
+                description="Server-side connection used to store and recall memories."
+              >
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="grid gap-1.5 text-xs font-semibold">
+                    Workspace ID
+                    <Input
+                      value={settings.honchoWorkspaceId}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          honchoWorkspaceId: event.target.value,
+                        })
+                      }
+                      disabled={settings.memoryProvider === "disabled"}
+                    />
+                  </label>
+                  <label className="grid gap-1.5 text-xs font-semibold">
+                    Maximum recalled context
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={settings.memoryMaxContextTokens}
+                        onChange={(event) =>
+                          setSettings({
+                            ...settings,
+                            memoryMaxContextTokens: Number(event.target.value),
+                          })
+                        }
+                        type="number"
+                        min={200}
+                        max={4000}
+                        disabled={settings.memoryProvider === "disabled"}
+                      />
+                      <span className="whitespace-nowrap text-xs text-muted-foreground">
+                        tokens
+                      </span>
+                    </div>
+                  </label>
+                  <label className="grid gap-1.5 text-xs font-semibold sm:col-span-2">
+                    Honcho URL
+                    <Input
+                      value={settings.honchoUrl}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          honchoUrl: event.target.value,
+                        })
+                      }
+                      type="url"
+                      disabled={settings.memoryProvider === "disabled"}
+                    />
+                  </label>
+                  <label className="grid gap-1.5 text-xs font-semibold sm:col-span-2">
+                    API key
+                    <div className="relative">
+                      <Input
+                        value={honchoKey}
+                        onChange={(event) => setHonchoKey(event.target.value)}
+                        type="password"
+                        placeholder={
+                          settings.honchoApiKeyConfigured
+                            ? "Configured · enter to replace"
+                            : "Optional for unauthenticated self-hosting"
+                        }
+                        disabled={settings.memoryProvider === "disabled"}
+                      />
+                      <EyeOff className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                    </div>
+                  </label>
+                </div>
+              </SettingRow>
+              <SettingRow
+                title="Connection test"
+                description="Only operator-authored chat messages are recorded; raw tool output is excluded."
+              >
+                <Button
+                  variant="outline"
+                  onClick={testMemory}
+                  disabled={
+                    settings.memoryProvider === "disabled" ||
+                    memoryState === "testing"
+                  }
+                >
+                  {memoryState === "testing" ? (
+                    <LoaderCircle className="animate-spin" />
+                  ) : (
+                    <PlugZap />
+                  )}
+                  Test connection
+                </Button>
+              </SettingRow>
+            </SettingSection>
+          ) : null}
+
+          {activePage === "security" ? (
+            <div className="space-y-7">
+              <SettingSection
+                title="Security boundary"
+                description={
+                  auth.required
+                    ? "Credentials remain server-side. The browser communicates only with password-protected Slab route handlers."
+                    : "Credentials remain server-side. Browser access is not password protected in this deployment."
+                }
+              >
+                <SettingRow
+                  title="Workspace boundary"
+                  description="MCP clients and Runner requests execute in the Node.js runtime."
+                >
+                  <ShieldCheck className="size-5 text-muted-foreground" />
+                </SettingRow>
+              </SettingSection>
+              <SettingSection title="Environment">
+                <div className="py-1">
+                  <dl className="divide-y text-sm">
+                    {[
+                      [
+                        "Workspace",
+                        auth.required
+                          ? "Single user · password protected"
+                          : "Single user · authentication disabled",
+                      ],
+                      ["Work source", "Slab"],
+                      ["Docs source", "Slab Docs"],
+                      ["Agent runtime", "Configured per agent"],
+                      ["Runner boundary", connectionLabel(settings.runnerUrl)],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="flex min-h-11 items-center justify-between gap-4"
+                      >
+                        <dt className="text-muted-foreground">{label}</dt>
+                        <dd className="font-medium">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              </SettingSection>
+              {auth.required && auth.configured ? (
+                <SettingSection
+                  title="Operator password"
+                  description="Changing the password signs out the current session."
+                >
+                  <form
+                    onSubmit={changePassword}
+                    className="grid gap-3 py-4 sm:grid-cols-3"
+                  >
+                    <label className="grid gap-1.5 text-xs font-semibold">
+                      Current password
+                      <Input
+                        type="password"
+                        autoComplete="current-password"
+                        value={currentPassword}
+                        onChange={(event) =>
+                          setCurrentPassword(event.target.value)
+                        }
+                        required
+                      />
+                    </label>
+                    <label className="grid gap-1.5 text-xs font-semibold">
+                      New password
+                      <Input
+                        type="password"
+                        autoComplete="new-password"
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
+                        minLength={12}
+                        required
+                      />
+                    </label>
+                    <label className="grid gap-1.5 text-xs font-semibold">
+                      Confirm password
+                      <Input
+                        type="password"
+                        autoComplete="new-password"
+                        value={confirmPassword}
+                        onChange={(event) =>
+                          setConfirmPassword(event.target.value)
+                        }
+                        minLength={12}
+                        required
+                      />
+                    </label>
+                    <div className="sm:col-span-3">
+                      <Button
+                        type="submit"
+                        variant="outline"
+                        disabled={passwordSaving}
+                      >
+                        {passwordSaving ? (
+                          <LoaderCircle className="animate-spin" />
+                        ) : (
+                          <KeyRound />
+                        )}
+                        {passwordSaving ? "Changing…" : "Change password"}
+                      </Button>
+                    </div>
+                  </form>
+                </SettingSection>
+              ) : null}
+            </div>
+          ) : null}
+        </main>
+      </div>
+      {hasUnsavedChanges &&
+      activePage !== "budgets" &&
+      activePage !== "notifications" ? (
+        <div className="sticky bottom-4 z-20 mt-6 flex justify-center">
+          <div className="flex w-full max-w-xl items-center justify-between gap-3 rounded-lg border bg-primary px-3 py-2 text-primary-foreground shadow-lg">
+            <span className="text-sm font-medium">Unsaved changes</span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
+                onClick={() => {
+                  setSettings(savedSettings);
+                  setWorkKey("");
+                  setDocsKey("");
+                  setHonchoKey("");
+                }}
+              >
+                Discard
+              </Button>
+              <Button variant="signal" onClick={save} disabled={saving}>
+                {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
+                Save changes
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <EmailIntegrationEditor
         open={emailOpen}
         initialState={email}
@@ -793,7 +981,10 @@ export function SettingsView({
           "/google/callback",
           "/microsoft/callback",
         )}
-        onOpenChange={setEmailOpen}
+        onOpenChange={(next) => {
+          setEmailOpen(next);
+          if (!next) clearCallbackResult("email");
+        }}
         onUpdated={setEmail}
       />
       <CalendarIntegrationEditor
@@ -806,12 +997,69 @@ export function SettingsView({
           setCalendarOpen(next);
           if (!next && calendarResult) {
             setCalendarResult(null);
-            router.replace("/settings?tab=calendar", { scroll: false });
+            clearCallbackResult("calendar");
           }
         }}
         onUpdated={setCalendars}
       />
     </>
+  );
+}
+
+function SettingsNavigation({
+  activePage,
+  hasWorkspaceChanges,
+  onNavigate,
+}: {
+  activePage: SettingsPage;
+  hasWorkspaceChanges: boolean;
+  onNavigate: (page: SettingsPage) => void;
+}) {
+  return (
+    <nav
+      aria-label="Settings sections"
+      className="-mx-1 flex w-full min-w-0 max-w-full gap-1 overflow-x-auto px-1 pb-2 lg:sticky lg:top-4 lg:mx-0 lg:block lg:overflow-visible lg:px-0 lg:pb-0"
+    >
+      {SETTINGS_GROUPS.map((group) => (
+        <div key={group.label} className="shrink-0 lg:mb-5">
+          <p className="mb-1.5 hidden px-2 font-mono text-[0.65rem] font-medium uppercase tracking-[0.04em] text-muted-foreground lg:block">
+            {group.label}
+          </p>
+          <div className="flex gap-1 lg:block lg:space-y-0.5">
+            {group.pages.map(({ page, icon: Icon }) => {
+              const active = activePage === page;
+              return (
+                <button
+                  key={page}
+                  type="button"
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => onNavigate(page)}
+                  className={cn(
+                    "flex h-8 w-full items-center gap-2 whitespace-nowrap rounded-md px-2.5 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    active
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <Icon className="size-3.5" />
+                  {SETTINGS_PAGES[page].label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      {hasWorkspaceChanges ? (
+        <button
+          type="button"
+          onClick={() => onNavigate("connections")}
+          className="flex shrink-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground lg:w-full"
+        >
+          <span className="size-1.5 rounded-full bg-accent" />
+          Unsaved workspace changes
+        </button>
+      ) : null}
+    </nav>
   );
 }
 
@@ -826,6 +1074,8 @@ function ConnectionPanel({
   setSecret,
   configured,
   onTest,
+  open,
+  onOpenChange,
 }: {
   title: string;
   description: string;
@@ -837,59 +1087,82 @@ function ConnectionPanel({
   setSecret: (value: string) => void;
   configured: boolean;
   onTest: () => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <section className="rounded-lg border bg-card p-4 sm:p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex gap-3">
-          <Icon className="mt-0.5 size-4" />
-          <div>
-            <h2 className="text-sm font-semibold">{title}</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {description}
-            </p>
+    <SettingRow title={title} description={description}>
+      <div className="space-y-3">
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 max-w-full items-center gap-2">
+            <Icon className="size-4 shrink-0 text-muted-foreground" />
+            <ConnectionBadge state={state} />
+            <span className="truncate font-mono text-xs text-muted-foreground">
+              {connectionLabel(url)}
+            </span>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 sm:ml-0"
+            onClick={() => onOpenChange(!open)}
+            aria-expanded={open}
+          >
+            Manage <ChevronRight className={cn(open && "rotate-90")} />
+          </Button>
         </div>
-        <ConnectionBadge state={state} />
-      </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(14rem,.7fr)_auto] md:items-end">
-        <label className="grid gap-1.5 text-xs font-semibold">
-          MCP URL
-          <Input
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            type="url"
-          />
-        </label>
-        <label className="grid gap-1.5 text-xs font-semibold">
-          API key
-          <div className="relative">
-            <Input
-              value={secret}
-              onChange={(event) => setSecret(event.target.value)}
-              type="password"
-              placeholder={
-                configured ? "Configured · enter to replace" : "Enter API key"
-              }
-            />
-            <EyeOff className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        {open ? (
+          <div className="grid gap-3 rounded-md bg-muted p-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,.7fr)_auto] md:items-end">
+            <label className="grid gap-1.5 text-xs font-semibold">
+              MCP endpoint
+              <Input
+                value={url}
+                onChange={(event) => setUrl(event.target.value)}
+                type="url"
+              />
+            </label>
+            <label className="grid gap-1.5 text-xs font-semibold">
+              Credential
+              <div className="relative">
+                <Input
+                  value={secret}
+                  onChange={(event) => setSecret(event.target.value)}
+                  type="password"
+                  placeholder={
+                    configured
+                      ? "Configured · enter to replace"
+                      : "Enter API key"
+                  }
+                />
+                <EyeOff className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              </div>
+            </label>
+            <Button
+              variant="outline"
+              onClick={onTest}
+              disabled={state === "testing"}
+            >
+              {state === "testing" ? (
+                <LoaderCircle className="animate-spin" />
+              ) : (
+                <PlugZap />
+              )}
+              Test
+            </Button>
           </div>
-        </label>
-        <Button
-          variant="outline"
-          onClick={onTest}
-          disabled={state === "testing"}
-        >
-          {state === "testing" ? (
-            <LoaderCircle className="animate-spin" />
-          ) : (
-            <PlugZap />
-          )}{" "}
-          Test
-        </Button>
+        ) : null}
       </div>
-    </section>
+    </SettingRow>
   );
+}
+
+function connectionLabel(value: string) {
+  try {
+    const url = new URL(value);
+    return `${url.hostname}${url.port ? `:${url.port}` : ""}`;
+  } catch {
+    return value || "Not configured";
+  }
 }
 
 function EmailConnectionBadge({ state }: { state: EmailIntegrationState }) {

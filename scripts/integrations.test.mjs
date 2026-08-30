@@ -17,9 +17,8 @@ test("Integrations stays focused on external tools while Email is an optional Se
   assert.match(source, /Datacenter/);
   assert.match(source, /Agent tool access/);
   assert.doesNotMatch(source, /EmailIntegrationEditor|EmailActiveCard/);
-  assert.match(settings, /Email/);
-  assert.match(settings, /Optional/);
-  assert.match(settings, /Configure email/);
+  assert.match(settings, /page: "email"/);
+  assert.match(settings, /Manage email/);
   assert.match(emailEditor, /Email service/);
   assert.match(emailEditor, /Proton Bridge/);
   assert.match(emailEditor, /Managed Proton Bridge/);
@@ -82,16 +81,31 @@ test("Integrations stays focused on external tools while Email is an optional Se
   );
 });
 
+test("notification settings retain scoped token audit metadata", async () => {
+  const notifications = await read(
+    "components/operator-notifications-settings.tsx",
+  );
+
+  assert.match(notifications, /state\.tokenPrefix/);
+  assert.match(notifications, /scoped token/);
+});
+
 test("managed Proton Bridge stays behind the Next.js server boundary", async () => {
-  const [client, service, connectRoute, challengeRoute, abortRoute, addressesRoute] =
-    await Promise.all([
-      read("lib/integrations/email-client.ts"),
-      read("lib/integrations/email-service.ts"),
-      read("app/api/integrations/email/proton/route.ts"),
-      read("app/api/integrations/email/proton/challenge/route.ts"),
-      read("app/api/integrations/email/proton/abort/route.ts"),
-      read("app/api/integrations/email/proton/addresses/route.ts"),
-    ]);
+  const [
+    client,
+    service,
+    connectRoute,
+    challengeRoute,
+    abortRoute,
+    addressesRoute,
+  ] = await Promise.all([
+    read("lib/integrations/email-client.ts"),
+    read("lib/integrations/email-service.ts"),
+    read("app/api/integrations/email/proton/route.ts"),
+    read("app/api/integrations/email/proton/challenge/route.ts"),
+    read("app/api/integrations/email/proton/abort/route.ts"),
+    read("app/api/integrations/email/proton/addresses/route.ts"),
+  ]);
   assert.match(client, /import "server-only"/);
   assert.match(client, /\/api\/proton-bridge\/connect/);
   assert.match(client, /\/api\/proton-bridge\/challenge/);
@@ -105,7 +119,12 @@ test("managed Proton Bridge stays behind the Next.js server boundary", async () 
   assert.match(challengeRoute, /continueManagedProtonBridge/);
   assert.match(abortRoute, /abortManagedProtonBridge/);
   assert.match(addressesRoute, /syncManagedProtonBridgeAddresses/);
-  for (const source of [connectRoute, challengeRoute, abortRoute, addressesRoute]) {
+  for (const source of [
+    connectRoute,
+    challengeRoute,
+    abortRoute,
+    addressesRoute,
+  ]) {
     assert.doesNotMatch(source, /process\.env/);
     assert.doesNotMatch(source, /SLAB_EMAIL_ADMIN_KEY/);
   }

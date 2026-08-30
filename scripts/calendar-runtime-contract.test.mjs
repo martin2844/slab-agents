@@ -91,8 +91,8 @@ test("Calendar is managed in Settings and assignable from Agent capabilities", a
     read("components/agent-detail.tsx"),
   ]);
 
-  assert.match(settings, /TabsTrigger value="calendar"/);
-  assert.match(settings, /Configure calendar/);
+  assert.match(settings, /page: "calendar"/);
+  assert.match(settings, /Manage calendar/);
   assert.match(editor, /Google Calendar/);
   assert.match(editor, /Microsoft 365/);
   assert.match(editor, /CalDAV/);

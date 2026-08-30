@@ -45,10 +45,11 @@ test("Docs and Sources live in Context while service setup lives in Connections"
   assert.match(sourcesView, /WordPress/);
   assert.match(sourcesView, /GitHub repository/);
   assert.match(sourcesView, /Website \/ sitemap/);
-  assert.match(settings, /TabsTrigger value="connections">Connections/);
-  assert.match(settings, /TabsContent value="connections"/);
-  assert.match(settingsPage, /query\.tab === "security"/);
-  assert.match(settingsPage, /: "connections"/);
+  assert.match(settings, /SettingsNavigation/);
+  assert.match(settings, /navigation\.initialTab === initialTab/);
+  assert.match(settings, /activePage === "connections"/);
+  assert.match(settings, /title="Workspace sources"/);
+  assert.match(settingsPage, /parseSettingsPage/);
   assert.match(guide, /Settings → Connections/);
   assert.doesNotMatch(guide, /Settings → Sources/);
 });

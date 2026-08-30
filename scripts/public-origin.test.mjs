@@ -97,5 +97,5 @@ test("calendar OAuth uses the configured public origin for authorization and cal
   assert.match(editor, /saved\.status === "connected"/);
   const settingsView = await read("components/settings-view.tsx");
   assert.match(settingsView, /setCalendarResult\(null\)/);
-  assert.match(settingsView, /router\.replace\("\/settings\?tab=calendar"/);
+  assert.match(settingsView, /clearCallbackResult\("calendar"\)/);
 });
