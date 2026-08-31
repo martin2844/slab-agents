@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, Plus, Save, Trash2 } from "lucide-react";
+import { ChevronRight, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import type {
   Agent,
   BudgetConfiguration,
   RuntimeCatalogItem,
+  RuntimeModelPrice,
 } from "@/lib/types";
 
 type WorkspaceDraft = Record<
@@ -40,6 +41,8 @@ type BudgetDraft = {
 };
 
 const value = (input: number | null) => (input === null ? "" : String(input));
+const priceKey = (runtimeId: string, model: string) =>
+  `${runtimeId}\u0000${model}`;
 
 function draftFromConfiguration(
   configuration: BudgetConfiguration,
@@ -142,6 +145,40 @@ export function BudgetSettings({
     }));
   }
 
+  function overrideDefault(price: RuntimeModelPrice) {
+    const key = priceKey(price.runtimeId, price.model);
+    setDraft((current) => {
+      if (
+        current.prices.some(
+          (candidate) => priceKey(candidate.runtimeId, candidate.model) === key,
+        )
+      ) {
+        return current;
+      }
+      return {
+        ...current,
+        prices: [
+          ...current.prices,
+          {
+            clientId: `default:${price.runtimeId}:${price.model}`,
+            runtimeId: price.runtimeId,
+            model: price.model,
+            inputUsdPerMillion: String(price.inputUsdPerMillion),
+            cachedInputUsdPerMillion: String(price.cachedInputUsdPerMillion),
+            outputUsdPerMillion: String(price.outputUsdPerMillion),
+          },
+        ],
+      };
+    });
+  }
+
+  function removePrice(clientId: string) {
+    setDraft((current) => ({
+      ...current,
+      prices: current.prices.filter((price) => price.clientId !== clientId),
+    }));
+  }
+
   async function save() {
     setBusy(true);
     try {
@@ -217,6 +254,20 @@ export function BudgetSettings({
   const dirty =
     JSON.stringify(draft) !==
     JSON.stringify(draftFromConfiguration(configuration));
+  const overrideByPrice = new Map(
+    draft.prices.map((price) => [
+      priceKey(price.runtimeId, price.model),
+      price,
+    ]),
+  );
+  const bundledPriceKeys = new Set(
+    configuration.defaultPrices.map((price) =>
+      priceKey(price.runtimeId, price.model),
+    ),
+  );
+  const customPrices = draft.prices.filter(
+    (price) => !bundledPriceKeys.has(priceKey(price.runtimeId, price.model)),
+  );
 
   return (
     <div className="space-y-7">
@@ -298,21 +349,67 @@ export function BudgetSettings({
 
       <SettingSection
         title="Advanced runtime configuration"
-        description="Optional model prices for providers that do not report native cost."
+        description="Default estimates for API-billed models, with local operator overrides."
       >
         <SettingRow
-          title="Operator pricing catalog"
-          description="Codex subscription runs never receive an invented dollar cost."
+          title="Model pricing catalog"
+          description="Provider-reported cost wins. Bundled defaults apply only to API-billed models; explicit operator overrides may price anything else."
           layout="wide"
         >
           <details className="group rounded-md bg-muted px-3">
             <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between text-xs font-semibold [&::-webkit-details-marker]:hidden">
-              {draft.prices.length} configured price
+              {configuration.defaultPrices.length} defaults ·{" "}
+              {draft.prices.length} operator override
               {draft.prices.length === 1 ? "" : "s"}
               <ChevronRight className="ml-auto size-3.5 transition-transform group-open:rotate-90" />
             </summary>
-            <div className="border-t pb-3">
-              <div className="flex justify-end py-3">
+            <div className="space-y-5 border-t pb-3 pt-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Bundled API defaults</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                    {configuration.pricingCatalog.name} snapshot ·{" "}
+                    {configuration.pricingCatalog.snapshotDate}. Rates are USD
+                    per 1M tokens.
+                  </p>
+                </div>
+                <a
+                  className="text-xs font-semibold text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  href={configuration.pricingCatalog.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View source
+                </a>
+              </div>
+
+              <div className="space-y-2">
+                {configuration.defaultPrices.map((price) => {
+                  const override = overrideByPrice.get(
+                    priceKey(price.runtimeId, price.model),
+                  );
+                  return (
+                    <DefaultPriceRow
+                      key={priceKey(price.runtimeId, price.model)}
+                      price={price}
+                      override={override}
+                      onOverride={() => overrideDefault(price)}
+                      onChange={priceField}
+                      onReset={() => {
+                        if (override) removePrice(override.clientId);
+                      }}
+                    />
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-between gap-3 border-t pt-4">
+                <div>
+                  <p className="text-sm font-semibold">Custom overrides</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Add private models or replace a provider default.
+                  </p>
+                </div>
                 <Button
                   size="sm"
                   variant="outline"
@@ -323,7 +420,9 @@ export function BudgetSettings({
                         ...current.prices,
                         {
                           clientId: `new:${Date.now()}:${current.prices.length}`,
-                          runtimeId: runtimes[0]?.id ?? "codex",
+                          runtimeId:
+                            runtimes.find(({ id }) => id === "direct_api")
+                              ?.id ?? "direct_api",
                           model: "default",
                           inputUsdPerMillion: "0",
                           cachedInputUsdPerMillion: "0",
@@ -337,7 +436,7 @@ export function BudgetSettings({
                 </Button>
               </div>
               <div className="space-y-2">
-                {draft.prices.map((price) => (
+                {customPrices.map((price) => (
                   <div
                     key={price.clientId}
                     className="grid gap-2 rounded-md border bg-card p-3 md:grid-cols-[9rem_1fr_repeat(3,9rem)_auto] md:items-end"
@@ -387,19 +486,17 @@ export function BudgetSettings({
                       size="icon-sm"
                       variant="ghost"
                       aria-label="Remove price"
-                      onClick={() =>
-                        setDraft((current) => ({
-                          ...current,
-                          prices: current.prices.filter(
-                            (item) => item.clientId !== price.clientId,
-                          ),
-                        }))
-                      }
+                      onClick={() => removePrice(price.clientId)}
                     >
                       <Trash2 />
                     </Button>
                   </div>
                 ))}
+                {customPrices.length === 0 ? (
+                  <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+                    No custom model prices.
+                  </p>
+                ) : null}
               </div>
             </div>
           </details>
@@ -425,6 +522,98 @@ export function BudgetSettings({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function DefaultPriceRow({
+  price,
+  override,
+  onOverride,
+  onChange,
+  onReset,
+}: {
+  price: RuntimeModelPrice;
+  override: PriceDraft | undefined;
+  onOverride: () => void;
+  onChange: (
+    clientId: string,
+    field: Exclude<keyof PriceDraft, "clientId">,
+    value: string,
+  ) => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="grid gap-2 rounded-md border bg-card p-3 md:grid-cols-[9rem_1fr_repeat(3,9rem)_auto] md:items-end">
+      <div className="grid gap-1 text-xs font-semibold">
+        Runtime
+        <span className="flex h-9 items-center font-mono font-normal">
+          {price.runtimeId}
+        </span>
+      </div>
+      <div className="grid gap-1 text-xs font-semibold">
+        Model
+        <span className="flex h-9 items-center font-mono font-normal">
+          {price.model}
+        </span>
+      </div>
+      {override ? (
+        <>
+          <BudgetInput
+            label="Input / 1M"
+            value={override.inputUsdPerMillion}
+            onChange={(value) =>
+              onChange(override.clientId, "inputUsdPerMillion", value)
+            }
+          />
+          <BudgetInput
+            label="Cached / 1M"
+            value={override.cachedInputUsdPerMillion}
+            onChange={(value) =>
+              onChange(override.clientId, "cachedInputUsdPerMillion", value)
+            }
+          />
+          <BudgetInput
+            label="Output / 1M"
+            value={override.outputUsdPerMillion}
+            onChange={(value) =>
+              onChange(override.clientId, "outputUsdPerMillion", value)
+            }
+          />
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label={`Reset ${price.model} to bundled pricing`}
+            title="Reset to bundled pricing"
+            onClick={onReset}
+          >
+            <RotateCcw />
+          </Button>
+        </>
+      ) : (
+        <>
+          <DefaultRate label="Input / 1M" value={price.inputUsdPerMillion} />
+          <DefaultRate
+            label="Cached / 1M"
+            value={price.cachedInputUsdPerMillion}
+          />
+          <DefaultRate label="Output / 1M" value={price.outputUsdPerMillion} />
+          <Button size="xs" variant="ghost" onClick={onOverride}>
+            Override
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function DefaultRate({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="grid gap-1 text-xs font-semibold">
+      {label}
+      <span className="flex h-9 items-center font-mono font-normal">
+        ${value}
+      </span>
     </div>
   );
 }

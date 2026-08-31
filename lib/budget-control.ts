@@ -2,6 +2,11 @@ import "server-only";
 
 import { withImmediateTransaction } from "@/lib/db/transaction";
 import {
+  defaultPricingCatalog,
+  findDefaultModelPrice,
+  listDefaultModelPrices,
+} from "@/lib/default-model-pricing";
+import {
   budgetRepository,
   type BudgetReservationRecord,
 } from "@/lib/repositories/budget-repository";
@@ -60,6 +65,25 @@ function usdToMicro(value: NullableNumber): NullableNumber {
 
 function microToUsd(value: NullableNumber): NullableNumber {
   return value === null ? null : value / MICRO_USD;
+}
+
+function priceToRecord(price: RuntimeModelPrice) {
+  return {
+    runtimeId: price.runtimeId,
+    model: price.model,
+    version: price.version,
+    inputMicroUsdPerMillion: usdToMicro(price.inputUsdPerMillion) ?? 0,
+    cachedInputMicroUsdPerMillion:
+      usdToMicro(price.cachedInputUsdPerMillion) ?? 0,
+    outputMicroUsdPerMillion: usdToMicro(price.outputUsdPerMillion) ?? 0,
+  };
+}
+
+function resolveRuntimePrice(runtimeId: string, model: string) {
+  const override = budgetRepository.findRuntimePrice(runtimeId, model);
+  if (override) return override;
+  const defaultPrice = findDefaultModelPrice(runtimeId, model);
+  return defaultPrice ? priceToRecord(defaultPrice) : null;
 }
 
 function positiveOrNull(value: NullableNumber, field: string) {
@@ -193,6 +217,8 @@ export function getBudgetConfiguration(): BudgetConfiguration {
         microToUsd(price.cachedInputMicroUsdPerMillion) ?? 0,
       outputUsdPerMillion: microToUsd(price.outputMicroUsdPerMillion) ?? 0,
     })),
+    defaultPrices: listDefaultModelPrices(),
+    pricingCatalog: defaultPricingCatalog,
   };
 }
 
@@ -365,7 +391,7 @@ export function admitRunBudget(
       workspace.maxCostMicroUsdPerRun,
       agentPolicy?.maxCostMicroUsdPerRun ?? null,
     );
-    const price = budgetRepository.findRuntimePrice(run.runtime, run.model);
+    const price = resolveRuntimePrice(run.runtime, run.model);
     let reason: string | null = null;
     const hasEnforceableProviderCost =
       isRuntimeId(run.runtime) &&

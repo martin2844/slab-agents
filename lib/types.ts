@@ -544,10 +544,22 @@ export type RuntimeModelPrice = {
   outputUsdPerMillion: number;
 };
 
+export type RuntimePricingCatalog = {
+  id: string;
+  name: string;
+  version: number;
+  snapshotDate: string;
+  snapshotCommit: string;
+  sourceUrl: string;
+};
+
 export type BudgetConfiguration = {
   workspace: BudgetPolicy;
   agents: AgentBudgetPolicy[];
+  /** Operator-managed overrides. Defaults remain immutable application data. */
   prices: RuntimeModelPrice[];
+  defaultPrices: RuntimeModelPrice[];
+  pricingCatalog: RuntimePricingCatalog;
 };
 
 export type SystemUpdateChannel = "stable" | "candidate";

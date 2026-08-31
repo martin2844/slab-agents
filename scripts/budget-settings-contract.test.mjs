@@ -16,6 +16,10 @@ test("budget settings preserve editable drafts and stable pricing row identity",
     source,
     /key=\{`\$\{price\.runtimeId\}:\$\{price\.model\}/,
   );
+  assert.match(source, /Bundled API defaults/);
+  assert.match(source, /configuration\.pricingCatalog\.name/);
+  assert.match(source, /Reset .* to bundled pricing/);
+  assert.match(source, /configuration\.defaultPrices/);
 });
 
 test("Run Detail distinguishes budget policy skips from stale Work triggers", async () => {
