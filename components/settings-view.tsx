@@ -1,14 +1,11 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Check,
-  BrainCircuit,
-  BellRing,
   CalendarDays,
   ChevronRight,
-  CircleDollarSign,
   EyeOff,
   LoaderCircle,
   KeyRound,
@@ -17,8 +14,6 @@ import {
   Save,
   Server,
   ShieldCheck,
-  TerminalSquare,
-  UserRound,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -106,37 +101,16 @@ const SETTINGS_PAGES: Record<
   },
 };
 
-const SETTINGS_GROUPS: Array<{
-  label: string;
-  pages: Array<{ page: SettingsPage; icon: typeof Server }>;
-}> = [
-  {
-    label: "Workspace",
-    pages: [
-      { page: "connections", icon: PlugZap },
-      { page: "operator", icon: UserRound },
-    ],
-  },
-  {
-    label: "Agents & runtime",
-    pages: [
-      { page: "runtime", icon: TerminalSquare },
-      { page: "budgets", icon: CircleDollarSign },
-      { page: "memory", icon: BrainCircuit },
-    ],
-  },
-  {
-    label: "Communication",
-    pages: [
-      { page: "email", icon: Mail },
-      { page: "notifications", icon: BellRing },
-      { page: "calendar", icon: CalendarDays },
-    ],
-  },
-  {
-    label: "Access",
-    pages: [{ page: "security", icon: ShieldCheck }],
-  },
+const SETTINGS_NAVIGATION: Array<{ page: SettingsPage }> = [
+  { page: "connections" },
+  { page: "operator" },
+  { page: "runtime" },
+  { page: "budgets" },
+  { page: "memory" },
+  { page: "email" },
+  { page: "notifications" },
+  { page: "calendar" },
+  { page: "security" },
 ];
 
 function editableWorkspaceSettings(settings: WorkspaceSettings) {
@@ -390,13 +364,13 @@ export function SettingsView({
         title="Settings"
         description="Manage how Slab operates. Configuration and credentials stay server-side."
       />
-      <div className="grid min-w-0 gap-7 lg:grid-cols-[11.5rem_minmax(0,1fr)] lg:items-start">
+      <div className="min-w-0">
         <SettingsNavigation
           activePage={activePage}
           hasWorkspaceChanges={hasUnsavedChanges}
           onNavigate={navigate}
         />
-        <main className="min-w-0">
+        <main className="min-w-0 pt-6">
           <div className="mb-5">
             <h2 className="text-xl font-semibold tracking-[-0.025em]">
               {page.label}
@@ -1015,51 +989,80 @@ function SettingsNavigation({
   hasWorkspaceChanges: boolean;
   onNavigate: (page: SettingsPage) => void;
 }) {
+  const scrollerRef = useRef<HTMLElement>(null);
+  const activeTabRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    const activeTab = activeTabRef.current;
+    if (!scroller || !activeTab) return;
+
+    const keepActiveTabVisible = () => {
+      const tabStart = activeTab.offsetLeft;
+      const tabEnd = tabStart + activeTab.offsetWidth;
+      const visibleStart = scroller.scrollLeft;
+      const visibleEnd = visibleStart + scroller.clientWidth;
+
+      if (tabStart < visibleStart) {
+        scroller.scrollTo({ left: tabStart });
+      } else if (tabEnd > visibleEnd) {
+        scroller.scrollTo({ left: tabEnd - scroller.clientWidth });
+      }
+    };
+
+    keepActiveTabVisible();
+    const resizeObserver = new ResizeObserver(keepActiveTabVisible);
+    resizeObserver.observe(scroller);
+    return () => resizeObserver.disconnect();
+  }, [activePage, hasWorkspaceChanges]);
+
   return (
-    <nav
-      aria-label="Settings sections"
-      className="-mx-1 flex w-full min-w-0 max-w-full gap-1 overflow-x-auto px-1 pb-2 lg:sticky lg:top-4 lg:mx-0 lg:block lg:overflow-visible lg:px-0 lg:pb-0"
-    >
-      {SETTINGS_GROUPS.map((group) => (
-        <div key={group.label} className="shrink-0 lg:mb-5">
-          <p className="mb-1.5 hidden px-2 font-mono text-[0.65rem] font-medium uppercase tracking-[0.04em] text-muted-foreground lg:block">
-            {group.label}
-          </p>
-          <div className="flex gap-1 lg:block lg:space-y-0.5">
-            {group.pages.map(({ page, icon: Icon }) => {
+    <div className="sticky top-16 z-20 -mt-5 bg-background/95 backdrop-blur-sm lg:top-0">
+      <div className="flex min-w-0 items-end border-b">
+        <nav
+          ref={scrollerRef}
+          aria-label="Settings sections"
+          className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          <div className="flex min-w-max gap-6">
+            {SETTINGS_NAVIGATION.map(({ page }) => {
               const active = activePage === page;
               return (
                 <button
+                  ref={active ? activeTabRef : undefined}
                   key={page}
                   type="button"
                   aria-current={active ? "page" : undefined}
                   onClick={() => onNavigate(page)}
                   className={cn(
-                    "flex h-8 w-full items-center gap-2 whitespace-nowrap rounded-md px-2.5 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "relative flex h-11 shrink-0 items-center whitespace-nowrap text-sm transition-colors after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                     active
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      ? "font-semibold text-foreground after:bg-accent"
+                      : "font-medium text-muted-foreground after:bg-transparent hover:text-foreground",
                   )}
                 >
-                  <Icon className="size-3.5" />
                   {SETTINGS_PAGES[page].label}
                 </button>
               );
             })}
           </div>
-        </div>
-      ))}
-      {hasWorkspaceChanges ? (
-        <button
-          type="button"
-          onClick={() => onNavigate("connections")}
-          className="flex shrink-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground lg:w-full"
-        >
-          <span className="size-1.5 rounded-full bg-accent" />
-          Unsaved workspace changes
-        </button>
-      ) : null}
-    </nav>
+        </nav>
+        {hasWorkspaceChanges ? (
+          <button
+            type="button"
+            onClick={() => onNavigate("connections")}
+            className="flex h-11 shrink-0 items-center gap-1.5 border-l bg-background px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:px-3"
+          >
+            <span
+              aria-hidden="true"
+              className="size-1.5 rounded-full bg-accent"
+            />
+            <span className="hidden sm:inline">Unsaved workspace changes</span>
+            <span className="sm:hidden">Unsaved</span>
+          </button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
