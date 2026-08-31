@@ -28,7 +28,7 @@ test("usage summary separates billed, estimated, and unpriced usage", async (t) 
     { conversationRepository },
     { runRepository },
     budget,
-    { getUsageSummary },
+    { getTodayUsagePulse, getUsageSummary },
   ] = await Promise.all([
     import("../lib/repositories/agent-repository.ts"),
     import("../lib/repositories/conversation-repository.ts"),
@@ -156,6 +156,11 @@ test("usage summary separates billed, estimated, and unpriced usage", async (t) 
     summary.breakdowns.agents[0]?.providerReportedUsd,
     summary.costs.providerReportedUsd,
   );
+  assert.deepEqual(getTodayUsagePulse(new Date("2026-08-27T13:00:00Z")), {
+    trackedUsd: 0.7521,
+    totalTokens: 1_325,
+    unpricedTokens: 75,
+  });
 
   const withLimit = budget.getBudgetConfiguration();
   budget.updateBudgetConfiguration({

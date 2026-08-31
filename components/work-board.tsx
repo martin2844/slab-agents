@@ -908,6 +908,7 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
           {columns.map((column) => (
             <section
               key={column.key}
+              id={`work-${column.key}`}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 const key = e.dataTransfer.getData("text/plain");

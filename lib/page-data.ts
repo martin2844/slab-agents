@@ -38,6 +38,13 @@ import { mapWithConcurrency } from "@/lib/async";
 import { buildAgentToolCatalog } from "@/lib/agent-tool-catalog";
 import { getEmailIntegrationState } from "@/lib/integrations/email-service";
 import { emailAutomationBlockReason } from "@/lib/email-automation-policy";
+import { getTodayUsagePulse } from "@/lib/usage-summary";
+import { nextScheduledOccurrence } from "@/lib/automation-schedule";
+import {
+  summarizeAgentOverview,
+  summarizeWorkOverview,
+  unavailableWorkOverview,
+} from "@/lib/overview-summary";
 
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Request failed";
@@ -61,30 +68,9 @@ async function loadWorkOverview(): Promise<WorkOverview> {
         )
       ).flat();
       const relationshipBlocked = await WorkClient.getBlockedIssues();
-      const blockedKeys = new Set([
-        ...relationshipBlocked.map((issue) => issue.key),
-        ...issues
-          .filter((issue) => issue.status === "blocked")
-          .map((issue) => issue.key),
-      ]);
-      return {
-        open: issues.filter((issue) => issue.status !== "done").length,
-        inProgress: issues.filter(
-          (issue) =>
-            issue.status === "in_progress" || issue.status === "review",
-        ).length,
-        blocked: blockedKeys.size,
-        review: issues.filter((issue) => issue.status === "review").length,
-        connected: true,
-      };
+      return summarizeWorkOverview(issues, relationshipBlocked);
     } catch {
-      return {
-        open: 0,
-        inProgress: 0,
-        blocked: 0,
-        review: 0,
-        connected: false,
-      };
+      return unavailableWorkOverview();
     }
   })();
   try {
@@ -100,26 +86,21 @@ async function loadWorkOverview(): Promise<WorkOverview> {
 }
 
 export async function getOverviewPageData(): Promise<OverviewData> {
+  const currentTime = new Date();
   const agents = agentRepository.listAgents(),
     runs = runRepository.listRuns(),
     automations = automationRepository.listAutomations(),
     integrations = integrationRepository.listIntegrations(),
-    approvals = approvalRepository.list("pending"),
-    runningAgentIds = new Set(
-      runs.filter((run) => run.status === "running").map((run) => run.agentId),
-    );
+    approvals = approvalRepository.list("pending");
   const work = await loadWorkOverview();
+  const activeAutomations = automations.filter(
+    (automation) => automation.enabled,
+  );
+  const usageToday = loadOverviewUsage(currentTime);
+  const failureWindowStart = currentTime.getTime() - 86_400_000;
 
   return {
-    agents: {
-      total: agents.length,
-      running: runningAgentIds.size,
-      queued: runs.filter((run) => run.status === "queued").length,
-      waitingApproval: runs.filter((run) => run.status === "waiting_approval")
-        .length,
-      idle:
-        agents.filter((agent) => agent.enabled).length - runningAgentIds.size,
-    },
+    agents: summarizeAgentOverview(agents, runs),
     work,
     integrations: {
       total: integrations.length,
@@ -131,12 +112,18 @@ export async function getOverviewPageData(): Promise<OverviewData> {
         (integration) => integration.enabled && integration.status === "failed",
       ).length,
     },
-    automations: automations.filter((automation) => automation.enabled),
+    automations: activeAutomations,
     attention: {
       approvals: approvals.length,
-      failedRuns: runs.filter((run) => run.status === "failed").length,
+      failedRuns: runs.filter(
+        (run) =>
+          run.status === "failed" &&
+          new Date(run.completedAt ?? run.createdAt).getTime() >=
+            failureWindowStart,
+      ).length,
       blockedWork: work.blocked,
       reviewWork: work.review,
+      workUnavailable: !work.connected,
       integrationIssues: integrations.filter(
         (integration) => integration.enabled && integration.status === "failed",
       ).length,
@@ -145,9 +132,49 @@ export async function getOverviewPageData(): Promise<OverviewData> {
       ["running", "queued", "waiting_approval"].includes(run.status),
     ),
     recentRuns: runs.slice(0, 6),
+    usageToday: {
+      available: usageToday !== null,
+      trackedUsd: usageToday?.trackedUsd ?? 0,
+      totalTokens: usageToday?.totalTokens ?? 0,
+      unpricedTokens: usageToday?.unpricedTokens ?? 0,
+    },
+    upcomingAutomations: activeAutomations
+      .map((automation) => ({
+        id: automation.id,
+        name: automation.name,
+        agentId: automation.agentId,
+        triggerType: automation.triggerType,
+        nextRunAt: automation.cronExpression
+          ? safeNextScheduledOccurrence(automation.cronExpression, currentTime)
+          : null,
+      }))
+      .sort((left, right) => {
+        if (left.nextRunAt === null) return 1;
+        if (right.nextRunAt === null) return -1;
+        return left.nextRunAt.localeCompare(right.nextRunAt);
+      }),
     setup: getSetupStatus(),
     agentsList: agents,
   };
+}
+
+function loadOverviewUsage(currentTime: Date) {
+  try {
+    return getTodayUsagePulse(currentTime);
+  } catch {
+    return null;
+  }
+}
+
+function safeNextScheduledOccurrence(
+  cronExpression: string,
+  currentTime: Date,
+) {
+  try {
+    return nextScheduledOccurrence(cronExpression, currentTime).toISOString();
+  } catch {
+    return null;
+  }
 }
 
 export function getAgentDetailPageData(

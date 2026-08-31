@@ -52,6 +52,19 @@ function trackedCost(row: UsageAggregateRecord) {
   );
 }
 
+export function getTodayUsagePulse(currentTime = new Date()) {
+  const to = currentTime.toISOString();
+  const aggregate = budgetRepository.summarizeUsage(
+    utcWindows(currentTime).dayStart,
+    to,
+  );
+  return {
+    trackedUsd: microToUsd(trackedCost(aggregate)),
+    totalTokens: aggregate.totalTokens,
+    unpricedTokens: aggregate.unpricedTokens,
+  };
+}
+
 function mapBreakdown(row: UsageBreakdownRecord): UsageSummaryBreakdown {
   return {
     key: row.key,

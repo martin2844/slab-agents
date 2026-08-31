@@ -37,6 +37,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/client-api";
 import type { Agent, SetupCheck, SetupState, SetupStatus } from "@/lib/types";
+import { formatRelativePast } from "@/lib/utils";
 
 const defaultPrompt =
   "Review open work and the relevant company docs. Summarize the highest-priority next actions, blockers, and owners.";
@@ -57,7 +58,7 @@ function StateIcon({ state }: { state: SetupState }) {
 
 function CheckRow({ check }: { check: SetupCheck }) {
   return (
-    <li className="grid gap-3 border-t py-4 sm:grid-cols-[1fr_auto] sm:items-center">
+    <li className="grid gap-3 border-t py-3 sm:grid-cols-[1fr_auto] sm:items-center">
       <div>
         <p className="text-sm font-semibold">{check.label}</p>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -80,14 +81,19 @@ function CheckRow({ check }: { check: SetupCheck }) {
 }
 
 export function OverviewKickstart({
-  initialSetup,
+  setup,
   agents,
+  healthyIntegrations,
+  configuredIntegrations,
+  onSetupChange,
 }: {
-  initialSetup: SetupStatus;
+  setup: SetupStatus;
   agents: Agent[];
+  healthyIntegrations: number;
+  configuredIntegrations: number;
+  onSetupChange: (setup: SetupStatus) => void;
 }) {
   const router = useRouter();
-  const [setup, setSetup] = useState(initialSetup);
   const [checking, setChecking] = useState(false);
   const [open, setOpen] = useState(false);
   const [running, setRunning] = useState(false);
@@ -105,7 +111,7 @@ export function OverviewKickstart({
         method: "POST",
         body: "{}",
       });
-      setSetup(result);
+      onSetupChange(result);
       toast.success(
         result.ready
           ? "Workspace is ready"
@@ -168,13 +174,63 @@ export function OverviewKickstart({
   );
 
   if (setup.ready) {
+    const runner = setup.checks.find((check) => check.service === "runner");
+    const lastCheckedAt = setup.checks
+      .map((check) => check.checkedAt)
+      .filter((checkedAt): checkedAt is string => checkedAt !== null)
+      .sort()
+      .at(-1);
     return (
       <Dialog open={open} onOpenChange={setOpen}>
         <PageHeader
           title="Overview"
-          description={`${setup.connected}/${setup.total} systems healthy · local control plane`}
+          description="Your operation, at a glance."
           actions={primaryActions}
         />
+        <section className="mb-6 flex flex-col gap-3 border-y bg-muted/25 px-1 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-accent-muted text-success">
+              <Check className="size-3.5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-[650]">Slab is operational</p>
+              <p
+                suppressHydrationWarning
+                className="mt-0.5 truncate text-xs text-muted-foreground"
+              >
+                {agents.filter((agent) => agent.enabled).length} agents ·{" "}
+                {configuredIntegrations
+                  ? `${healthyIntegrations} healthy · ${configuredIntegrations} configured integrations`
+                  : "No optional integrations"}
+                {" · Runner "}
+                {runner?.state === "connected" ? "healthy" : "needs attention"}
+                {lastCheckedAt
+                  ? ` · Last check ${formatRelativePast(lastCheckedAt)}`
+                  : ""}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={checkSetup}
+              disabled={checking}
+            >
+              {checking ? (
+                <LoaderCircle className="animate-spin" />
+              ) : (
+                <PlugZap />
+              )}
+              Check health
+            </Button>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/settings">
+                <Settings2 /> Settings
+              </Link>
+            </Button>
+          </div>
+        </section>
         <OperatingLoopDialog
           agents={agents}
           agentId={agentId}
@@ -196,8 +252,8 @@ export function OverviewKickstart({
         actions={primaryActions}
       />
 
-      <section className="mb-6 grid overflow-hidden rounded-lg border bg-card lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="p-4 sm:p-5 lg:border-r">
+      <section className="mb-6 grid overflow-hidden rounded-lg border bg-card lg:grid-cols-[1.3fr_0.7fr]">
+        <div className="p-4 lg:border-r">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-xs font-semibold text-muted-foreground">
@@ -216,21 +272,21 @@ export function OverviewKickstart({
               Run setup check
             </Button>
           </div>
-          <ul className="mt-5">
+          <ul className="mt-4">
             {setup.checks.map((check) => (
               <CheckRow key={check.service} check={check} />
             ))}
           </ul>
         </div>
-        <div className="flex flex-col justify-between bg-muted/35 p-4 sm:p-5">
+        <div className="flex flex-col justify-between bg-muted/35 p-4">
           <div>
             <p className="text-xs font-semibold text-muted-foreground">
               First outcome
             </p>
-            <p className="mt-3 font-heading text-2xl font-[675] leading-tight tracking-[-0.035em]">
+            <p className="mt-2 font-heading text-xl font-[675] leading-tight tracking-[-0.035em]">
               Turn current work into a short list of next actions.
             </p>
-            <p className="mt-4 text-sm leading-6 text-muted-foreground">
+            <p className="mt-3 text-sm leading-5 text-muted-foreground">
               The loop sends one focused task to COO. It consults Work and Docs
               through server-side tools, then keeps the result in a normal
               thread.

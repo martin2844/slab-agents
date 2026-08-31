@@ -264,6 +264,8 @@ export type OverviewData = {
   };
   work: {
     open: number;
+    backlog: number;
+    assigned: number;
     inProgress: number;
     blocked: number;
     review: number;
@@ -276,10 +278,24 @@ export type OverviewData = {
     failedRuns: number;
     blockedWork: number;
     reviewWork: number;
+    workUnavailable: boolean;
     integrationIssues: number;
   };
   activeRuns: Run[];
   recentRuns: Run[];
+  usageToday: {
+    available: boolean;
+    trackedUsd: number;
+    totalTokens: number;
+    unpricedTokens: number;
+  };
+  upcomingAutomations: Array<{
+    id: string;
+    name: string;
+    agentId: string;
+    triggerType: Automation["triggerType"];
+    nextRunAt: string | null;
+  }>;
   setup: SetupStatus;
   agentsList: Agent[];
 };

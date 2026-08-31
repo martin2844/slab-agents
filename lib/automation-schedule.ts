@@ -13,6 +13,14 @@ export function scheduledOccurrence(
     .toDate();
 }
 
+export function nextScheduledOccurrence(cronExpression: string, current: Date) {
+  return CronExpressionParser.parse(cronExpression, {
+    currentDate: current,
+  })
+    .next()
+    .toDate();
+}
+
 export function dueAutomation(
   automation: Pick<
     Automation,

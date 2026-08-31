@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { dueAutomation } from "../lib/automation-schedule.ts";
+import {
+  dueAutomation,
+  nextScheduledOccurrence,
+} from "../lib/automation-schedule.ts";
 
 process.env.TZ = "UTC";
 
@@ -16,10 +19,7 @@ function automation(overrides = {}) {
 }
 
 test("latest_once catches up only the most recent missed occurrence", () => {
-  const due = dueAutomation(
-    automation(),
-    new Date("2026-08-23T12:00:00.000Z"),
-  );
+  const due = dueAutomation(automation(), new Date("2026-08-23T12:00:00.000Z"));
   assert.equal(due?.toISOString(), "2026-08-23T08:00:00.000Z");
 });
 
@@ -43,4 +43,12 @@ test("skip ignores an old missed occurrence and waits for a current window", () 
     new Date("2026-08-24T08:00:30.000Z"),
   );
   assert.equal(current?.toISOString(), "2026-08-24T08:00:00.000Z");
+});
+
+test("nextScheduledOccurrence returns the next future schedule", () => {
+  const next = nextScheduledOccurrence(
+    "0 8 * * *",
+    new Date("2026-08-23T12:00:00.000Z"),
+  );
+  assert.equal(next.toISOString(), "2026-08-24T08:00:00.000Z");
 });
