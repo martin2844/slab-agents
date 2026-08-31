@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { api } from "@/lib/client-api";
 import { formatDateTime } from "@/lib/utils";
 import type { EmailAccount, OperatorNotificationState } from "@/lib/types";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -17,7 +16,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { SettingRow, SettingSection } from "@/components/settings-layout";
+import {
+  SettingRow,
+  SettingSection,
+  SettingsStatusBadge,
+  settingControlWidths,
+} from "@/components/settings-layout";
 
 export function OperatorNotificationsSettings({
   initialState,
@@ -103,10 +107,10 @@ export function OperatorNotificationsSettings({
           title="Email notifications"
           description="Turn operational alerts on or off without removing their configuration."
         >
-          <div className="flex items-center justify-between gap-3">
-            <Badge variant={enabled ? "secondary" : "outline"}>
+          <div className="flex max-w-sm items-center justify-between gap-3">
+            <SettingsStatusBadge tone={enabled ? "positive" : "disabled"}>
               {enabled ? "On" : "Off"}
-            </Badge>
+            </SettingsStatusBadge>
             <Switch
               checked={enabled}
               onCheckedChange={setEnabled}
@@ -119,6 +123,7 @@ export function OperatorNotificationsSettings({
           description="Where operational notifications should be delivered."
         >
           <Input
+            className={settingControlWidths.medium}
             type="email"
             value={recipientEmail}
             onChange={(event) => setRecipientEmail(event.target.value)}
@@ -130,7 +135,7 @@ export function OperatorNotificationsSettings({
           description="Mailbox Slab uses for operator notifications."
         >
           <Select value={accountId} onValueChange={setAccountId}>
-            <SelectTrigger>
+            <SelectTrigger className={settingControlWidths.wide}>
               <SelectValue placeholder="Select a connected mailbox" />
             </SelectTrigger>
             <SelectContent>
@@ -189,13 +194,11 @@ export function OperatorNotificationsSettings({
                     {formatDateTime(delivery.createdAt)}
                   </p>
                 </div>
-                <Badge
-                  variant={
-                    delivery.status === "failed" ? "destructive" : "outline"
-                  }
+                <SettingsStatusBadge
+                  tone={delivery.status === "failed" ? "critical" : "neutral"}
                 >
                   {delivery.status}
-                </Badge>
+                </SettingsStatusBadge>
               </div>
             ))}
           </div>

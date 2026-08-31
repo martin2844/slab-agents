@@ -6,7 +6,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/client-api";
-import { SettingRow, SettingSection } from "@/components/settings-layout";
+import {
+  SettingRow,
+  SettingSection,
+  settingControlWidths,
+} from "@/components/settings-layout";
 import type {
   Agent,
   BudgetConfiguration,
@@ -224,7 +228,7 @@ export function BudgetSettings({
           title="Workspace budget"
           description="Limits applied unless an agent has a stricter override."
         >
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid max-w-[32rem] gap-3 sm:grid-cols-2">
             <BudgetInput
               label="Tokens / run"
               value={draft.workspace.maxTokensPerRun}
@@ -299,6 +303,7 @@ export function BudgetSettings({
         <SettingRow
           title="Operator pricing catalog"
           description="Codex subscription runs never receive an invented dollar cost."
+          layout="wide"
         >
           <details className="group rounded-md bg-muted px-3">
             <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between text-xs font-semibold [&::-webkit-details-marker]:hidden">
@@ -439,6 +444,7 @@ function BudgetInput({
     <label className="grid gap-1 text-xs font-semibold">
       {label}
       <Input
+        className={settingControlWidths.compact}
         type={type}
         min={type === "number" ? 0 : undefined}
         step={type === "number" ? "any" : undefined}

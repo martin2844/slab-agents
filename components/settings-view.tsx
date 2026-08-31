@@ -3,9 +3,12 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  BellRing,
+  BrainCircuit,
   Check,
   CalendarDays,
   ChevronRight,
+  CircleDollarSign,
   EyeOff,
   LoaderCircle,
   KeyRound,
@@ -14,6 +17,8 @@ import {
   Save,
   Server,
   ShieldCheck,
+  SquareTerminal,
+  UserRound,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -23,9 +28,13 @@ import { RuntimeSettings } from "@/components/runtime-settings";
 import { BudgetSettings } from "@/components/budget-settings";
 import { OperatorNotificationsSettings } from "@/components/operator-notifications-settings";
 import { PageHeader } from "@/components/page-header";
-import { SettingRow, SettingSection } from "@/components/settings-layout";
+import {
+  SettingRow,
+  SettingSection,
+  SettingsStatusBadge,
+  settingControlWidths,
+} from "@/components/settings-layout";
 import { ErrorState, LoadingState } from "@/components/states";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -101,16 +110,19 @@ const SETTINGS_PAGES: Record<
   },
 };
 
-const SETTINGS_NAVIGATION: Array<{ page: SettingsPage }> = [
-  { page: "connections" },
-  { page: "operator" },
-  { page: "runtime" },
-  { page: "budgets" },
-  { page: "memory" },
-  { page: "email" },
-  { page: "notifications" },
-  { page: "calendar" },
-  { page: "security" },
+const SETTINGS_NAVIGATION: Array<{
+  page: SettingsPage;
+  icon: typeof Server;
+}> = [
+  { page: "connections", icon: PlugZap },
+  { page: "operator", icon: UserRound },
+  { page: "runtime", icon: SquareTerminal },
+  { page: "budgets", icon: CircleDollarSign },
+  { page: "memory", icon: BrainCircuit },
+  { page: "email", icon: Mail },
+  { page: "notifications", icon: BellRing },
+  { page: "calendar", icon: CalendarDays },
+  { page: "security", icon: ShieldCheck },
 ];
 
 function editableWorkspaceSettings(settings: WorkspaceSettings) {
@@ -370,7 +382,7 @@ export function SettingsView({
           hasWorkspaceChanges={hasUnsavedChanges}
           onNavigate={navigate}
         />
-        <main className="min-w-0 pt-6">
+        <main className="min-w-0 max-w-[80rem] pt-6">
           <div className="mb-5">
             <h2 className="text-xl font-semibold tracking-[-0.025em]">
               {page.label}
@@ -383,7 +395,21 @@ export function SettingsView({
           {activePage === "connections" ? (
             <SettingSection
               title="Workspace sources"
-              description={`${initialSetup.connected}/${initialSetup.total} core systems are currently healthy.`}
+              description={
+                <span className="inline-flex items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "size-1.5 rounded-full",
+                      initialSetup.connected === initialSetup.total
+                        ? "bg-accent"
+                        : "bg-destructive",
+                    )}
+                  />
+                  {initialSetup.connected}/{initialSetup.total} core systems are
+                  currently healthy.
+                </span>
+              }
             >
               <ConnectionPanel
                 title="Work · Slab"
@@ -434,7 +460,7 @@ export function SettingsView({
                 description="How agents refer to you in operational interactions."
               >
                 <Input
-                  className="md:max-w-sm"
+                  className={settingControlWidths.medium}
                   value={settings.operatorDisplayName}
                   onChange={(event) =>
                     setSettings({
@@ -449,7 +475,7 @@ export function SettingsView({
                 description="Agent responsible for resolving coordination issues."
               >
                 <Input
-                  className="md:max-w-sm"
+                  className={settingControlWidths.medium}
                   list="coordination-reviewer-options"
                   value={settings.coordinationReviewer}
                   onChange={(event) =>
@@ -482,11 +508,14 @@ export function SettingsView({
                   description="Local execution boundary used by every configured runtime."
                 >
                   <div className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                      <div className="flex min-w-0 items-center gap-2">
                         <ConnectionBadge state={status.runner} />
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {settings.runnerUrl}
+                        <span
+                          className="truncate font-mono text-xs text-muted-foreground"
+                          title={settings.runnerUrl}
+                        >
+                          {connectionLabel(settings.runnerUrl)}
                         </span>
                       </div>
                       <Button
@@ -506,6 +535,7 @@ export function SettingsView({
                         <label className="grid gap-1.5 text-xs font-semibold">
                           Runner URL
                           <Input
+                            className={settingControlWidths.wide}
                             value={settings.runnerUrl}
                             onChange={(event) =>
                               setSettings({
@@ -557,8 +587,9 @@ export function SettingsView({
                     ? `${email.accounts.length} mailboxes · ${email.assignments.length} agent profiles`
                     : "No email service is connected yet."
                 }
+                className="bg-muted/35 px-3 sm:px-4"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                   <EmailConnectionBadge state={email} />
                   <Button
                     variant="outline"
@@ -574,19 +605,14 @@ export function SettingsView({
                 </div>
               </SettingRow>
               {email.accounts.length > 0 && email.assignments.length === 0 ? (
-                <div className="flex flex-col gap-3 py-3.5 text-sm sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="font-semibold">No agent can use Email yet</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Assign a mailbox and permissions to an agent. The
-                      capability becomes available on that agent&apos;s next
-                      run.
-                    </p>
-                  </div>
+                <SettingRow
+                  title="No agent can use Email yet"
+                  description="Assign a mailbox and permissions to an agent. The capability becomes available on that agent's next run."
+                >
                   <Button variant="outline" onClick={() => setEmailOpen(true)}>
                     Assign agent access
                   </Button>
-                </div>
+                </SettingRow>
               ) : null}
             </SettingSection>
           ) : null}
@@ -618,17 +644,24 @@ export function SettingsView({
                       } agents with access`
                     : "No calendar provider is connected yet."
                 }
+                className="bg-muted/35 px-3 sm:px-4"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Badge
-                    variant={
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <SettingsStatusBadge
+                    tone={
                       calendars.some(
                         (integration) =>
                           integration.enabled &&
                           integration.status === "failed",
                       )
-                        ? "destructive"
-                        : "secondary"
+                        ? "critical"
+                        : calendars.some(
+                              (integration) =>
+                                integration.enabled &&
+                                integration.status === "connected",
+                            )
+                          ? "positive"
+                          : "neutral"
                     }
                   >
                     {
@@ -639,7 +672,7 @@ export function SettingsView({
                       ).length
                     }{" "}
                     healthy
-                  </Badge>
+                  </SettingsStatusBadge>
                   <Button
                     variant="outline"
                     onClick={() => {
@@ -657,16 +690,10 @@ export function SettingsView({
                 (integration) =>
                   Object.keys(integration.permissions).length === 0,
               ) ? (
-                <div className="flex flex-col gap-3 py-3.5 text-sm sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="font-semibold">
-                      No agent can use Calendar yet
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Assign at least one connected account. New permissions
-                      apply on the next run.
-                    </p>
-                  </div>
+                <SettingRow
+                  title="No agent can use Calendar yet"
+                  description="Assign at least one connected account. New permissions apply on the next run."
+                >
                   <Button
                     variant="outline"
                     onClick={() => {
@@ -677,7 +704,7 @@ export function SettingsView({
                   >
                     Assign agent access
                   </Button>
-                </div>
+                </SettingRow>
               ) : null}
             </SettingSection>
           ) : null}
@@ -691,7 +718,7 @@ export function SettingsView({
                 title="Memory provider"
                 description="Disabling recall does not delete data already stored by the provider."
               >
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Select
                     value={settings.memoryProvider}
                     onValueChange={(value) => {
@@ -700,7 +727,7 @@ export function SettingsView({
                       setMemoryState("idle");
                     }}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className={settingControlWidths.medium}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -708,21 +735,25 @@ export function SettingsView({
                       <SelectItem value="honcho">Honcho</SelectItem>
                     </SelectContent>
                   </Select>
-                  {settings.memoryProvider === "disabled" ? (
-                    <Badge variant="outline">Disabled</Badge>
-                  ) : (
+                  {settings.memoryProvider === "honcho" ? (
                     <ConnectionBadge state={memoryState} />
-                  )}
+                  ) : null}
                 </div>
               </SettingRow>
               <SettingRow
                 title="Honcho connection"
                 description="Server-side connection used to store and recall memories."
               >
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div
+                  className={cn(
+                    "grid gap-3 sm:grid-cols-2",
+                    settingControlWidths.grouped,
+                  )}
+                >
                   <label className="grid gap-1.5 text-xs font-semibold">
                     Workspace ID
                     <Input
+                      className={settingControlWidths.medium}
                       value={settings.honchoWorkspaceId}
                       onChange={(event) =>
                         setSettings({
@@ -737,6 +768,7 @@ export function SettingsView({
                     Maximum recalled context
                     <div className="flex items-center gap-2">
                       <Input
+                        className={settingControlWidths.compact}
                         value={settings.memoryMaxContextTokens}
                         onChange={(event) =>
                           setSettings({
@@ -829,7 +861,7 @@ export function SettingsView({
               </SettingSection>
               <SettingSection title="Environment">
                 <div className="py-1">
-                  <dl className="divide-y text-sm">
+                  <dl className="max-w-3xl divide-y divide-border/70 text-sm">
                     {[
                       [
                         "Workspace",
@@ -844,10 +876,10 @@ export function SettingsView({
                     ].map(([label, value]) => (
                       <div
                         key={label}
-                        className="flex min-h-11 items-center justify-between gap-4"
+                        className="grid min-h-11 gap-2 py-2 sm:grid-cols-[minmax(9rem,14rem)_minmax(0,24rem)] sm:items-center"
                       >
                         <dt className="text-muted-foreground">{label}</dt>
-                        <dd className="font-medium">{value}</dd>
+                        <dd className="font-medium sm:text-right">{value}</dd>
                       </div>
                     ))}
                   </dl>
@@ -860,7 +892,7 @@ export function SettingsView({
                 >
                   <form
                     onSubmit={changePassword}
-                    className="grid gap-3 py-4 sm:grid-cols-3"
+                    className="grid max-w-4xl gap-3 py-4 sm:grid-cols-2 lg:grid-cols-3"
                   >
                     <label className="grid gap-1.5 text-xs font-semibold">
                       Current password
@@ -1025,7 +1057,7 @@ function SettingsNavigation({
           className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           <div className="flex min-w-max gap-6">
-            {SETTINGS_NAVIGATION.map(({ page }) => {
+            {SETTINGS_NAVIGATION.map(({ page, icon: Icon }) => {
               const active = activePage === page;
               return (
                 <button
@@ -1035,12 +1067,19 @@ function SettingsNavigation({
                   aria-current={active ? "page" : undefined}
                   onClick={() => onNavigate(page)}
                   className={cn(
-                    "relative flex h-11 shrink-0 items-center whitespace-nowrap text-sm transition-colors after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    "relative flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap text-sm transition-colors after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                     active
-                      ? "font-semibold text-foreground after:bg-accent"
-                      : "font-medium text-muted-foreground after:bg-transparent hover:text-foreground",
+                      ? "font-[650] text-foreground after:bg-accent"
+                      : "font-[525] text-muted-foreground after:bg-transparent hover:text-foreground",
                   )}
                 >
+                  <Icon
+                    aria-hidden="true"
+                    className={cn(
+                      "size-3.5",
+                      active ? "text-foreground" : "text-muted-foreground/75",
+                    )}
+                  />
                   {SETTINGS_PAGES[page].label}
                 </button>
               );
@@ -1094,20 +1133,30 @@ function ConnectionPanel({
   onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <SettingRow title={title} description={description}>
+    <SettingRow
+      title={
+        <span className="flex items-center gap-2">
+          <Icon className="size-4 text-muted-foreground" />
+          {title}
+        </span>
+      }
+      description={description}
+    >
       <div className="space-y-3">
-        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <div className="flex min-w-0 max-w-full items-center gap-2">
-            <Icon className="size-4 shrink-0 text-muted-foreground" />
             <ConnectionBadge state={state} />
-            <span className="truncate font-mono text-xs text-muted-foreground">
+            <span
+              className="truncate font-mono text-xs text-muted-foreground"
+              title={url}
+            >
               {connectionLabel(url)}
             </span>
           </div>
           <Button
             variant="ghost"
             size="sm"
-            className="-ml-2 sm:ml-0"
+            className="-ml-2 justify-self-start sm:ml-0 sm:justify-self-end"
             onClick={() => onOpenChange(!open)}
             aria-expanded={open}
           >
@@ -1169,49 +1218,53 @@ function connectionLabel(value: string) {
 }
 
 function EmailConnectionBadge({ state }: { state: EmailIntegrationState }) {
-  if (!state.configured) return <Badge variant="outline">Not configured</Badge>;
+  if (!state.configured)
+    return (
+      <SettingsStatusBadge tone="neutral">Not configured</SettingsStatusBadge>
+    );
   if (
     state.accounts.some(
       (account) => account.enabled && account.lastConnectionStatus === "error",
     )
   )
     return (
-      <Badge variant="destructive">
+      <SettingsStatusBadge tone="critical">
         <X /> Mailbox issue
-      </Badge>
+      </SettingsStatusBadge>
     );
   if (state.status === "connected")
     return (
-      <Badge className="border border-accent bg-accent-muted text-success">
+      <SettingsStatusBadge tone="positive">
         <Check /> Connected
-      </Badge>
+      </SettingsStatusBadge>
     );
   if (state.status === "failed")
     return (
-      <Badge variant="destructive">
+      <SettingsStatusBadge tone="critical">
         <X /> Unavailable
-      </Badge>
+      </SettingsStatusBadge>
     );
-  return <Badge variant="outline">Not tested</Badge>;
+  return <SettingsStatusBadge tone="neutral">Not tested</SettingsStatusBadge>;
 }
 
 function ConnectionBadge({ state }: { state: State }) {
-  if (state === "idle") return <Badge variant="outline">Not tested</Badge>;
+  if (state === "idle")
+    return <SettingsStatusBadge tone="neutral">Not tested</SettingsStatusBadge>;
   if (state === "testing")
     return (
-      <Badge variant="outline">
+      <SettingsStatusBadge tone="neutral">
         <LoaderCircle className="animate-spin" /> Testing
-      </Badge>
+      </SettingsStatusBadge>
     );
   if (state === "connected")
     return (
-      <Badge className="border border-accent bg-accent-muted text-success">
+      <SettingsStatusBadge tone="positive">
         <Check /> Connected
-      </Badge>
+      </SettingsStatusBadge>
     );
   return (
-    <Badge variant="destructive">
+    <SettingsStatusBadge tone="critical">
       <X /> Unavailable
-    </Badge>
+    </SettingsStatusBadge>
   );
 }

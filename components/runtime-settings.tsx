@@ -9,7 +9,6 @@ import {
   TestTube2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -24,12 +23,17 @@ import { api } from "@/lib/client-api";
 import type { RuntimeCatalogItem } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
 import { CodexAuthSettings } from "@/components/codex-auth-settings";
-import { SettingSection } from "@/components/settings-layout";
+import {
+  SettingSection,
+  SettingsStatusBadge,
+} from "@/components/settings-layout";
 
-function healthVariant(runtime: RuntimeCatalogItem) {
-  if (runtime.health === "available") return "default" as const;
-  if (runtime.health === "unavailable") return "destructive" as const;
-  return "secondary" as const;
+function healthTone(runtime: RuntimeCatalogItem) {
+  if (runtime.health === "available") return "positive" as const;
+  if (runtime.health === "authentication_required")
+    return "requirement" as const;
+  if (runtime.health === "unavailable") return "critical" as const;
+  return "neutral" as const;
 }
 
 export function RuntimeSettings({
@@ -163,15 +167,17 @@ export function RuntimeSettings({
     >
       {runtimes.map((runtime) => (
         <details key={runtime.id} className="group">
-          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+          <summary className="grid min-h-14 max-w-[58rem] cursor-pointer list-none gap-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center [&::-webkit-details-marker]:hidden">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-sm font-semibold">{runtime.displayName}</h3>
-                <Badge variant={healthVariant(runtime)}>
+                <SettingsStatusBadge tone={healthTone(runtime)}>
                   {runtime.health.replaceAll("_", " ")}
-                </Badge>
+                </SettingsStatusBadge>
                 {runtime.stability === "experimental" ? (
-                  <Badge variant="outline">Experimental</Badge>
+                  <SettingsStatusBadge tone="experimental">
+                    Experimental
+                  </SettingsStatusBadge>
                 ) : null}
               </div>
               <p className="mt-1 truncate text-xs text-muted-foreground">
@@ -180,7 +186,7 @@ export function RuntimeSettings({
                   : runtime.healthDetail}
               </p>
             </div>
-            <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-muted-foreground">
+            <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-muted-foreground sm:justify-self-end">
               Configure
               <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" />
             </span>

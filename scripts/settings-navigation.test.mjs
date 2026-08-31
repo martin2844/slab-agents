@@ -37,7 +37,7 @@ test("closing an integration editor removes only its callback result", () => {
   assert.equal(url.searchParams.get("calendar"), "failed");
 });
 
-test("settings uses a sticky horizontal text navigation in product order", async () => {
+test("settings uses a sticky horizontal icon-and-text navigation in product order", async () => {
   const source = await readFile(
     new URL("../components/settings-view.tsx", import.meta.url),
     "utf8",
@@ -67,6 +67,11 @@ test("settings uses a sticky horizontal text navigation in product order", async
   assert.match(navigation, /overflow-x-auto/);
   assert.match(navigation, /items-end border-b/);
   assert.match(navigation, /after:bg-accent/);
+  assert.match(navigation, /icon: Icon/);
+  assert.match(
+    navigation,
+    /<Icon[\s\S]*aria-hidden="true"[\s\S]*className={[\s\S]*size-3\.5/,
+  );
   assert.match(navigation, /activeTabRef/);
   assert.match(navigation, /scroller\.scrollTo/);
   assert.match(navigation, /new ResizeObserver/);
