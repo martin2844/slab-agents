@@ -51,7 +51,7 @@ const nav = [
   {
     label: "Configure",
     items: [
-      { href: "/packs", label: "Operator Packs", icon: PackageOpen },
+      { href: "/packs", label: "Blueprints", icon: PackageOpen },
       { href: "/automations", label: "Automations", icon: CalendarClock },
       { href: "/integrations", label: "Integrations", icon: Plug },
       { href: "/settings", label: "Settings", icon: Settings },

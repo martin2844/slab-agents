@@ -402,7 +402,7 @@ export async function previewOperatorPack(
   packId: string,
 ): Promise<OperatorPackPreview> {
   const entry = getOperatorPackCatalogEntry(packId);
-  if (!entry) throw new OperationalError("Operator Pack not found.");
+  if (!entry) throw new OperationalError("Blueprint not found.");
   const { manifest, source } = entry;
   assertManifestRuntimeCompatibility(manifest);
   const installation =
@@ -538,6 +538,9 @@ export async function previewOperatorPack(
     pack: manifest,
     source,
     installation,
+    installedResources: resources.filter(
+      (resource) => resource.state !== "detached",
+    ),
     changes,
     capabilities: capabilityStates(manifest),
     permissions: manifest.permissions,
@@ -838,7 +841,7 @@ async function applyDocResources(
       if (!found) {
         found = await DocsClient.create({
           ...proposed,
-          author: "Slab Operator Pack",
+          author: "Slab Blueprint",
         });
         managed = true;
         createdByPack = true;
@@ -849,7 +852,7 @@ async function applyDocResources(
       ) {
         found = await DocsClient.update(found.id, {
           ...proposed,
-          author: "Slab Operator Pack",
+          author: "Slab Blueprint",
         });
         managed = true;
       }
@@ -881,7 +884,7 @@ async function applyDocResources(
         lastError:
           error instanceof Error
             ? error.message
-            : "Could not reconcile starter Doc.",
+            : "Could not install Blueprint guide.",
       });
       throw error;
     }
@@ -923,7 +926,7 @@ export async function installOperatorPack(
       const message =
         error instanceof Error
           ? error.message
-          : "Pack installation was interrupted.";
+          : "Blueprint installation was interrupted.";
       operatorPackRepository.saveOperatorPackInstallation({
         packId,
         packVersion: preview.pack.version,
@@ -933,7 +936,7 @@ export async function installOperatorPack(
         lastError: message,
       });
       throw new OperationalError(
-        `Local resources were installed, but a remote resource failed: ${message}. Retry the installation to resume.`,
+        `Workspace resources were installed, but a remote guide failed: ${message}. Retry the Blueprint installation to resume.`,
       );
     }
   });
@@ -944,7 +947,7 @@ export function disableOperatorPack(packId: string) {
     const installation =
       operatorPackRepository.getOperatorPackInstallation(packId);
     if (!installation)
-      throw new OperationalError("Operator Pack is not installed.");
+      throw new OperationalError("Blueprint is not installed.");
     return withImmediateTransaction(() => {
       for (const resource of operatorPackRepository.listOperatorPackResources(
         packId,
@@ -976,9 +979,7 @@ export function disableOperatorPack(packId: string) {
 export function importOperatorPack(input: unknown) {
   const manifest = parseOperatorPackManifest(input);
   if (getOfficialOperatorPack(manifest.id)) {
-    throw new OperationalError(
-      "Official Operator Pack IDs cannot be replaced.",
-    );
+    throw new OperationalError("Official Blueprint IDs cannot be replaced.");
   }
   assertManifestRuntimeCompatibility(manifest);
   const existing = operatorPackRepository.getOperatorPackDefinition(
@@ -989,7 +990,7 @@ export function importOperatorPack(input: unknown) {
     comparePackVersions(manifest.version, existing.version) <= 0
   ) {
     throw new OperationalError(
-      "Imported pack version must be newer than the local version.",
+      "The imported Blueprint version must be newer than the existing version.",
     );
   }
   return operatorPackRepository.saveOperatorPackDefinition(manifest);
@@ -998,13 +999,13 @@ export function importOperatorPack(input: unknown) {
 export function removeLocalOperatorPackDefinition(packId: string) {
   return withPackInstallLock(packId, async () => {
     if (getOfficialOperatorPack(packId)) {
-      throw new OperationalError("Official Operator Packs cannot be deleted.");
+      throw new OperationalError("Official Blueprints cannot be removed.");
     }
     const installation =
       operatorPackRepository.getOperatorPackInstallation(packId);
     if (installation && installation.status !== "disabled") {
       throw new OperationalError(
-        "Disable the installed pack before deleting its definition.",
+        "Uninstall the Blueprint before removing its imported definition.",
       );
     }
     return operatorPackRepository.deleteOperatorPackDefinition(packId);
@@ -1073,9 +1074,8 @@ async function createAcceptanceFixtures(
     try {
       project = await WorkClient.createProject({
         key: "QA",
-        name: "Operator Pack Acceptance",
-        description:
-          "Synthetic Work fixtures created by Slab Agents acceptance QA.",
+        name: "Blueprint Tests",
+        description: "Safe sample Work created when testing Slab Blueprints.",
       });
     } catch (error) {
       // Another acceptance may have created the project after our initial read.
@@ -1091,7 +1091,7 @@ async function createAcceptanceFixtures(
           title: `${scenario.fixture.docTitle} · ${acceptance.id.slice(0, 8)}`,
           body: scenario.fixture.docBody,
           tags: ["synthetic", "operator-pack-acceptance", tag],
-          author: "Slab Acceptance QA",
+          author: "Slab Blueprint Test",
         })
       : null;
   operatorPackRepository.updateOperatorPackAcceptance(acceptance.id, {
@@ -1104,7 +1104,7 @@ async function createAcceptanceFixtures(
     description: [
       scenario.fixture.issueDescription,
       ...(doc ? ["", `Synthetic fixture Doc: ${doc.title}`] : []),
-      `Acceptance marker: ${tag}`,
+      `Blueprint test marker: ${tag}`,
     ].join("\n"),
     type: "task",
     priority: scenario.fixture.priority,
@@ -1123,12 +1123,12 @@ export async function startOperatorPackAcceptance(
     operatorPackRepository.getOperatorPackInstallation(packId);
   if (!entry || !installation || installation.status !== "installed") {
     throw new OperationalError(
-      "Install the Operator Pack before running acceptance QA.",
+      "Install the Blueprint before running its test.",
     );
   }
   if (installation.packVersion !== entry.manifest.version) {
     throw new OperationalError(
-      "Apply the available Operator Pack update before running acceptance QA.",
+      "Install the available Blueprint update before running its test.",
     );
   }
   const capabilities = capabilityStates(entry.manifest);
@@ -1145,7 +1145,7 @@ export async function startOperatorPackAcceptance(
   const scenario = scenarioId
     ? entry.manifest.acceptanceScenarios.find((item) => item.id === scenarioId)
     : entry.manifest.acceptanceScenarios[0];
-  if (!scenario) throw new OperationalError("Acceptance scenario not found.");
+  if (!scenario) throw new OperationalError("Blueprint test not found.");
   const agentTemplate = entry.manifest.agents.find(
     (item) => item.key === scenario.agentKey,
   )!;
@@ -1156,7 +1156,7 @@ export async function startOperatorPackAcceptance(
   );
   const agent = resolvePackAgent(agentTemplate, agentResource ?? undefined);
   if (!agent || !agent.enabled) {
-    throw new OperationalError("The pack Agent is missing or disabled.");
+    throw new OperationalError("The Blueprint Agent is missing or disabled.");
   }
   const acceptance = operatorPackRepository.createOperatorPackAcceptance({
     packId,
@@ -1178,7 +1178,7 @@ export async function startOperatorPackAcceptance(
     if (scenario.execution === "review") {
       const thread = conversationRepository.createThread(
         agent.id,
-        `${entry.manifest.name} acceptance · ${fixture.issue.key}`,
+        `${entry.manifest.name} test · ${fixture.issue.key}`,
       );
       run = createRunExecution({
         agentId: agent.id,
@@ -1189,7 +1189,7 @@ export async function startOperatorPackAcceptance(
           scenario.prompt,
           `Synthetic Work item: ${fixture.issue.key}`,
           ...(fixture.doc ? [`Synthetic Doc title: ${fixture.doc.title}`] : []),
-          "Use only these synthetic fixtures for this acceptance scenario.",
+          "Use only this safe sample context for the Blueprint test.",
         ].join("\n"),
       });
       void executeRunInBackground(run.id);
@@ -1388,6 +1388,6 @@ export function operatorPackMetrics(): OperatorPackMetrics {
 
 export function exportOperatorPack(packId: string) {
   const entry = getOperatorPackCatalogEntry(packId);
-  if (!entry) throw new OperationalError("Operator Pack not found.");
+  if (!entry) throw new OperationalError("Blueprint not found.");
   return entry.manifest;
 }

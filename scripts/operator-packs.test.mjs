@@ -402,9 +402,13 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     assert.ok(agentRepository.getAgent(agent.id));
     assert.ok(automationRepository.getAutomation(resource.resourceId));
     assert.ok(operatorPackRepository.listOperatorPackResources(manifest.id).every((item) => !item.managed && item.state === "detached"));
+    preview = await previewOperatorPack(manifest.id);
+    assert.deepEqual(preview.installedResources, []);
 
     await installOperatorPack(manifest.id);
     assert.ok(operatorPackRepository.listOperatorPackResources(manifest.id).every((item) => item.managed && item.state === "applied"));
+    preview = await previewOperatorPack(manifest.id);
+    assert.ok(preview.installedResources.length > 0);
 
     const actionId = agentRepository.listAgentQuickActions(agent.id)[0].id;
     const renamed = {
@@ -749,7 +753,7 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
     assert.equal(runRepository.getRun(acceptanceRun.runId).agentId, acceptanceAgent.id);
     assert.equal(createProjectCalls, 1);
     assert.equal(workProjects[0].key, "QA");
-    assert.equal(workProjects[0].name, "Operator Pack Acceptance");
+    assert.equal(workProjects[0].name, "Blueprint Tests");
   `;
   const run = spawnSync(
     process.execPath,

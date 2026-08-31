@@ -162,7 +162,7 @@ export function OverviewKickstart({
     <>
       <Button asChild>
         <Link href="/packs">
-          <PackageOpen /> Choose an Operator Pack
+          <PackageOpen /> Choose a Blueprint
         </Link>
       </Button>
       <DialogTrigger asChild>

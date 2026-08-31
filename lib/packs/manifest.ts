@@ -170,7 +170,7 @@ export const operatorPackManifestSchema = z
           code: "custom",
           path: ["agents", agent.key, "fullAccess"],
           message:
-            "Operator Packs cannot grant full access. Configure elevated access explicitly after installation.",
+            "Blueprints cannot grant full access. Configure elevated access explicitly after installation.",
         });
       }
       agentKeys.add(agent.key);

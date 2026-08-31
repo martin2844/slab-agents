@@ -1,8 +1,9 @@
-# Operator Packs
+# Blueprints
 
-Operator Packs are versioned, declarative configurations that turn Slab's
-Agents, Work, Docs, Automations, and integrations into a repeatable operating
-outcome. They are configuration—not executable plugins.
+Blueprints are installable operating capabilities that turn Slab's Agents,
+Work, Docs, Automations, and integrations into a repeatable business outcome.
+A founder can understand and install one without reading its underlying
+package definition. Blueprints are configuration—not executable plugins.
 
 The initial built-in catalog contains:
 
@@ -14,23 +15,25 @@ The initial built-in catalog contains:
 
 ## Install from the UI
 
-1. Open **Operator Packs** in the Configure navigation.
-2. Select a pack and inspect every proposed Agent, quick action, Automation,
-   and starter Doc.
-3. Review the required/optional capabilities and external-write policy.
-4. Choose how to handle conflicts. **Keep existing** is the default and
-   preserves user-owned configuration. **Replace** applies the values shown in
-   the preview.
-5. Install the pack and connect any missing required capabilities.
-6. Run the synthetic acceptance scenario. The resulting Run and durable Work
-   evidence remain inspectable like normal activity.
+1. Open **Blueprints** in the Configure navigation.
+2. Select a Blueprint and review its outcome, Agents, Automations, guides,
+   integration requirements, and permissions.
+3. If Slab detects conflicting user-owned configuration, choose **Keep my
+   existing configuration** or **Replace with Blueprint configuration**.
+4. Install the Blueprint and connect any missing required integrations.
+5. Run its safe sample test. The resulting Run and durable Work evidence remain
+   inspectable like normal activity.
 
-Automations shipped by the official packs are disabled by default. Installing
-a pack never silently starts a schedule.
+Automations shipped by the official Blueprints are disabled by default.
+Installing a Blueprint never silently starts a schedule.
 
-## Manifest contract
+## Internal package contract
 
-The current schema version is `1`. A pack can declare:
+The implementation retains the existing Operator Pack schema, persistence,
+routes, and reconciliation semantics for compatibility. The manifest is an
+advanced import/export format, not the primary product interface.
+
+The current schema version is `1`. A Blueprint can declare:
 
 - metadata and minimum compatible Slab version;
 - Agent identity, visible instructions, and quick actions;
@@ -121,11 +124,11 @@ human-readable descriptions, instructions, prompts, or fixture text. All Agent
 instructions, Automation prompts, resource values, permission implications,
 and synthetic acceptance inputs are rendered in the install preview.
 
-Packs cannot grant Agent `fullAccess`. Elevated access remains an explicit
-post-install operator decision, so a pack preview never hides an implied global
+Blueprints cannot grant Agent `fullAccess`. Elevated access remains an explicit
+post-install operator decision, so a Blueprint preview never hides an implied global
 write scope.
 
-Packs refer to integrations only by semantic capability category. A scoped
+Blueprints refer to integrations only by semantic capability category. A scoped
 capability is ready only when its connector is healthy and every pack Agent has
 an explicit tool/account grant. Integration secrets remain in the existing
 encrypted/server-side stores and capability snapshots remain run-scoped.
@@ -133,49 +136,50 @@ encrypted/server-side stores and capability snapshots remain run-scoped.
 ## Reconciliation and upgrades
 
 Local database resources are applied in one SQLite transaction. Each managed
-resource stores the pack ID, stable resource key, local resource ID, and the
+resource stores the Blueprint ID, stable resource key, local resource ID, and the
 last applied non-secret baseline.
 
-On a later install or version update:
+On a later Blueprint install or version update:
 
 - an unchanged managed resource is reconciled normally;
-- an unmodified managed resource can receive the visible pack update;
+- an unmodified managed resource can receive the visible Blueprint update;
 - a user-edited resource becomes a conflict;
-- conflicts show baseline/current/proposed values and are preserved unless the
-  operator explicitly confirms **Replace**;
+- conflicts are kept unless the operator explicitly chooses **Replace with
+  Blueprint configuration**;
 - resources removed by a newer manifest are detached, and removed managed
   Automations are disabled without deleting product data;
 - disabling and reinstalling can safely reattach resources originally created
   by the pack while keeping adopted user resources user-owned.
 
-Starter Docs are remote resources. Each receives a deterministic pack tag.
+Starter guides are remote Docs resources. Each receives a deterministic tag.
 Reconciliation resolves that exact tag (rather than hydrating the whole Docs
-collection), compares the full visible body, and serializes installs per pack in
-the control plane. Disable and definition removal join that same per-pack
+collection), compares the full visible body, and serializes installs per Blueprint in
+the control plane. Uninstall and definition removal join that same per-Blueprint
 lifecycle queue. Individual results are recorded, and an interruption leaves
 the install in `partial_failure`. Re-running install resumes missing remote
 resources without duplicating successful ones.
 
-Disabling a pack disables managed Automations and detaches pack ownership. It
+Uninstalling a Blueprint pauses managed Automations and detaches Blueprint ownership. It
 does not delete Agents, quick actions, Docs, Work, Runs, comments, or user
 changes. A local imported definition can be deleted only after its installation
 is disabled; created product data remains.
 
 ## Import and export
 
-The UI can import a non-secret JSON manifest and export any official or local
-manifest. Official IDs cannot be replaced. Updating a local pack requires a
+The UI can import a non-secret JSON definition and export any official or local
+Blueprint. Official IDs cannot be replaced. Updating a local Blueprint requires a
 strictly newer semantic version.
 
-Official packs are compiled into this repository for the current release.
-Remote distribution and signing are intentionally deferred until a public pack
+Official Blueprints are compiled into this repository for the current release.
+Remote distribution and signing are intentionally deferred until a public Blueprint
 catalog exists.
 
-## Synthetic acceptance
+## Safe Blueprint tests
 
-Acceptance QA creates uniquely tagged synthetic Work and Docs fixtures. It does
-not use customer PII. It launches the same review or assignment path used by
-normal operation and evaluates completed behavior rather than exact prose:
+Blueprint tests create uniquely tagged sample Work and Docs records. They do
+not use customer PII or modify existing customer and operational records. The
+test launches the same review or assignment path used by normal operation and
+evaluates completed behavior rather than exact prose:
 
 - successful Work/Docs reads referenced the synthetic fixtures;
 - a required Work write occurred;
@@ -184,10 +188,10 @@ normal operation and evaluates completed behavior rather than exact prose:
 - created Work stayed within the declared bound;
 - the Run completed.
 
-Acceptance evidence is versioned with the installed pack, so an older passing
+Test evidence is versioned with the installed Blueprint, so an older passing
 run is never presented as proof for a newer manifest. The latest current-version
 Run, evidence, failures, aggregate pass rate, and median time to first accepted
-outcome are shown on the Operator Packs page. Synthetic fixtures are retained
+outcome are shown on the Blueprints page. Sample fixtures are retained
 for auditability and can be removed manually from Work/Docs after evaluation.
 
 ## Current limitations

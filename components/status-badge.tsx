@@ -14,15 +14,20 @@ export function StatusBadge({ status }: { status: string }) {
           "approved",
           "installed",
           "passed",
+          "ready",
           "succeeded",
           "up_to_date",
           "channel_equivalent",
           "enabled",
           "matched",
         ].includes(status) && "border-accent bg-accent-muted text-success",
-        ["running", "in_progress", "installing", "evaluating"].includes(
-          status,
-        ) && "border-accent bg-accent text-accent-foreground",
+        [
+          "running",
+          "in_progress",
+          "installing",
+          "evaluating",
+          "testing",
+        ].includes(status) && "border-accent bg-accent text-accent-foreground",
         ["failed", "error", "denied", "partial_failure"].includes(status) &&
           "border-destructive/25 bg-destructive/10 text-destructive",
         [
@@ -34,8 +39,15 @@ export function StatusBadge({ status }: { status: string }) {
           "recovery_required",
         ].includes(status) &&
           "border-amber-600/25 bg-amber-500/10 text-amber-800",
-        ["queued", "idle", "submitted", "channel_older"].includes(status) &&
-          "border-border bg-muted text-muted-foreground",
+        [
+          "queued",
+          "idle",
+          "submitted",
+          "channel_older",
+          "not tested",
+          "available",
+          "unavailable",
+        ].includes(status) && "border-border bg-muted text-muted-foreground",
         ["blocked"].includes(status) &&
           "border-amber-700/25 bg-amber-500/10 text-amber-900",
         ["review"].includes(status) &&

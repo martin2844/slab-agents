@@ -26,7 +26,7 @@ export async function DELETE(
   try {
     const { id } = await ctx.params;
     if (!(await removeLocalOperatorPackDefinition(id))) {
-      throw notFound("Operator Pack not found.");
+      throw notFound("Blueprint not found.");
     }
     return new Response(null, { status: 204 });
   } catch (error) {

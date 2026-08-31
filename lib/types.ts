@@ -1189,6 +1189,7 @@ export type OperatorPackPreview = {
   pack: OperatorPackManifest;
   source: "official" | "local";
   installation: OperatorPackInstallation | null;
+  installedResources: OperatorPackResource[];
   changes: OperatorPackPreviewChange[];
   capabilities: OperatorPackCapabilityState[];
   permissions: OperatorPackManifest["permissions"];

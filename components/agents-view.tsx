@@ -113,12 +113,12 @@ export function AgentsView({
       {agents && !agents.length && (
         <EmptyState
           title="No agents yet"
-          description="Start with an inspectable Operator Pack for a repeatable outcome, or create an Agent manually."
+          description="Install a Blueprint for a ready-made operating capability, or create an Agent manually."
           action={
             <div className="flex flex-wrap justify-center gap-2">
               <Button asChild>
                 <Link href="/packs">
-                  <PackageOpen /> Browse Operator Packs
+                  <PackageOpen /> Browse Blueprints
                 </Link>
               </Button>
               <AgentCreateDialog

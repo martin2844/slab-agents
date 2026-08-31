@@ -15,7 +15,7 @@ export async function GET(
       {
         headers: {
           "Content-Type": "application/json; charset=utf-8",
-          "Content-Disposition": `attachment; filename="${id}.operator-pack.json"`,
+          "Content-Disposition": `attachment; filename="${id}.blueprint.json"`,
           "Cache-Control": "no-store",
         },
       },
