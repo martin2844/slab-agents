@@ -10,6 +10,7 @@ import {
   budgetRepository,
   type BudgetReservationRecord,
 } from "@/lib/repositories/budget-repository";
+import { runRepository } from "@/lib/repositories/run-repository";
 import { isRuntimeId, runtimeBudgetCapabilities } from "@/lib/runtime-config";
 import type {
   Agent,
@@ -466,6 +467,14 @@ function usageNumber(data: Record<string, unknown>, ...keys: string[]) {
   return 0;
 }
 
+function resolvedUsageModel(data: Record<string, unknown>) {
+  if (typeof data.model !== "string") return null;
+  const model = data.model.trim();
+  return model.length > 0 && model.length <= 200 && model !== "default"
+    ? model
+    : null;
+}
+
 export function observeRunUsage(
   runId: string,
   eventKey: string,
@@ -473,8 +482,28 @@ export function observeRunUsage(
   runnerRunId?: string,
 ): BudgetObservation | null {
   return withImmediateTransaction(() => {
-    const reservation = budgetRepository.getReservation(runId);
+    let reservation = budgetRepository.getReservation(runId);
     if (!reservation || reservation.status === "rejected") return null;
+    const observedModel = resolvedUsageModel(data);
+    let modelResolved = false;
+    if (reservation.model === "default" && observedModel) {
+      const price = resolveRuntimePrice(reservation.runtimeId, observedModel);
+      const timestamp = new Date().toISOString();
+      modelResolved = Boolean(
+        budgetRepository.resolveReservationModel({
+          runId,
+          model: observedModel,
+          pricingVersion: price?.version ?? null,
+          inputRateMicroUsdPerMillion: price?.inputMicroUsdPerMillion ?? null,
+          cachedInputRateMicroUsdPerMillion:
+            price?.cachedInputMicroUsdPerMillion ?? null,
+          outputRateMicroUsdPerMillion: price?.outputMicroUsdPerMillion ?? null,
+          timestamp,
+        }),
+      );
+      runRepository.resolveModel(runId, observedModel);
+      reservation = budgetRepository.getReservation(runId)!;
+    }
     const usageScope =
       data.usageScope === "run_aggregate" ? "run_aggregate" : "model_call";
     const inputTokens = usageNumber(data, "inputTokens", "input_tokens");
@@ -532,7 +561,7 @@ export function observeRunUsage(
       costSource,
       timestamp,
     });
-    if (!inserted) {
+    if (!inserted && !modelResolved) {
       return {
         newlyExceeded: false,
         reason: null,

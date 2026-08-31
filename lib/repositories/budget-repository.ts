@@ -347,6 +347,33 @@ export const budgetRepository = {
     return row ? mapReservation(row) : null;
   },
 
+  resolveReservationModel(input: {
+    runId: string;
+    model: string;
+    pricingVersion: number | null;
+    inputRateMicroUsdPerMillion: number | null;
+    cachedInputRateMicroUsdPerMillion: number | null;
+    outputRateMicroUsdPerMillion: number | null;
+    timestamp: string;
+  }) {
+    return db
+      .prepare(
+        `UPDATE run_budget_reservations
+         SET model=?,pricing_version=?,input_rate_micro_usd_per_million=?,
+             cached_input_rate_micro_usd_per_million=?,output_rate_micro_usd_per_million=?,updated_at=?
+         WHERE run_id=? AND model='default'`,
+      )
+      .run(
+        input.model,
+        input.pricingVersion,
+        input.inputRateMicroUsdPerMillion,
+        input.cachedInputRateMicroUsdPerMillion,
+        input.outputRateMicroUsdPerMillion,
+        input.timestamp,
+        input.runId,
+      ).changes;
+  },
+
   reservedExposure(start: string, end: string) {
     const row = db
       .prepare(

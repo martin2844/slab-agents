@@ -1,6 +1,6 @@
 import type { RuntimeModelPrice } from "@/lib/types";
 
-const DEFAULT_PRICING_VERSION = 2_026_083_001;
+const DEFAULT_PRICING_VERSION = 2_026_083_101;
 
 export const defaultPricingCatalog = {
   id: "codeburn-litellm-snapshot",
@@ -14,11 +14,17 @@ export const defaultPricingCatalog = {
 
 type CatalogPrice = Omit<RuntimeModelPrice, "version">;
 
-// Slab intentionally ships only prices it can apply without guessing the
-// provider or billing contract. OpenRouter reports its own routed cost, while
-// Codex and Gemini are runtime-owned subscriptions. Unknown or private Direct
-// API models remain unpriced until the operator adds an override.
+// Runtime-owned subscriptions do not report a per-run invoice. Codex prices
+// are therefore API-equivalent estimates, replaced with the exact resolved
+// model as soon as the runtime reports it. Unknown or private models remain
+// unpriced until the operator adds an override.
 const defaultPrices: CatalogPrice[] = [
+  codex("default", 4, 0.4, 20),
+  codex("gpt-5.6-sol", 4, 0.4, 20),
+  codex("gpt-5.6-terra", 2, 0.2, 12),
+  codex("gpt-5.6-luna", 0.2, 0.02, 1.2),
+  codex("gpt-5.5", 5, 0.5, 30),
+  codex("gpt-5.4", 2.5, 0.25, 15),
   directApi("gpt-5.5", 5, 0.5, 30),
   directApi("gpt-5.4", 2.5, 0.25, 15),
   directApi("gpt-5.4-mini", 0.75, 0.075, 4.5),
@@ -33,6 +39,21 @@ const defaultPrices: CatalogPrice[] = [
   claude("claude-sonnet-4-5", 3, 0.3, 15),
   claude("claude-sonnet-4-20250514", 3, 0.3, 15),
 ];
+
+function codex(
+  model: string,
+  inputUsdPerMillion: number,
+  cachedInputUsdPerMillion: number,
+  outputUsdPerMillion: number,
+): CatalogPrice {
+  return {
+    runtimeId: "codex",
+    model,
+    inputUsdPerMillion,
+    cachedInputUsdPerMillion,
+    outputUsdPerMillion,
+  };
+}
 
 function directApi(
   model: string,

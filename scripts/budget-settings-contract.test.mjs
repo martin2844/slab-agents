@@ -16,7 +16,8 @@ test("budget settings preserve editable drafts and stable pricing row identity",
     source,
     /key=\{`\$\{price\.runtimeId\}:\$\{price\.model\}/,
   );
-  assert.match(source, /Bundled API defaults/);
+  assert.match(source, /Bundled pricing defaults/);
+  assert.match(source, /API-equivalent estimates/);
   assert.match(source, /configuration\.pricingCatalog\.name/);
   assert.match(source, /Reset .* to bundled pricing/);
   assert.match(source, /configuration\.defaultPrices/);

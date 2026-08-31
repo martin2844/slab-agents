@@ -242,10 +242,14 @@ test("budget admission reserves atomically, reconciles idempotently, and preserv
     agents: [],
     prices: [],
   });
-  const unpricedCodex = makeRun("unpriced-codex", "codex", "default");
-  const rejected = budget.admitRunBudget(unpricedCodex, agent);
-  assert.equal(rejected.allowed, false);
-  assert.equal(rejected.snapshot.reason, "pricing_unavailable");
+  const estimatedCodex = makeRun("estimated-codex", "codex", "default");
+  const codexAdmission = budget.admitRunBudget(estimatedCodex, agent);
+  assert.equal(codexAdmission.allowed, true);
+  assert.equal(
+    codexAdmission.allowed &&
+      codexAdmission.runtimeBudget.pricing?.inputUsdPerMillion,
+    4,
+  );
   const nativeClaude = makeRun("native-claude", "claude", "default");
   const claudeAdmission = budget.admitRunBudget(nativeClaude, agent);
   assert.equal(claudeAdmission.allowed, true);

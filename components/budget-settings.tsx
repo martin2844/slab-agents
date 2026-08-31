@@ -349,11 +349,11 @@ export function BudgetSettings({
 
       <SettingSection
         title="Advanced runtime configuration"
-        description="Default estimates for API-billed models, with local operator overrides."
+        description="Default API-equivalent estimates, with local operator overrides."
       >
         <SettingRow
           title="Model pricing catalog"
-          description="Provider-reported cost wins. Bundled defaults apply only to API-billed models; explicit operator overrides may price anything else."
+          description="Provider-reported cost wins. Subscription runtimes such as Codex use API-equivalent estimates, not the subscription invoice."
           layout="wide"
         >
           <details className="group rounded-md bg-muted px-3">
@@ -366,7 +366,9 @@ export function BudgetSettings({
             <div className="space-y-5 border-t pb-3 pt-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold">Bundled API defaults</p>
+                  <p className="text-sm font-semibold">
+                    Bundled pricing defaults
+                  </p>
                   <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
                     {configuration.pricingCatalog.name} snapshot ·{" "}
                     {configuration.pricingCatalog.snapshotDate}. Rates are USD

@@ -9,7 +9,7 @@ import knexFactory from "knex";
 const migrationDirectory = path.resolve("db/migrations");
 register("./test-alias-loader.mjs", import.meta.url);
 
-test("bundled model prices are overridable without pricing subscription runtimes", async (t) => {
+test("bundled model prices are overridable and resolve Codex defaults", async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), "slab-default-pricing-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const filename = path.join(directory, "workspace.db");
@@ -27,11 +27,13 @@ test("bundled model prices are overridable without pricing subscription runtimes
     { agentRepository },
     { conversationRepository },
     { runRepository },
+    { budgetRepository },
     budget,
   ] = await Promise.all([
     import("../lib/repositories/agent-repository.ts"),
     import("../lib/repositories/conversation-repository.ts"),
     import("../lib/repositories/run-repository.ts"),
+    import("../lib/repositories/budget-repository.ts"),
     import("../lib/budget-control.ts"),
   ]);
   const agent = agentRepository.createAgent({
@@ -63,11 +65,24 @@ test("bundled model prices are overridable without pricing subscription runtimes
   assert.deepEqual(bundled, {
     runtimeId: "direct_api",
     model: "gpt-5.4",
-    version: 2_026_083_001,
+    version: 2_026_083_101,
     inputUsdPerMillion: 2.5,
     cachedInputUsdPerMillion: 0.25,
     outputUsdPerMillion: 15,
   });
+  assert.deepEqual(
+    configuration.defaultPrices.find(
+      ({ runtimeId, model }) => runtimeId === "codex" && model === "default",
+    ),
+    {
+      runtimeId: "codex",
+      model: "default",
+      version: 2_026_083_101,
+      inputUsdPerMillion: 4,
+      cachedInputUsdPerMillion: 0.4,
+      outputUsdPerMillion: 20,
+    },
+  );
   assert.equal(configuration.prices.length, 0);
   assert.equal(configuration.pricingCatalog.name, "CodeBurn / LiteLLM");
   assert.match(
@@ -92,7 +107,7 @@ test("bundled model prices are overridable without pricing subscription runtimes
   assert.deepEqual(
     defaultAdmission.allowed && defaultAdmission.runtimeBudget.pricing,
     {
-      version: 2_026_083_001,
+      version: 2_026_083_101,
       inputUsdPerMillion: 2.5,
       cachedInputUsdPerMillion: 0.25,
       outputUsdPerMillion: 15,
@@ -167,13 +182,71 @@ test("bundled model prices are overridable without pricing subscription runtimes
   const resetAdmission = budget.admitRunBudget(resetRun, agent);
   assert.equal(
     resetAdmission.allowed && resetAdmission.runtimeBudget.pricing?.version,
-    2_026_083_001,
+    2_026_083_101,
   );
 
-  const subscriptionRun = makeRun("subscription", "codex", "gpt-5.4");
+  const subscriptionRun = makeRun("subscription", "codex", "default");
   const subscriptionAdmission = budget.admitRunBudget(subscriptionRun, agent);
-  assert.equal(subscriptionAdmission.allowed, false);
-  assert.equal(subscriptionAdmission.snapshot.reason, "pricing_unavailable");
+  assert.equal(subscriptionAdmission.allowed, true);
+  assert.equal(
+    subscriptionAdmission.allowed &&
+      subscriptionAdmission.runtimeBudget.pricing?.inputUsdPerMillion,
+    4,
+  );
+  const subscriptionUsage = budget.observeRunUsage(
+    subscriptionRun.id,
+    "runner:1",
+    {
+      model: "gpt-5.6-terra",
+      inputTokens: 1_000_000,
+      cachedInputTokens: 200_000,
+      outputTokens: 100_000,
+      totalTokens: 1_100_000,
+    },
+  );
+  assert.equal(subscriptionUsage?.snapshot.actualCostUsd, 2.84);
+  const resolvedReservation = budgetRepository.getReservation(
+    subscriptionRun.id,
+  );
+  assert.equal(resolvedReservation?.model, "gpt-5.6-terra");
+  assert.equal(resolvedReservation?.pricingVersion, 2_026_083_101);
+  assert.equal(resolvedReservation?.inputRateMicroUsdPerMillion, 2_000_000);
+  assert.equal(resolvedReservation?.cachedInputRateMicroUsdPerMillion, 200_000);
+  assert.equal(resolvedReservation?.outputRateMicroUsdPerMillion, 12_000_000);
+  assert.equal(runRepository.getRun(subscriptionRun.id)?.model, "gpt-5.6-terra");
+
+  const replayedRun = makeRun("replayed-subscription", "codex", "default");
+  assert.equal(budget.admitRunBudget(replayedRun, agent).allowed, true);
+  budgetRepository.insertUsageObservation({
+    runId: replayedRun.id,
+    eventKey: "runner:1",
+    runnerRunId: "runner",
+    usageScope: "model_call",
+    inputTokens: 1_000_000,
+    cachedInputTokens: 200_000,
+    outputTokens: 100_000,
+    totalTokens: 1_100_000,
+    providerCostMicroUsd: null,
+    estimatedCostMicroUsd: null,
+    costSource: null,
+    timestamp: new Date().toISOString(),
+  });
+  const replayedUsage = budget.observeRunUsage(
+    replayedRun.id,
+    "runner:1",
+    {
+      model: "gpt-5.6-sol",
+      inputTokens: 1_000_000,
+      cachedInputTokens: 200_000,
+      outputTokens: 100_000,
+      totalTokens: 1_100_000,
+    },
+  );
+  assert.equal(replayedUsage?.snapshot.actualCostUsd, 5.28);
+  assert.equal(
+    budgetRepository.getReservation(replayedRun.id)?.model,
+    "gpt-5.6-sol",
+  );
 
   const privateModelRun = makeRun(
     "private-direct-api-model",

@@ -77,6 +77,13 @@ export const runRepository = {
       Row | undefined;
     return row ? mapRun(row) : null;
   },
+  resolveModel(id: string, model: string) {
+    db.prepare("UPDATE runs SET model=? WHERE id=? AND model='default'").run(
+      model,
+      id,
+    );
+    return runRepository.getRun(id);
+  },
   listRuns(limit = 100) {
     return (
       db

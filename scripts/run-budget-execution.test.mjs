@@ -47,7 +47,7 @@ test("executeRun rejects before Runner and cancels when observed usage exceeds i
     slug: "execution-budget-agent",
     role: "Operations",
     instructions: "Respect the run ceiling.",
-    model: "default",
+    model: "private-codex-model",
     enabled: true,
     fullAccess: false,
   });
