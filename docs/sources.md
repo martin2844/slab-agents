@@ -1,8 +1,10 @@
 # Knowledge sources
 
-Slab Sources synchronizes external, read-only knowledge into Slab Docs. Agents
-continue to use the existing Docs MCP tools, so adding a source does not add a
-new generic browser or HTTP tool to a run.
+Slab Sources synchronizes external, read-only knowledge into managed source
+collections backed by Slab Docs. These collections are indexed for assigned
+agents but remain separate from the human-authored Docs workspace. Agents use
+the existing Docs MCP tools, so adding a source does not add a generic browser
+or HTTP tool to a run.
 
 ```text
 WordPress / GitHub / Website
@@ -11,7 +13,7 @@ WordPress / GitHub / Website
       encrypted credentials
             ↓ Docs MCP
         Slab Docs
-  source collection + revisions
+  managed source collection
             ↓
   run-scoped Docs capability
 ```
@@ -21,10 +23,16 @@ WordPress / GitHub / Website
 1. Create a source in **Sources**.
 2. Use **Test** to validate remote access without writing documents.
 3. Use **Sync** or configure an interval of 15–10,080 minutes.
-4. Slab creates one root document and one managed child per remote item.
-5. Later syncs update changed children and preserve revisions. When a complete
-   remote collection no longer contains an item, its mirrored document is
-   archived rather than deleted.
+4. Slab indexes each remote item inside a managed source collection.
+5. Later syncs update changed items and preserve revisions. When a complete
+   remote collection no longer contains an item, its indexed copy is archived
+   rather than deleted.
+
+Managed source items do not appear in **Docs**. That workspace lists only the
+shared `workspace` collection containing documents created by operators and
+agents. The physical storage and search index remain shared so agents retain one
+bounded retrieval interface without mixing external files into the human Docs
+tree.
 
 Each source is a native Docs collection. In the source editor or an agent's
 **Capabilities** tab, choose the agents that may read that collection. New
@@ -35,7 +43,7 @@ source ACLs existed.
 At run start, `slab-agents` exchanges the server-only Docs admin credential for
 a signed, short-lived token. That token can read the shared `workspace`
 collection plus the source collections assigned to the agent. It can write only
-to `workspace`; synchronized source documents remain read-only to agents. The
+to `workspace`; synchronized source items remain read-only to agents. The
 source IDs, names, and access revisions are recorded in the capability snapshot,
 but the token is not.
 
@@ -43,7 +51,7 @@ Access changes apply to the next run. Active runs keep their initial snapshot.
 Removing access filters `list_docs` and `search_docs` and also prevents direct
 `get_doc` or revision access by a known document ID.
 
-Every mirrored document records the source name, canonical URL when available,
+Every indexed source item records the source name, canonical URL when available,
 external identifier, remote update time, and a managed-content warning.
 
 ## WordPress
@@ -78,7 +86,7 @@ shell tool.
   empty path scope considers the full repository.
 - File selectors accept extensions such as `ts,tsx,py,go,md` and exact
   extensionless names such as `Dockerfile`.
-- Code documents preserve whitespace inside a fenced block, use the full path
+- Code items preserve whitespace inside a fenced block, use the full path
   as the title, and carry `repository-code` plus language metadata. Markdown
   remains native Markdown.
 - Dependency directories, build output, minified assets, source maps, lockfiles,

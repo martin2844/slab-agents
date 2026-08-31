@@ -296,7 +296,7 @@ export async function getWorkPageData(): Promise<WorkPageData> {
 
 export async function getDocsPageData(): Promise<DocsPageData> {
   try {
-    const documents = await DocsClient.list();
+    const documents = await DocsClient.listWorkspace();
     const selected = documents[0]?.id ?? null;
     const detail = selected
       ? await Promise.all([

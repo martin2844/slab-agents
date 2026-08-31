@@ -267,8 +267,8 @@ function rootBody(source: KnowledgeSourceRecord) {
     `# ${source.name}`,
     "",
     source.config.kind === "github"
-      ? "This document groups repository code and documentation synchronized by Slab Sources."
-      : "This document groups knowledge synchronized by Slab Sources.",
+      ? "This managed source index groups repository code and documentation synchronized by Slab Sources."
+      : "This managed source index groups knowledge synchronized by Slab Sources.",
     "",
     `- Source type: ${source.kind}`,
     `- Source: ${location}`,
@@ -277,7 +277,7 @@ function rootBody(source: KnowledgeSourceRecord) {
       ? `- Branch: ${source.config.branch}`
       : null,
     "",
-    "Child documents are refreshed from the external source. Edit the source configuration instead of these generated copies.",
+    "Indexed items are refreshed from the external source. Edit the source configuration instead of these managed copies.",
   ]
     .filter((line): line is string => line !== null)
     .join("\n");

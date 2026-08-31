@@ -14,7 +14,9 @@ export async function GET(request: Request) {
   try {
     const q = new URL(request.url).searchParams.get("q");
     return Response.json({
-      data: q ? await DocsClient.search(q) : await DocsClient.list(),
+      data: q
+        ? await DocsClient.searchWorkspace(q)
+        : await DocsClient.listWorkspace(),
     });
   } catch (error) {
     return apiError(error);

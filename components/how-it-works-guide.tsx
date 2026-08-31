@@ -822,7 +822,7 @@ export function HowItWorksGuide() {
             id="sources"
             number="05"
             title="Connect external knowledge"
-            description="Sources mirrors governed external content into Slab Docs. Agents keep one knowledge interface while operators retain provenance, freshness, and credential control."
+            description="Sources indexes governed external content separately from workspace Docs. Agents keep one knowledge interface while operators retain provenance, freshness, and credential control."
             icon={Database}
           >
             <div className="grid gap-4 lg:grid-cols-3">
@@ -850,12 +850,13 @@ export function HowItWorksGuide() {
                 </Step>
                 <Step number="02" title="Test and synchronize">
                   Test validates the remote connection without writing Docs.
-                  Sync creates one source root and managed child documents.
+                  Sync refreshes a managed source index that stays out of the
+                  human Docs workspace.
                 </Step>
-                <Step number="03" title="Use through Docs">
+                <Step number="03" title="Use as assigned knowledge">
                   Choose which agents can read each source. New runs receive a
-                  short-lived Docs token for the shared workspace and only those
-                  assigned collections; no extra source tool is added.
+                  short-lived Docs token for the shared workspace and only the
+                  assigned source collections; no extra generic tool is added.
                 </Step>
               </ol>
               <div className="space-y-3">
@@ -863,7 +864,7 @@ export function HowItWorksGuide() {
         ↓ server-side sync
 Slab Agents (encrypted credentials)
         ↓ Docs MCP
-Slab Docs (collections + revisions)
+Slab Docs (workspace + managed source index)
         ↓ run-scoped token
 Assigned agent`}</CodeBlock>
                 <Callout title="Private GitHub repositories" icon={ShieldCheck}>
@@ -883,7 +884,7 @@ Assigned agent`}</CodeBlock>
               </Button>
               <Button variant="outline" asChild>
                 <Link href="/docs">
-                  <FileText /> View synchronized Docs
+                  <FileText /> Open workspace Docs
                 </Link>
               </Button>
             </div>

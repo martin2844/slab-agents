@@ -73,6 +73,18 @@ export const DocsClient = {
         { data: DocumentSearchResult[] } | DocumentSearchResult[]
       >(connection(), "search_docs", { query: q, limit: 50 }),
     ),
+  listWorkspace: async () =>
+    DocsClient.list({ collection_id: "workspace" }),
+  searchWorkspace: async (q: string) =>
+    unwrap(
+      await callMcpTool<
+        { data: DocumentSearchResult[] } | DocumentSearchResult[]
+      >(connection(), "search_docs", {
+        query: q,
+        collection_id: "workspace",
+        limit: 50,
+      }),
+    ),
   get: async (id: string) =>
     unwrap(
       await callMcpTool<{ data: Document } | Document>(
