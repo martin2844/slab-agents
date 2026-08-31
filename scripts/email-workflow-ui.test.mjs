@@ -3,7 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("Email automation UI exposes a stable vertical workflow editor", async () => {
-  const [view, editor] = await Promise.all([
+  const [automationEditor, view, editor] = await Promise.all([
+    readFile(
+      new URL("../components/automation-editor.tsx", import.meta.url),
+      "utf8",
+    ),
     readFile(
       new URL("../components/automations-view.tsx", import.meta.url),
       "utf8",
@@ -17,15 +21,11 @@ test("Email automation UI exposes a stable vertical workflow editor", async () =
     ),
   ]);
 
-  assert.match(view, /<EmailAutomationWorkflowEditor/);
-  assert.match(
-    view,
-    /emailMatch:\s*triggerType === "email" \? emailDraft\.emailMatch/,
-  );
-  assert.match(view, /steps: triggerType === "email" \? emailDraft\.steps/);
-  assert.match(view, /Edit Email workflow/);
-  assert.match(view, /Recent Email workflows/);
-  assert.match(view, /href=\{`\/runs\/\$\{step\.runId\}`\}/);
+  assert.match(automationEditor, /<EmailAutomationWorkflowEditor/);
+  assert.match(automationEditor, /emailMatch: emailDraft\.emailMatch/);
+  assert.match(automationEditor, /steps: emailDraft\.steps/);
+  assert.match(view, /Recent inbox workflows/);
+  assert.match(view, /href=\{`\/runs\/\$\{activeStep\.runId\}`\}/);
 
   assert.match(editor, /key=\{step\.id\}/);
   assert.doesNotMatch(editor, /key=\{index\}/);
@@ -37,10 +37,13 @@ test("Email automation UI exposes a stable vertical workflow editor", async () =
   assert.match(editor, /selectedAccount\.displayName/);
   assert.match(editor, /selectedAgent\.name/);
   assert.match(editor, /w-full min-w-0/);
-  assert.match(view, /isEmailWorkflowDraftValid\(emailDraft\)/);
+  assert.match(automationEditor, /isEmailWorkflowDraftValid\(emailDraft\)/);
   assert.match(view, /useOperationalPolling/);
   assert.match(view, /\/api\/automations\?activity=1/);
-  assert.match(view, /expectedWorkflowVersion: automation\.workflowVersion/);
+  assert.match(
+    automationEditor,
+    /expectedWorkflowVersion: automation\.workflowVersion/,
+  );
   assert.doesNotMatch(editor, /crypto\.randomUUID/);
   assert.match(editor, /nextAutomationWorkflowStepId\(draft\.steps\)/);
 });

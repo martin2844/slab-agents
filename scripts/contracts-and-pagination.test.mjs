@@ -19,11 +19,16 @@ test("automation create and update share cron validation", () => {
     }),
   );
   assert.throws(() =>
-    automationUpdateSchema.parse({ cronExpression: "not a cron" }),
+    automationUpdateSchema.parse({
+      cronExpression: "not a cron",
+      expectedWorkflowVersion: 1,
+    }),
   );
   assert.equal(
-    automationUpdateSchema.parse({ cronExpression: "0 8 * * 1-5" })
-      .cronExpression,
+    automationUpdateSchema.parse({
+      cronExpression: "0 8 * * 1-5",
+      expectedWorkflowVersion: 1,
+    }).cronExpression,
     "0 8 * * 1-5",
   );
 });

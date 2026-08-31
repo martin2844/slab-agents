@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const emailAutomationMatchSchema = z.object({
+  matchMode: z.enum(["all", "any"]).default("all"),
   recipientAddress: z.string().trim().email().nullable().default(null),
   senderAddress: z.string().trim().email().nullable().default(null),
   senderDomain: z
@@ -11,13 +12,7 @@ export const emailAutomationMatchSchema = z.object({
     .max(253)
     .nullable()
     .default(null),
-  subjectIncludes: z
-    .string()
-    .trim()
-    .min(1)
-    .max(200)
-    .nullable()
-    .default(null),
+  subjectIncludes: z.string().trim().min(1).max(200).nullable().default(null),
 });
 
 export const automationWorkflowStepSchema = z.object({
@@ -38,51 +33,51 @@ function workflowStepsSchema<T extends typeof automationWorkflowStepSchema>(
   stepSchema: T,
 ) {
   return z
-  .array(stepSchema)
-  .min(1)
-  .max(8)
-  .superRefine((steps, context) => {
-    const ids = new Set<string>();
-    let replyActions = 0;
-    for (const [index, step] of steps.entries()) {
-      if (ids.has(step.id)) {
-        context.addIssue({
-          code: "custom",
-          path: [index, "id"],
-          message: "Workflow step IDs must be unique.",
-        });
-      }
-      ids.add(step.id);
-      const expectedType =
-        step.action === "review_and_reply" ? "agent_review" : "agent_task";
-      if (step.type !== expectedType) {
-        context.addIssue({
-          code: "custom",
-          path: [index, "type"],
-          message:
-            step.action === "review_and_reply"
-              ? "Review-and-reply must be an agent review step."
-              : "Analyze and draft actions must be agent task steps.",
-        });
-      }
-      if (step.action === "review_and_reply") {
-        replyActions += 1;
-        if (index !== steps.length - 1) {
+    .array(stepSchema)
+    .min(1)
+    .max(8)
+    .superRefine((steps, context) => {
+      const ids = new Set<string>();
+      let replyActions = 0;
+      for (const [index, step] of steps.entries()) {
+        if (ids.has(step.id)) {
           context.addIssue({
             code: "custom",
-            path: [index, "action"],
-            message: "A review-and-reply step must be the final step.",
+            path: [index, "id"],
+            message: "Workflow step IDs must be unique.",
           });
         }
+        ids.add(step.id);
+        const expectedType =
+          step.action === "review_and_reply" ? "agent_review" : "agent_task";
+        if (step.type !== expectedType) {
+          context.addIssue({
+            code: "custom",
+            path: [index, "type"],
+            message:
+              step.action === "review_and_reply"
+                ? "Review-and-reply must be an agent review step."
+                : "Analyze and draft actions must be agent task steps.",
+          });
+        }
+        if (step.action === "review_and_reply") {
+          replyActions += 1;
+          if (index !== steps.length - 1) {
+            context.addIssue({
+              code: "custom",
+              path: [index, "action"],
+              message: "A review-and-reply step must be the final step.",
+            });
+          }
+        }
       }
-    }
-    if (replyActions > 1) {
-      context.addIssue({
-        code: "custom",
-        message: "A workflow can contain at most one reply action.",
-      });
-    }
-  });
+      if (replyActions > 1) {
+        context.addIssue({
+          code: "custom",
+          message: "A workflow can contain at most one reply action.",
+        });
+      }
+    });
 }
 
 export const automationWorkflowStepsSchema = workflowStepsSchema(
@@ -92,9 +87,7 @@ export const persistedAutomationWorkflowStepsSchema = workflowStepsSchema(
   persistedAutomationWorkflowStepSchema,
 );
 
-export type EmailAutomationMatch = z.infer<
-  typeof emailAutomationMatchSchema
->;
+export type EmailAutomationMatch = z.infer<typeof emailAutomationMatchSchema>;
 export type AutomationWorkflowStep = z.infer<
   typeof automationWorkflowStepSchema
 >;
@@ -132,6 +125,7 @@ export function normalizePersistedAutomationWorkflowSteps(value: unknown) {
 }
 
 export const EMPTY_EMAIL_AUTOMATION_MATCH: EmailAutomationMatch = {
+  matchMode: "all",
   recipientAddress: null,
   senderAddress: null,
   senderDomain: null,
@@ -150,18 +144,22 @@ export function matchesEmailAutomation(
   const recipients = event.to.map(({ address }) =>
     address.trim().toLowerCase(),
   );
-  return (
-    (!match.recipientAddress ||
-      recipients.includes(match.recipientAddress.toLowerCase())) &&
-    (!match.senderAddress ||
-      sender === match.senderAddress.toLowerCase()) &&
-    (!match.senderDomain ||
-      sender.endsWith(`@${match.senderDomain.toLowerCase()}`)) &&
-    (!match.subjectIncludes ||
-      event.subject
-        .toLowerCase()
-        .includes(match.subjectIncludes.toLowerCase()))
-  );
+  const rules = [
+    match.recipientAddress
+      ? recipients.includes(match.recipientAddress.toLowerCase())
+      : null,
+    match.senderAddress ? sender === match.senderAddress.toLowerCase() : null,
+    match.senderDomain
+      ? sender.endsWith(`@${match.senderDomain.toLowerCase()}`)
+      : null,
+    match.subjectIncludes
+      ? event.subject
+          .toLowerCase()
+          .includes(match.subjectIncludes.toLowerCase())
+      : null,
+  ].filter((result): result is boolean => result !== null);
+  if (!rules.length) return true;
+  return match.matchMode === "any" ? rules.some(Boolean) : rules.every(Boolean);
 }
 
 export function defaultEmailWorkflow(input: {

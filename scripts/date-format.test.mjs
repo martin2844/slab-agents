@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   formatDateTime,
+  formatDateTimeInTimeZone,
   formatRelativeFuture,
   formatRelativePast,
 } from "../lib/utils.ts";
@@ -13,6 +14,16 @@ test("date formatting is deterministic and labels its timezone", () => {
     "2026-08-17 09:20 UTC",
   );
   assert.equal(formatDateTime("not-a-date"), "Unknown time");
+});
+
+test("timezone-aware date formatting includes the requested local time", () => {
+  const formatted = formatDateTimeInTimeZone(
+    "2026-09-07T12:00:00.000Z",
+    "America/Argentina/Buenos_Aires",
+  );
+  assert.match(formatted, /Sep 7, 2026/);
+  assert.match(formatted, /09:00/);
+  assert.match(formatted, /GMT-3/);
 });
 
 test("relative timestamps are deterministic when given a reference time", () => {

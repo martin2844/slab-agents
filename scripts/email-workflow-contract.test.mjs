@@ -91,12 +91,26 @@ test("email workflow schemas keep reply execution linear and bounded", async () 
     }),
     false,
   );
+  assert.equal(
+    matchesEmailAutomation(
+      emailAutomationMatchSchema.parse({
+        matchMode: "any",
+        senderDomain: "eycon.com",
+        subjectIncludes: "urgent",
+      }),
+      {
+        from: { address: "damian@eycon.com" },
+        to: [{ address: "clara@clasific.ar" }],
+        subject: "A normal question",
+      },
+    ),
+    true,
+  );
 });
 
 test("public automation inputs strip migration-only flags and require workflow CAS", async () => {
-  const { automationCreateSchema, automationUpdateSchema } = await import(
-    "../lib/api-schemas/automation.ts"
-  );
+  const { automationCreateSchema, automationUpdateSchema } =
+    await import("../lib/api-schemas/automation.ts");
   const agentId = "11111111-1111-4111-8111-111111111111";
   const step = {
     id: "draft",
@@ -136,12 +150,23 @@ test("public automation inputs strip migration-only flags and require workflow C
       .success,
     false,
   );
+  assert.equal(
+    automationUpdateSchema.safeParse({ scheduleTimezone: "Europe/Paris" })
+      .success,
+    false,
+  );
+  assert.equal(
+    automationUpdateSchema.safeParse({
+      expectedWorkflowVersion: 2,
+      scheduleTimezone: "Europe/Paris",
+    }).success,
+    true,
+  );
 });
 
 test("workflow policy constraints preserve legacy behavior and restrict new replies", async () => {
-  const { emailWorkflowPolicyConstraints } = await import(
-    "../lib/email-workflow-prompt.ts"
-  );
+  const { emailWorkflowPolicyConstraints } =
+    await import("../lib/email-workflow-prompt.ts");
   const agentId = "11111111-1111-4111-8111-111111111111";
   assert.equal(
     emailWorkflowPolicyConstraints({
@@ -210,6 +235,19 @@ test("migration converts existing email automations into one-step workflows", as
     .where("id", "automation-legacy")
     .first();
   assert.equal(automation.workflow_version, 1);
+  assert.equal(automation.lifecycle_status, "enabled");
+  assert.equal(automation.schedule_timezone, "UTC");
+  const occurrenceColumns = await knex("email_automation_occurrences")
+    .columnInfo();
+  assert.equal(
+    Number(
+      String(occurrenceColumns.error_attempt_count.defaultValue).replaceAll(
+        "'",
+        "",
+      ),
+    ),
+    0,
+  );
   assert.deepEqual(JSON.parse(automation.email_match_json), {
     recipientAddress: null,
     senderAddress: null,
@@ -359,10 +397,7 @@ test("repository versions workflow edits without versioning scheduler state", as
     }),
     true,
   );
-  assert.equal(
-    automationRepository.getEmailOccurrence(email.id, 1),
-    null,
-  );
+  assert.equal(automationRepository.getEmailOccurrence(email.id, 1), null);
   assert.ok(automationRepository.getEmailOccurrence(email.id, 2));
   assert.equal(
     automationRepository.updateAutomation(email.id, {
@@ -475,11 +510,11 @@ test("repository versions workflow edits without versioning scheduler state", as
     promptEditedLegacy?.steps[0]?.prompt,
     "Use the corrected executable instructions.",
   );
-  assert.equal(promptEditedLegacy?.prompt, promptEditedLegacy?.steps[0]?.prompt);
   assert.equal(
-    "legacyUnrestricted" in promptEditedLegacy.steps[0],
-    false,
+    promptEditedLegacy?.prompt,
+    promptEditedLegacy?.steps[0]?.prompt,
   );
+  assert.equal("legacyUnrestricted" in promptEditedLegacy.steps[0], false);
 
   db.prepare("UPDATE automations SET workflow_steps_json=? WHERE id=?").run(
     JSON.stringify([

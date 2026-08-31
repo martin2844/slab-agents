@@ -17,11 +17,13 @@ export function StatusBadge({ status }: { status: string }) {
           "succeeded",
           "up_to_date",
           "channel_equivalent",
+          "enabled",
+          "matched",
         ].includes(status) && "border-accent bg-accent-muted text-success",
         ["running", "in_progress", "installing", "evaluating"].includes(
           status,
         ) && "border-accent bg-accent text-accent-foreground",
-        ["failed", "denied", "partial_failure"].includes(status) &&
+        ["failed", "error", "denied", "partial_failure"].includes(status) &&
           "border-destructive/25 bg-destructive/10 text-destructive",
         [
           "waiting_approval",
@@ -38,7 +40,9 @@ export function StatusBadge({ status }: { status: string }) {
           "border-amber-700/25 bg-amber-500/10 text-amber-900",
         ["review"].includes(status) &&
           "border-violet-600/25 bg-violet-500/10 text-violet-800",
-        ["disabled", "cancelled"].includes(status) && "opacity-60",
+        ["disabled", "cancelled", "draft", "paused", "archived"].includes(
+          status,
+        ) && "border-border bg-muted text-muted-foreground opacity-70",
         status === "skipped" && "border-border bg-muted text-muted-foreground",
       )}
     >

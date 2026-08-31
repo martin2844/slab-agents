@@ -105,9 +105,7 @@ test("email events become durable, deduplicated automation occurrences", async (
   const beforeCreation = new Date(createdAt - 60_000).toISOString();
   const afterCreation = new Date(createdAt + 60_000).toISOString();
   db.prepare("UPDATE automations SET workflow_steps_json=? WHERE id=?").run(
-    JSON.stringify([
-      { ...automation.steps[0], legacyUnrestricted: true },
-    ]),
+    JSON.stringify([{ ...automation.steps[0], legacyUnrestricted: true }]),
     automation.id,
   );
 
@@ -164,9 +162,7 @@ test("email events become durable, deduplicated automation occurrences", async (
   );
   assert.equal(restored.status, 200);
   db.prepare("UPDATE automations SET workflow_steps_json=? WHERE id=?").run(
-    JSON.stringify([
-      { ...automation.steps[0], legacyUnrestricted: true },
-    ]),
+    JSON.stringify([{ ...automation.steps[0], legacyUnrestricted: true }]),
     automation.id,
   );
   const promptEdit = await automationPatchRoute.PATCH(
@@ -194,7 +190,10 @@ test("email events become durable, deduplicated automation occurrences", async (
     new Request(`http://localhost/api/automations/${automation.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ cronExpression: "0 9 * * *" }),
+      body: JSON.stringify({
+        cronExpression: "0 9 * * *",
+        expectedWorkflowVersion: 4,
+      }),
     }),
     { params: Promise.resolve({ id: automation.id }) },
   );
@@ -540,6 +539,38 @@ test("email events become durable, deduplicated automation occurrences", async (
   const fairBatch = automationRepository.listPendingEmailOccurrences(1_000);
   assert.ok(fairBatch.some(({ inboundEventId }) => inboundEventId === 3_001));
   assert.ok(fairBatch.some(({ attemptCount }) => attemptCount > 0));
+
+  db.prepare(
+    `UPDATE email_automation_occurrences
+     SET attempt_count=12,error_attempt_count=7
+     WHERE automation_id=? AND inbound_event_id=?`,
+  ).run(automation.id, 3_001);
+  const finalAttempt = automationRepository.getEmailOccurrence(
+    automation.id,
+    3_001,
+  );
+  assert.ok(finalAttempt);
+  automationRepository.markEmailOccurrenceRetry(
+    automation.id,
+    3_001,
+    finalAttempt.runId,
+    "runtime remained unavailable",
+  );
+  const exhausted = automationRepository.getEmailOccurrence(
+    automation.id,
+    3_001,
+  );
+  assert.equal(exhausted?.status, "skipped");
+  assert.equal(exhausted?.attemptCount, 13);
+  assert.equal(exhausted?.skipReason, "retry_limit_exceeded");
+  assert.equal(exhausted?.nextAttemptAt, null);
+  const exhaustedRow = db
+    .prepare(
+      `SELECT error_attempt_count FROM email_automation_occurrences
+       WHERE automation_id=? AND inbound_event_id=?`,
+    )
+    .get(automation.id, 3_001);
+  assert.equal(exhaustedRow.error_attempt_count, 8);
 });
 
 test("email trigger semantics frame message metadata as untrusted input", async () => {

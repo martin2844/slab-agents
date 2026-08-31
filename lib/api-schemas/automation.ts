@@ -4,6 +4,20 @@ import {
   automationWorkflowStepsSchema,
   emailAutomationMatchSchema,
 } from "../automation-workflow.ts";
+import { isValidTimeZone } from "../automation-schedule.ts";
+
+const lifecycleStatusSchema = z.enum([
+  "draft",
+  "enabled",
+  "paused",
+  "archived",
+]);
+const timezoneSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .refine(isValidTimeZone, "Choose a valid IANA timezone.");
 
 export const cronExpressionSchema = z
   .string()
@@ -22,12 +36,15 @@ export const automationCreateSchema = z
     agentId: z.string().uuid(),
     triggerType: z.enum(["schedule", "email"]).default("schedule"),
     cronExpression: cronExpressionSchema.nullable(),
+    scheduleTimezone: timezoneSchema.default("UTC"),
     emailAccountId: z.string().min(1).max(200).nullable().default(null),
     emailMatch: emailAutomationMatchSchema.optional(),
     steps: automationWorkflowStepsSchema.optional(),
     prompt: z.string().trim().min(2).max(20_000),
     mode: z.enum(["review", "task"]).default("review"),
     enabled: z.boolean().default(true),
+    lifecycleStatus: lifecycleStatusSchema.optional(),
+    missedRunPolicy: z.enum(["skip", "latest_once"]).default("latest_once"),
   })
   .superRefine((input, ctx) => {
     if (input.triggerType === "email" && !input.emailAccountId) {
@@ -80,11 +97,14 @@ export const automationCreateSchema = z
 
 const workflowDefinitionFields = [
   "agentId",
+  "cronExpression",
+  "scheduleTimezone",
   "emailAccountId",
   "prompt",
   "mode",
   "emailMatch",
   "steps",
+  "missedRunPolicy",
 ] as const;
 
 export const automationUpdateSchema = z
@@ -94,17 +114,23 @@ export const automationUpdateSchema = z
     agentId: z.string().uuid().optional(),
     name: z.string().trim().min(2).max(120).optional(),
     cronExpression: cronExpressionSchema.nullable().optional(),
+    scheduleTimezone: timezoneSchema.optional(),
     emailAccountId: z.string().min(1).max(200).nullable().optional(),
     prompt: z.string().trim().min(2).max(20_000).optional(),
     mode: z.enum(["review", "task"]).optional(),
     emailMatch: emailAutomationMatchSchema.optional(),
     steps: automationWorkflowStepsSchema.optional(),
+    lifecycleStatus: lifecycleStatusSchema.optional(),
+    missedRunPolicy: z.enum(["skip", "latest_once"]).optional(),
   })
   .superRefine((input, context) => {
     const changesWorkflowDefinition = workflowDefinitionFields.some(
       (field) => input[field] !== undefined,
     );
-    if (changesWorkflowDefinition && input.expectedWorkflowVersion === undefined) {
+    if (
+      changesWorkflowDefinition &&
+      input.expectedWorkflowVersion === undefined
+    ) {
       context.addIssue({
         code: "custom",
         path: ["expectedWorkflowVersion"],
@@ -113,3 +139,21 @@ export const automationUpdateSchema = z
       });
     }
   });
+
+export const automationPreviewSchema = z.discriminatedUnion("triggerType", [
+  z.object({
+    triggerType: z.literal("schedule"),
+    cronExpression: cronExpressionSchema.nullable(),
+    scheduleTimezone: timezoneSchema,
+  }),
+  z.object({
+    triggerType: z.literal("email"),
+    emailMatch: emailAutomationMatchSchema,
+    steps: automationWorkflowStepsSchema,
+    sample: z.object({
+      senderAddress: z.string().trim().email(),
+      recipientAddresses: z.array(z.string().trim().email()).min(1).max(20),
+      subject: z.string().trim().max(500),
+    }),
+  }),
+]);

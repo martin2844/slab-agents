@@ -9,6 +9,7 @@ export async function GET(request: Request) {
   if (new URL(request.url).searchParams.get("activity") === "1") {
     return Response.json({
       data: {
+        automations: automationRepository.listAutomations(),
         executions: automationExecutionRepository.listRecentWithSteps(),
       },
     });
@@ -20,7 +21,9 @@ export async function POST(request: Request) {
     const input = automationCreateSchema.parse(await request.json());
     if (!agentRepository.getAgent(input.agentId))
       throw notFound("Agent not found");
-    if (input.triggerType === "email") {
+    const lifecycleStatus =
+      input.lifecycleStatus ?? (input.enabled ? "enabled" : "paused");
+    if (input.triggerType === "email" && lifecycleStatus === "enabled") {
       await assertEmailAutomationTarget(
         input.agentId,
         input.emailAccountId!,

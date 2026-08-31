@@ -14,6 +14,7 @@ function automation(overrides = {}) {
     createdAt: "2026-08-20T09:00:00.000Z",
     lastScheduledFor: null,
     missedRunPolicy: "latest_once",
+    scheduleTimezone: "UTC",
     ...overrides,
   };
 }
@@ -51,4 +52,13 @@ test("nextScheduledOccurrence returns the next future schedule", () => {
     new Date("2026-08-23T12:00:00.000Z"),
   );
   assert.equal(next.toISOString(), "2026-08-24T08:00:00.000Z");
+});
+
+test("schedule evaluation respects the configured IANA timezone", () => {
+  const next = nextScheduledOccurrence(
+    "0 9 * * *",
+    new Date("2026-08-23T12:30:00.000Z"),
+    "America/Argentina/Buenos_Aires",
+  );
+  assert.equal(next.toISOString(), "2026-08-24T12:00:00.000Z");
 });

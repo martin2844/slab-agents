@@ -139,6 +139,7 @@ export type Automation = {
   agentName?: string;
   triggerType: "schedule" | "email";
   cronExpression: string | null;
+  scheduleTimezone: string;
   emailAccountId: string | null;
   emailMatch: EmailAutomationMatch;
   workflowVersion: number;
@@ -146,7 +147,10 @@ export type Automation = {
   prompt: string;
   mode: AutomationMode;
   enabled: boolean;
+  lifecycleStatus: "draft" | "enabled" | "paused" | "archived";
   lastRunAt: string | null;
+  lastRunStatus: RunStatus | null;
+  nextRunAt: string | null;
   lastScheduledFor: string | null;
   missedRunPolicy: "skip" | "latest_once";
   lastRunId: string | null;
@@ -350,9 +354,7 @@ export type RunDetailData = {
 
 export type AutomationsData = {
   automations: Automation[];
-  executions: Array<
-    AutomationExecution & { steps: AutomationStepExecution[] }
-  >;
+  executions: Array<AutomationExecution & { steps: AutomationStepExecution[] }>;
   agents: Agent[];
   emailAccounts: EmailAccount[];
   emailAccess: Array<{

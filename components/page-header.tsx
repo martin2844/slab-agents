@@ -11,7 +11,7 @@ export function PageHeader({
 }) {
   return (
     <header className="mb-5 flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="max-w-3xl">
+      <div className="min-w-0 max-w-3xl">
         {eyebrow && (
           <p className="mb-1 font-mono text-[0.68rem] font-medium uppercase tracking-[0.02em] text-muted-foreground">
             {eyebrow}

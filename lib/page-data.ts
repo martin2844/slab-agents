@@ -39,7 +39,6 @@ import { buildAgentToolCatalog } from "@/lib/agent-tool-catalog";
 import { getEmailIntegrationState } from "@/lib/integrations/email-service";
 import { emailAutomationBlockReason } from "@/lib/email-automation-policy";
 import { getTodayUsagePulse } from "@/lib/usage-summary";
-import { nextScheduledOccurrence } from "@/lib/automation-schedule";
 import {
   summarizeAgentOverview,
   summarizeWorkOverview,
@@ -144,9 +143,7 @@ export async function getOverviewPageData(): Promise<OverviewData> {
         name: automation.name,
         agentId: automation.agentId,
         triggerType: automation.triggerType,
-        nextRunAt: automation.cronExpression
-          ? safeNextScheduledOccurrence(automation.cronExpression, currentTime)
-          : null,
+        nextRunAt: automation.nextRunAt,
       }))
       .sort((left, right) => {
         if (left.nextRunAt === null) return 1;
@@ -161,17 +158,6 @@ export async function getOverviewPageData(): Promise<OverviewData> {
 function loadOverviewUsage(currentTime: Date) {
   try {
     return getTodayUsagePulse(currentTime);
-  } catch {
-    return null;
-  }
-}
-
-function safeNextScheduledOccurrence(
-  cronExpression: string,
-  currentTime: Date,
-) {
-  try {
-    return nextScheduledOccurrence(cronExpression, currentTime).toISOString();
   } catch {
     return null;
   }
@@ -250,9 +236,11 @@ export function getRunDetailPageData(id: string): RunDetailData | null {
 export async function getAutomationsPageData(): Promise<AutomationsData> {
   const email = await getEmailIntegrationState();
   const feedError = automationRepository.getEmailFeedState()?.lastError;
-  const dispatchWarning = automationRepository.getPendingEmailDispatchWarning();
+  const dispatchWarning = automationRepository.getEmailDispatchWarning();
   const pendingDispatchError = dispatchWarning
-    ? `“${dispatchWarning.automationName}” event ${dispatchWarning.inboundEventId} is waiting to retry: ${dispatchWarning.error}${dispatchWarning.nextAttemptAt ? ` Next attempt after ${dispatchWarning.nextAttemptAt}.` : ""}`
+    ? dispatchWarning.status === "pending"
+      ? `“${dispatchWarning.automationName}” event ${dispatchWarning.inboundEventId} is waiting to retry: ${dispatchWarning.error}${dispatchWarning.nextAttemptAt ? ` Next attempt after ${dispatchWarning.nextAttemptAt}.` : ""}`
+      : `“${dispatchWarning.automationName}” event ${dispatchWarning.inboundEventId} stopped after repeated dispatch failures: ${dispatchWarning.error}`
     : null;
   return {
     automations: automationRepository.listAutomations(),

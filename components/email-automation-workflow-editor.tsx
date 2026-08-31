@@ -1,9 +1,12 @@
 "use client";
 
 import {
+  ArrowDown,
+  ArrowUp,
   Bot,
   CheckCircle2,
   ChevronDown,
+  Copy,
   Mail,
   Plus,
   Trash2,
@@ -19,11 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type {
-  Agent,
-  AutomationsData,
-  EmailAccount,
-} from "@/lib/types";
+import type { Agent, AutomationsData, EmailAccount } from "@/lib/types";
 import {
   nextAutomationWorkflowStepId,
   type AutomationWorkflowStep,
@@ -40,11 +39,9 @@ export type EmailWorkflowDraft = {
 export function isEmailWorkflowDraftValid(draft: EmailWorkflowDraft) {
   return Boolean(
     draft.name.trim() &&
-      draft.emailAccountId &&
-      draft.steps.length &&
-      draft.steps.every(
-        (step) => step.agentId && step.prompt.trim().length >= 2,
-      ),
+    draft.emailAccountId &&
+    draft.steps.length &&
+    draft.steps.every((step) => step.agentId && step.prompt.trim().length >= 2),
   );
 }
 
@@ -84,6 +81,7 @@ export function defaultEmailWorkflowDraft(input: {
     name: "",
     emailAccountId: accountId,
     emailMatch: {
+      matchMode: "all",
       recipientAddress: null,
       senderAddress: null,
       senderDomain: null,
@@ -96,7 +94,8 @@ export function defaultEmailWorkflowDraft(input: {
             type: "agent_task",
             agentId: agent.id,
             action: "analyze",
-            prompt: "Read the inbound message and handle it according to your role.",
+            prompt:
+              "Read the inbound message and handle it according to your role.",
           },
         ]
       : [],
@@ -136,10 +135,7 @@ export function EmailAutomationWorkflowEditor({
             access.sendEnabled &&
             access.sendPolicy !== "disabled";
     });
-  const updateStep = (
-    id: string,
-    update: Partial<AutomationWorkflowStep>,
-  ) =>
+  const updateStep = (id: string, update: Partial<AutomationWorkflowStep>) =>
     onChange({
       ...draft,
       steps: draft.steps.map((step) =>
@@ -187,8 +183,38 @@ export function EmailAutomationWorkflowEditor({
           type: "agent_task",
           agentId: agent.id,
           action,
-          prompt: "Prepare the next response using the message and prior workflow output.",
+          prompt:
+            "Prepare the next response using the message and prior workflow output.",
         },
+      ],
+    });
+  };
+  const moveStep = (index: number, direction: -1 | 1) => {
+    const destination = index + direction;
+    if (destination < 0 || destination >= draft.steps.length) return;
+    const steps = [...draft.steps];
+    [steps[index], steps[destination]] = [steps[destination]!, steps[index]!];
+    onChange({ ...draft, steps });
+  };
+  const duplicateStep = (index: number) => {
+    const source = draft.steps[index];
+    if (
+      !source ||
+      source.action === "review_and_reply" ||
+      draft.steps.length >= 8
+    ) {
+      return;
+    }
+    const duplicate = {
+      ...source,
+      id: nextAutomationWorkflowStepId(draft.steps),
+    };
+    onChange({
+      ...draft,
+      steps: [
+        ...draft.steps.slice(0, index + 1),
+        duplicate,
+        ...draft.steps.slice(index + 1),
       ],
     });
   };
@@ -247,7 +273,39 @@ export function EmailAutomationWorkflowEditor({
               </SelectContent>
             </Select>
           </label>
-          <div className="mt-4 grid gap-3 border-t pt-4 sm:grid-cols-2">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+            <div>
+              <p className="text-xs font-semibold">Matching rules</p>
+              <p className="text-[11px] text-muted-foreground">
+                Choose how multiple filters are evaluated.
+              </p>
+            </div>
+            <Select
+              value={draft.emailMatch.matchMode}
+              onValueChange={(matchMode) =>
+                onChange({
+                  ...draft,
+                  emailMatch: {
+                    ...draft.emailMatch,
+                    matchMode: matchMode as EmailAutomationMatch["matchMode"],
+                  },
+                })
+              }
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue>
+                  {draft.emailMatch.matchMode === "all"
+                    ? "Match all rules"
+                    : "Match any rule"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Match all rules</SelectItem>
+                <SelectItem value="any">Match any rule</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <FilterInput
               label="Recipient is"
               placeholder="support@example.com"
@@ -294,8 +352,10 @@ export function EmailAutomationWorkflowEditor({
             />
           </div>
           <p className="mt-3 text-[11px] text-muted-foreground">
-            Empty filters match every inbound message for this account. All
-            configured filters must match.
+            Empty filters match every inbound message for this account. When
+            filters exist,{" "}
+            {draft.emailMatch.matchMode === "all" ? "all" : "any"} of them must
+            match.
           </p>
         </div>
       </section>
@@ -335,24 +395,65 @@ export function EmailAutomationWorkflowEditor({
                         <p className="text-sm font-semibold">
                           Step {index + 1}
                         </p>
-                        {draft.steps.length > 1 && (
+                        <div className="flex items-center gap-0.5">
                           <Button
                             type="button"
                             variant="ghost"
-                            size="icon"
-                            onClick={() =>
-                              onChange({
-                                ...draft,
-                                steps: draft.steps.filter(
-                                  ({ id }) => id !== step.id,
-                                ),
-                              })
+                            size="icon-xs"
+                            onClick={() => moveStep(index, -1)}
+                            disabled={
+                              index === 0 || step.action === "review_and_reply"
                             }
-                            aria-label={`Remove step ${index + 1}`}
+                            aria-label={`Move step ${index + 1} up`}
                           >
-                            <Trash2 />
+                            <ArrowUp />
                           </Button>
-                        )}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => moveStep(index, 1)}
+                            disabled={
+                              index === draft.steps.length - 1 ||
+                              draft.steps[index + 1]?.action ===
+                                "review_and_reply"
+                            }
+                            aria-label={`Move step ${index + 1} down`}
+                          >
+                            <ArrowDown />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => duplicateStep(index)}
+                            disabled={
+                              step.action === "review_and_reply" ||
+                              draft.steps.length >= 8
+                            }
+                            aria-label={`Duplicate step ${index + 1}`}
+                          >
+                            <Copy />
+                          </Button>
+                          {draft.steps.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={() =>
+                                onChange({
+                                  ...draft,
+                                  steps: draft.steps.filter(
+                                    ({ id }) => id !== step.id,
+                                  ),
+                                })
+                              }
+                              aria-label={`Remove step ${index + 1}`}
+                            >
+                              <Trash2 />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                       <div className="mt-3 grid gap-3 sm:grid-cols-2">
                         <label className="grid gap-2 text-xs font-semibold">
@@ -362,18 +463,17 @@ export function EmailAutomationWorkflowEditor({
                             onValueChange={(value) => {
                               const action =
                                 value as AutomationWorkflowStep["action"];
-                              const nextAgent = eligibleAgents(action).find(
-                                ({ id }) => id === step.agentId,
-                              ) ?? eligibleAgents(action)[0];
+                              const nextAgent =
+                                eligibleAgents(action).find(
+                                  ({ id }) => id === step.agentId,
+                                ) ?? eligibleAgents(action)[0];
                               updateStep(step.id, {
                                 action,
                                 type:
                                   action === "review_and_reply"
                                     ? "agent_review"
                                     : "agent_task",
-                                ...(nextAgent
-                                  ? { agentId: nextAgent.id }
-                                  : {}),
+                                ...(nextAgent ? { agentId: nextAgent.id } : {}),
                               });
                             }}
                           >
@@ -391,7 +491,8 @@ export function EmailAutomationWorkflowEditor({
                                 value="review_and_reply"
                                 disabled={
                                   index !== draft.steps.length - 1 ||
-                                  eligibleAgents("review_and_reply").length === 0
+                                  eligibleAgents("review_and_reply").length ===
+                                    0
                                 }
                               >
                                 Review and reply

@@ -20,10 +20,10 @@ test("automation last-run timestamps link to the actual latest run", async () =>
 
   assert.match(types, /lastRunId: string \| null/);
   assert.match(repository, /last_run_id/);
-  assert.match(component, /href=\{`\/runs\/\$\{item\.lastRunId\}`\}/);
+  assert.match(component, /href=\{`\/runs\/\$\{automation\.lastRunId\}`\}/);
   assert.match(
     component,
-    /lastRunId: run\.id/,
-    "Run now must update the client card with the run returned by the API",
+    /setAutomations\(activity\.automations\)/,
+    "The operational poll must refresh the latest run linkage returned by the repository",
   );
 });

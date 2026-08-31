@@ -43,7 +43,12 @@ export async function PATCH(
     if (
       current.triggerType === "email" &&
       emailAccountId &&
-      (input.enabled ?? current.enabled)
+      (input.lifecycleStatus ??
+        (input.enabled === undefined
+          ? current.lifecycleStatus
+          : input.enabled
+            ? "enabled"
+            : "paused")) === "enabled"
     ) {
       await assertEmailAutomationTarget(
         agentId,

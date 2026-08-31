@@ -14,6 +14,23 @@ export function formatDateTime(value: string | number | Date) {
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
 }
 
+export function formatDateTimeInTimeZone(
+  value: string | number | Date,
+  timeZone: string,
+) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown time";
+  return new Intl.DateTimeFormat("en", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+    timeZoneName: "short",
+  }).format(date);
+}
+
 export function formatRelativePast(
   value: string | number | Date,
   currentTime = new Date(),
