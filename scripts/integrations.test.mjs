@@ -144,13 +144,14 @@ test("managed Proton aliases are synchronized and deleted as account groups", as
 });
 
 test("Email credentials and one-time connector tokens stay outside browser payloads and SQLite", async () => {
-  const [migration, service, vault, client, runner, route] = await Promise.all([
+  const [migration, service, vault, client, runner, route, gmailSettingsRoute] = await Promise.all([
     read("db/migrations/202608180007_email_integration.cjs"),
     read("lib/integrations/email-service.ts"),
     read("lib/integrations/email-token-vault.ts"),
     read("lib/integrations/email-client.ts"),
     read("lib/runner.ts"),
     read("app/api/integrations/email/agents/[agentId]/route.ts"),
+    read("app/api/integrations/email/gmail/settings/route.ts"),
   ]);
   assert.doesNotMatch(
     migration,
@@ -164,7 +165,8 @@ test("Email credentials and one-time connector tokens stay outside browser paylo
   assert.match(client, /saveGoogleOAuthSettings/);
   assert.match(client, /saveMicrosoftOAuthSettings/);
   assert.match(client, /connectMicrosoft/);
-  assert.doesNotMatch(client, /return.*clientSecret/);
+  assert.match(client, /getGoogleOAuthCredentialsForReuse/);
+  assert.doesNotMatch(gmailSettingsRoute, /getGoogleOAuthCredentialsForReuse/);
   assert.match(service, /storeEmailConnectorToken/);
   assert.match(service, /readEmailConnectorToken/);
   assert.match(runner, /getAgentEmailMcp/);

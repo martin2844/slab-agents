@@ -51,6 +51,7 @@ export type GoogleDataConnectionInput = {
   name: string;
   clientId?: string;
   clientSecret?: string;
+  reuseGmailOAuthCredentials?: boolean;
   enabled?: boolean;
   permissions?: Record<string, string[]>;
 };

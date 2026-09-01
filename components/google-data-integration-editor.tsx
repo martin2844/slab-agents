@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  Check,
   ExternalLink,
   KeyRound,
   LoaderCircle,
@@ -38,6 +39,7 @@ import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/client-api";
 import type {
   Agent,
+  GmailOAuthSettings,
   Integration,
   IntegrationCatalogItem,
 } from "@/lib/types";
@@ -64,6 +66,9 @@ export function GoogleDataIntegrationEditor({
   const [name, setName] = useState(integration?.name ?? catalog.name);
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+  const [reuseGmailOAuthCredentials, setReuseGmailOAuthCredentials] =
+    useState(false);
+  const [gmailOAuth, setGmailOAuth] = useState<GmailOAuthSettings | null>(null);
   const [enabled, setEnabled] = useState(integration?.enabled ?? true);
   const [permissions, setPermissions] = useState<Record<string, string[]>>(
     integration?.permissions ?? {},
@@ -75,6 +80,21 @@ export function GoogleDataIntegrationEditor({
     () => Object.values(permissions).filter((tools) => tools.length > 0).length,
     [permissions],
   );
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    api<GmailOAuthSettings>("/api/integrations/email/gmail/settings")
+      .then((settings) => {
+        if (active) setGmailOAuth(settings);
+      })
+      .catch(() => {
+        if (active) setGmailOAuth(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open]);
 
   const callbackUrl = callbackOrigin
     ? new URL("/api/integrations/google-data/callback", callbackOrigin).toString()
@@ -113,6 +133,7 @@ export function GoogleDataIntegrationEditor({
             name,
             clientId: clientId || undefined,
             clientSecret: clientSecret || undefined,
+            reuseGmailOAuthCredentials: reuseGmailOAuthCredentials || undefined,
             enabled,
             permissions,
             ...(integration
@@ -124,6 +145,7 @@ export function GoogleDataIntegrationEditor({
       onSaved(next);
       setClientId("");
       setClientSecret("");
+      setReuseGmailOAuthCredentials(false);
       toast.success(
         next.status === "connected"
           ? `${next.name} settings saved`
@@ -210,27 +232,70 @@ export function GoogleDataIntegrationEditor({
               Name
               <Input value={name} onChange={(event) => setName(event.target.value)} />
             </label>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-sm font-semibold">
-                OAuth client ID
-                <Input
-                  value={clientId}
-                  onChange={(event) => setClientId(event.target.value)}
-                  placeholder={integration?.hasSecret ? "Configured · enter to replace" : "…apps.googleusercontent.com"}
-                  autoComplete="off"
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">
-                OAuth client secret
-                <Input
-                  type="password"
-                  value={clientSecret}
-                  onChange={(event) => setClientSecret(event.target.value)}
-                  placeholder={integration?.hasSecret ? "Configured · enter to replace" : "GOCSPX-…"}
-                  autoComplete="new-password"
-                />
-              </label>
-            </div>
+            {gmailOAuth?.configured && gmailOAuth.hasClientSecret ? (
+              <div className="mt-4 flex flex-col gap-3 rounded-lg border bg-muted/35 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 text-sm font-semibold">
+                    {reuseGmailOAuthCredentials ? (
+                      <Check className="size-4 text-primary" />
+                    ) : (
+                      <KeyRound className="size-4 text-muted-foreground" />
+                    )}
+                    {reuseGmailOAuthCredentials
+                      ? "Reusing Gmail OAuth credentials"
+                      : "Gmail OAuth credentials are configured"}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Copies only the Google Cloud client ID and secret
+                    server-side. You&apos;ll authorize this integration separately;
+                    its API and redirect URI must also be enabled in Google Cloud.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() => {
+                    setReuseGmailOAuthCredentials((current) => !current);
+                    setClientId("");
+                    setClientSecret("");
+                  }}
+                >
+                  {reuseGmailOAuthCredentials
+                    ? "Use different credentials"
+                    : "Reuse Gmail credentials"}
+                </Button>
+              </div>
+            ) : null}
+            {!reuseGmailOAuthCredentials ? (
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-2 text-sm font-semibold">
+                  OAuth client ID
+                  <Input
+                    value={clientId}
+                    onChange={(event) => {
+                      setClientId(event.target.value);
+                      setReuseGmailOAuthCredentials(false);
+                    }}
+                    placeholder={integration?.hasSecret ? "Configured · enter to replace" : "…apps.googleusercontent.com"}
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-semibold">
+                  OAuth client secret
+                  <Input
+                    type="password"
+                    value={clientSecret}
+                    onChange={(event) => {
+                      setClientSecret(event.target.value);
+                      setReuseGmailOAuthCredentials(false);
+                    }}
+                    placeholder={integration?.hasSecret ? "Configured · enter to replace" : "GOCSPX-…"}
+                    autoComplete="new-password"
+                  />
+                </label>
+              </div>
+            ) : null}
             <label className="mt-4 grid gap-2 text-sm font-semibold">
               Authorized redirect URI
               <Input value={callbackUrl} readOnly className="font-mono text-xs" />
@@ -380,7 +445,9 @@ export function GoogleDataIntegrationEditor({
             disabled={
               saving ||
               !name.trim() ||
-              (!integration && (!clientId.trim() || !clientSecret))
+              (!integration &&
+                !reuseGmailOAuthCredentials &&
+                (!clientId.trim() || !clientSecret))
             }
           >
             {saving ? <LoaderCircle className="animate-spin" /> : <PlugZap />}

@@ -150,6 +150,10 @@ export async function getEmailIntegrationState(): Promise<EmailIntegrationState>
   };
 }
 
+export async function getGmailOAuthCredentialsForGoogleData() {
+  return client().getGoogleOAuthCredentialsForReuse();
+}
+
 export async function saveAndTestEmailIntegration(serviceUrl: string) {
   const normalized = normalizeEmailServiceUrl(serviceUrl);
   const testedAt = new Date().toISOString();

@@ -27,6 +27,14 @@ async function withFetch(mock, run) {
 test("Google data integration schemas and tool keys are explicit", () => {
   assert.equal(
     googleDataIntegrationSchema.safeParse({
+      provider: "google_search_console",
+      name: "Search Console",
+      reuseGmailOAuthCredentials: true,
+    }).success,
+    true,
+  );
+  assert.equal(
+    googleDataIntegrationSchema.safeParse({
       provider: "google_analytics",
       name: "Analytics",
       clientId: "client",
@@ -47,6 +55,20 @@ test("Google data integration schemas and tool keys are explicit", () => {
   ];
   assert.equal(new Set(keys).size, 8);
   assert.ok(keys.every((key) => /^(google_analytics|search_console)_/.test(key)));
+});
+
+test("Gmail OAuth reuse stays on the authenticated server boundary", async () => {
+  const [client, service, publicRoute] = await Promise.all([
+    read("lib/integrations/email-client.ts"),
+    read("lib/integrations/google-data-service.ts"),
+    read("app/api/integrations/email/gmail/settings/route.ts"),
+  ]);
+  assert.match(client, /\/api\/settings\/google-oauth\/credentials/);
+  assert.match(client, /method: "POST"/);
+  assert.match(client, /purpose: "google_data"/);
+  assert.match(service, /getGmailOAuthCredentialsForGoogleData/);
+  assert.match(service, /encryptLocalSecret\(JSON\.stringify\(credentials\)\)/);
+  assert.doesNotMatch(publicRoute, /getGoogleOAuthCredentialsForReuse/);
 });
 
 test("Google integration cards use local product marks", async () => {
@@ -231,6 +253,8 @@ test("Google integrations are indexed into run-scoped MCP capabilities", async (
   assert.match(catalog, /search_console_query_performance/);
   assert.match(editor, /Agent tool access/);
   assert.match(editor, /run-scoped/);
+  assert.match(editor, /Reuse Gmail credentials/);
+  assert.match(editor, /reuseGmailOAuthCredentials/);
   assert.match(
     packs,
     /integration\.provider === "posthog" \|\|\s*integration\.provider === "google_analytics"/,

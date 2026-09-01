@@ -19,6 +19,7 @@ import {
   type GoogleDataProvider,
 } from "@/lib/integrations/google-data-contract";
 import { createGoogleDataAdapter } from "@/lib/integrations/google-data-client";
+import { getGmailOAuthCredentialsForGoogleData } from "@/lib/integrations/email-service";
 import {
   IntegrationConfigurationError,
   IntegrationNotFoundError,
@@ -130,7 +131,19 @@ export async function saveGoogleDataIntegration(
   if (!name) throw new OperationalError("Integration name is required.");
   const previous = current ? parseCredentials(current) : null;
   if (
+    input.reuseGmailOAuthCredentials &&
+    (input.clientId !== undefined || input.clientSecret !== undefined)
+  ) {
+    throw new IntegrationConfigurationError(
+      "Choose either Gmail OAuth credentials or different Google OAuth credentials.",
+    );
+  }
+  const reused = input.reuseGmailOAuthCredentials
+    ? await getGmailOAuthCredentialsForGoogleData()
+    : null;
+  if (
     previous &&
+    !reused &&
     input.clientId &&
     input.clientId.trim() !== previous.clientId &&
     !input.clientSecret
@@ -139,8 +152,9 @@ export async function saveGoogleDataIntegration(
       "A fresh OAuth client secret is required when the client ID changes.",
     );
   }
-  const clientId = input.clientId?.trim() || previous?.clientId;
-  const clientSecret = input.clientSecret || previous?.clientSecret;
+  const clientId = reused?.clientId ?? input.clientId?.trim() ?? previous?.clientId;
+  const clientSecret =
+    reused?.clientSecret ?? input.clientSecret ?? previous?.clientSecret;
   if (!clientId || !clientSecret) {
     throw new OperationalError(
       "Google OAuth client ID and client secret are required.",
@@ -148,8 +162,7 @@ export async function saveGoogleDataIntegration(
   }
   const identityChanged = Boolean(
     previous &&
-      ((input.clientId && input.clientId.trim() !== previous.clientId) ||
-        input.clientSecret),
+      (clientId !== previous.clientId || clientSecret !== previous.clientSecret),
   );
   const merged: GoogleDataCredentials = {
     ...previous,

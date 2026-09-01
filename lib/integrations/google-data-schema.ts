@@ -7,6 +7,7 @@ export const googleDataIntegrationSchema = z.object({
   name: z.string().trim().min(1).max(120),
   clientId: z.string().trim().max(1000).optional(),
   clientSecret: z.string().max(2000).optional(),
+  reuseGmailOAuthCredentials: z.boolean().optional(),
   enabled: z.boolean().optional(),
   permissions: z
     .record(z.string().uuid(), z.array(z.string().max(120)).max(20))

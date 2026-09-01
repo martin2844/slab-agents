@@ -387,6 +387,16 @@ export class EmailAdminClient {
     return this.request<GmailOAuthSettings>("/api/settings/google-oauth");
   }
 
+  getGoogleOAuthCredentialsForReuse() {
+    return this.request<{ clientId: string; clientSecret: string }>(
+      "/api/settings/google-oauth/credentials",
+      {
+        method: "POST",
+        body: { purpose: "google_data" },
+      },
+    );
+  }
+
   saveGoogleOAuthSettings(input: { clientId: string; clientSecret?: string }) {
     return this.request<GmailOAuthSettings>("/api/settings/google-oauth", {
       method: "PATCH",
