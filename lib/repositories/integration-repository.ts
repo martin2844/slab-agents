@@ -26,7 +26,7 @@ export const integrationRepository = {
   createIntegrationOAuthState(input: {
     id: string;
     integrationId: string;
-    provider: "calendar_google" | "calendar_microsoft";
+    provider: IntegrationProvider;
     verifierCiphertext: string;
     redirectUri: string;
     expiresAt: string;
@@ -60,7 +60,7 @@ export const integrationRepository = {
     return {
       id: String(row.id),
       integrationId: String(row.integration_id),
-      provider: row.provider as "calendar_google" | "calendar_microsoft",
+      provider: row.provider as IntegrationProvider,
       verifierCiphertext: String(row.verifier_ciphertext),
       redirectUri: String(row.redirect_uri),
       expiresAt: String(row.expires_at),
@@ -481,6 +481,49 @@ export const integrationRepository = {
             ...config,
             accountEmail: input.accountEmail ?? null,
             accountName: input.accountName ?? null,
+            oauthConfigured: true,
+          }),
+          input.credentialsCiphertext,
+          bool(current.enabled) ? "connected" : "disabled",
+          input.testedAt,
+          input.testedAt,
+          input.id,
+          input.provider,
+          input.expectedVersion,
+        );
+      return result.changes === 1;
+    });
+    return transaction();
+  },
+  completeGoogleDataOAuth(input: {
+    id: string;
+    provider: "google_analytics" | "google_search_console";
+    expectedVersion: number;
+    credentialsCiphertext: string;
+    accountEmail?: string;
+    testedAt: string;
+  }) {
+    const transaction = db.transaction(() => {
+      const current = db
+        .prepare(
+          "SELECT * FROM integrations WHERE id=? AND provider=? AND version=?",
+        )
+        .get(input.id, input.provider, input.expectedVersion) as Row | undefined;
+      if (!current) return false;
+      const config = json(
+        current.config_json,
+        {},
+      ) as IntegrationRecord["config"];
+      const result = db
+        .prepare(
+          `UPDATE integrations SET config_json=?,credentials_ciphertext=?,status=?,last_tested_at=?,last_error=NULL,version=version+1,updated_at=?
+           WHERE id=? AND provider=? AND version=?`,
+        )
+        .run(
+          JSON.stringify({
+            ...config,
+            accountEmail: input.accountEmail ?? null,
+            accountName: input.accountEmail ?? null,
             oauthConfigured: true,
           }),
           input.credentialsCiphertext,

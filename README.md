@@ -195,6 +195,17 @@ Calendar writes use the existing approval lifecycle:
 See [Calendar integrations](docs/calendar-integrations.md) for provider setup,
 OAuth callback paths, security boundaries, tool contracts, and limitations.
 
+## Google data integrations
+
+Google Analytics 4 and Google Search Console are optional, native read-only
+capabilities. Each provider uses a server-side OAuth grant, granular per-agent
+tool assignment, and the same immutable run capability snapshots as other
+integrations. Agents receive semantic reporting and inspection tools rather
+than OAuth credentials or a generic Google API client.
+
+See [Google data integrations](docs/google-data-integrations.md) for Google
+Cloud setup, OAuth scopes, callback paths, tool contracts, and security limits.
+
 ## Operator Packs
 
 Operator Packs provide inspectable, versioned operating configurations for

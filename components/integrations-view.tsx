@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useMemo, useState } from "react";
 import {
   Check,
+  ChartNoAxesCombined,
   CircleAlert,
   FileJson2,
   KeyRound,
@@ -13,6 +14,7 @@ import {
   PlugZap,
   Puzzle,
   RefreshCw,
+  Search,
   ShieldCheck,
   Wrench,
   X,
@@ -23,6 +25,7 @@ import {
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { CustomHttpAiEditor } from "@/components/custom-http-ai-editor";
+import { GoogleDataIntegrationEditor } from "@/components/google-data-integration-editor";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
@@ -109,8 +112,12 @@ function newEditorKey(prefix: string) {
 
 export function IntegrationsView({
   initialData,
+  callbackOrigin,
+  googleResult,
 }: {
   initialData: IntegrationsPageData;
+  callbackOrigin: string;
+  googleResult: "connected" | "failed" | null;
 }) {
   const [integrations, setIntegrations] = useState(initialData.integrations);
   const [editor, setEditor] = useState<EditorTarget | null>(null);
@@ -138,6 +145,29 @@ export function IntegrationsView({
         title="Integrations"
         description={`${integrations.length} configured · ${integrations.filter((item) => item.status === "connected").length} healthy · ${integrations.reduce((total, item) => total + item.tools.length, 0)} tools`}
       />
+
+      {googleResult ? (
+        <div
+          role={googleResult === "failed" ? "alert" : "status"}
+          className={cn(
+            "mb-5 flex items-start gap-2 border-y px-1 py-3 text-sm",
+            googleResult === "failed"
+              ? "text-destructive"
+              : "text-foreground",
+          )}
+        >
+          {googleResult === "connected" ? (
+            <Check className="mt-0.5 size-4 shrink-0 text-success" />
+          ) : (
+            <CircleAlert className="mt-0.5 size-4 shrink-0" />
+          )}
+          <span>
+            {googleResult === "connected"
+              ? "Google authorization completed. The assigned tools will be available from the next agent run."
+              : "Google authorization failed or was cancelled. Verify the OAuth client, enabled API, callback URI, account access, and consent settings, then try again."}
+          </span>
+        </div>
+      ) : null}
 
       <section aria-labelledby="active-integrations">
         <SectionHeading
@@ -187,7 +217,11 @@ export function IntegrationsView({
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {initialData.catalog.map((item) => {
             const active =
-              item.provider === "posthog" && activeProviders.has(item.provider);
+              [
+                "posthog",
+                "google_analytics",
+                "google_search_console",
+              ].includes(item.provider) && activeProviders.has(item.provider);
             return (
               <AvailableCard
                 key={item.provider}
@@ -211,6 +245,23 @@ export function IntegrationsView({
           onSaved={(integration) => {
             updateIntegration(integration);
             setEditor(null);
+          }}
+          onDeleted={removeIntegration}
+        />
+      )}
+      {(editor?.catalog.provider === "google_analytics" ||
+        editor?.catalog.provider === "google_search_console") && (
+        <GoogleDataIntegrationEditor
+          key={editor.integration?.id ?? editor.catalog.provider}
+          open
+          integration={editor.integration}
+          agents={initialData.agents}
+          catalog={editor.catalog}
+          callbackOrigin={callbackOrigin}
+          onOpenChange={(open) => !open && setEditor(null)}
+          onSaved={(integration) => {
+            updateIntegration(integration);
+            setEditor({ catalog: editor.catalog, integration });
           }}
           onDeleted={removeIntegration}
         />
@@ -283,6 +334,29 @@ function BrandMark() {
   );
 }
 
+function ProviderMark({ provider }: { provider: Integration["provider"] }) {
+  if (provider === "posthog") return <BrandMark />;
+  if (provider === "google_analytics") {
+    return (
+      <div className="grid size-8 place-items-center rounded-md border bg-background text-muted-foreground">
+        <ChartNoAxesCombined className="size-4" />
+      </div>
+    );
+  }
+  if (provider === "google_search_console") {
+    return (
+      <div className="grid size-8 place-items-center rounded-md border bg-background text-muted-foreground">
+        <Search className="size-4" />
+      </div>
+    );
+  }
+  return (
+    <div className="grid size-8 place-items-center rounded-md border bg-muted text-muted-foreground">
+      <Puzzle className="size-4" />
+    </div>
+  );
+}
+
 function ActiveCard({
   integration,
   onEdit,
@@ -322,13 +396,7 @@ function ActiveCard({
   return (
     <div className="grid gap-3 p-3 sm:grid-cols-[minmax(14rem,1fr)_7rem_7rem_8rem_auto] sm:items-center">
       <div className="flex min-w-0 items-center gap-3">
-        {integration.provider === "posthog" ? (
-          <BrandMark />
-        ) : (
-          <div className="grid size-8 place-items-center rounded-md border bg-muted text-muted-foreground">
-            <Puzzle className="size-4" />
-          </div>
-        )}
+        <ProviderMark provider={integration.provider} />
         <div className="min-w-0">
           <h3 className="truncate text-sm font-semibold">{integration.name}</h3>
           <p className="font-mono text-[0.68rem] font-medium uppercase tracking-[0.02em] text-muted-foreground">
@@ -336,9 +404,13 @@ function ActiveCard({
               ? integration.datacenter === "us"
                 ? "US Cloud"
                 : "EU Cloud"
-              : integration.provider === "custom_mcp"
-                ? "MCP"
-                : "HTTP API"}
+              : integration.provider === "google_analytics"
+                ? "Google · GA4"
+                : integration.provider === "google_search_console"
+                  ? "Google · Search"
+                  : integration.provider === "custom_mcp"
+                    ? "MCP"
+                    : "HTTP API"}
           </p>
         </div>
       </div>
@@ -395,7 +467,7 @@ function AvailableCard({
             <Puzzle className="size-4" />
           </div>
         ) : (
-          <BrandMark />
+          <ProviderMark provider={item.provider} />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">

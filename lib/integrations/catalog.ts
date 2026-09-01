@@ -17,6 +17,67 @@ export const POSTHOG_TOOLS: IntegrationTool[] = [
   },
 ];
 
+export const GOOGLE_ANALYTICS_TOOLS: IntegrationTool[] = [
+  {
+    key: "google_analytics_list_properties",
+    name: "List properties",
+    description:
+      "List the Google Analytics 4 accounts and properties available to this connection.",
+    readOnly: true,
+  },
+  {
+    key: "google_analytics_search_metadata",
+    name: "Search metrics and dimensions",
+    description:
+      "Find supported standard and custom dimensions or metrics for one GA4 property.",
+    readOnly: true,
+  },
+  {
+    key: "google_analytics_run_report",
+    name: "Run report",
+    description:
+      "Run a bounded historical GA4 report with explicit dates, dimensions, and metrics.",
+    readOnly: true,
+  },
+  {
+    key: "google_analytics_run_realtime_report",
+    name: "Run realtime report",
+    description:
+      "Read bounded realtime activity from a GA4 property.",
+    readOnly: true,
+  },
+];
+
+export const GOOGLE_SEARCH_CONSOLE_TOOLS: IntegrationTool[] = [
+  {
+    key: "search_console_list_sites",
+    name: "List sites",
+    description:
+      "List the Search Console properties available to this connection.",
+    readOnly: true,
+  },
+  {
+    key: "search_console_query_performance",
+    name: "Query search performance",
+    description:
+      "Query bounded clicks, impressions, CTR, and position data for a site.",
+    readOnly: true,
+  },
+  {
+    key: "search_console_list_sitemaps",
+    name: "List sitemaps",
+    description: "List submitted sitemaps and their current processing state.",
+    readOnly: true,
+  },
+  {
+    key: "search_console_inspect_url",
+    name: "Inspect URL",
+    description:
+      "Read Google's indexed status and inspection result for one URL.",
+    readOnly: true,
+  },
+];
+
 export const INTEGRATION_CATALOG: IntegrationCatalogItem[] = [
   {
     provider: "posthog",
@@ -25,6 +86,22 @@ export const INTEGRATION_CATALOG: IntegrationCatalogItem[] = [
       "Give agents controlled, read-only access to product analytics.",
     available: true,
     tools: POSTHOG_TOOLS,
+  },
+  {
+    provider: "google_analytics",
+    name: "Google Analytics",
+    description:
+      "Give agents read-only access to GA4 traffic, acquisition, and conversion data.",
+    available: true,
+    tools: GOOGLE_ANALYTICS_TOOLS,
+  },
+  {
+    provider: "google_search_console",
+    name: "Google Search Console",
+    description:
+      "Give agents read-only access to organic search performance and index status.",
+    available: true,
+    tools: GOOGLE_SEARCH_CONSOLE_TOOLS,
   },
   {
     provider: "custom_http",
@@ -61,6 +138,15 @@ export const POSTHOG_AGENT_PROMPT = `PostHog analytics is available through a re
 - Never invent event names, properties, project identifiers, or results. If the schema is unknown, inspect it with a small query first.
 - State the project, date range, filters, and important limitations when summarizing results.
 - These tools cannot mutate PostHog.`;
+
+export const GOOGLE_DATA_AGENT_PROMPT = `Google Analytics and Search Console may be available through scoped, read-only MCP servers.
+
+- List available GA4 properties or Search Console sites before assuming an identifier.
+- Use explicit, bounded date ranges and small row limits. State the property, range, dimensions, metrics, and important limitations in the answer.
+- Search Analytics returns representative top rows rather than a guaranteed exhaustive export. Do not describe it as complete raw data.
+- Use metadata search before inventing GA4 metric or dimension names.
+- Retrieve only the operational data needed for the task and avoid unnecessary person-level dimensions.
+- These tools cannot change Analytics or Search Console configuration, sites, sitemaps, or customer data.`;
 
 export const CALENDAR_AGENT_PROMPT = `Calendar access is available through scoped provider tools.
 

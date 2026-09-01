@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   configuredPublicOrigin,
   emailSettingsRedirect,
+  forwardedRequestOrigin,
   publicRequestOrigin,
 } from "../lib/request-origin.ts";
 
@@ -32,6 +33,35 @@ test("public request origin falls back to the request URL for local development"
   );
 
   assert.equal(publicRequestOrigin(request, ""), "http://127.0.0.1:3009");
+});
+
+test("forwarded request headers produce the browser-visible origin", () => {
+  assert.equal(
+    forwardedRequestOrigin(
+      new Headers({
+        host: "slab-agents:3009",
+        "x-forwarded-host": "agents.c5h.dev",
+        "x-forwarded-proto": "https",
+      }),
+    ),
+    "https://agents.c5h.dev",
+  );
+  assert.equal(
+    forwardedRequestOrigin(new Headers({ host: "127.0.0.1:3009" })),
+    "http://127.0.0.1:3009",
+  );
+});
+
+test("forwarded request origin rejects unsupported protocols", () => {
+  assert.equal(
+    forwardedRequestOrigin(
+      new Headers({
+        host: "agents.c5h.dev",
+        "x-forwarded-proto": "javascript",
+      }),
+    ),
+    "",
+  );
 });
 
 test("public URL rejects non-HTTP schemes and non-origin paths", () => {

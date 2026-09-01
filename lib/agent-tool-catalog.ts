@@ -317,7 +317,11 @@ function integrationToolMode(
   integration: Integration,
   readOnly: boolean,
 ): Pick<AgentToolCatalogTool, "legacyMode" | "maximumMode"> {
-  if (integration.provider === "custom_http") {
+  if (
+    integration.provider === "custom_http" ||
+    integration.provider === "google_analytics" ||
+    integration.provider === "google_search_console"
+  ) {
     return { legacyMode: "approve", maximumMode: "approve" };
   }
   if (integration.provider.startsWith("calendar_")) {

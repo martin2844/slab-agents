@@ -143,7 +143,10 @@ function integrationMatchesCapability(
     return integration.provider.startsWith("calendar_");
   }
   if (category === "product_analytics") {
-    return integration.provider === "posthog";
+    return (
+      integration.provider === "posthog" ||
+      integration.provider === "google_analytics"
+    );
   }
   const label = `${integration.slug} ${integration.name}`;
   if (category === "github") return /github/i.test(label);

@@ -19,6 +19,25 @@ export function configuredPublicOrigin(
   return configured ? parsePublicOrigin(configured) : "";
 }
 
+export function forwardedRequestOrigin(headers: Pick<Headers, "get">) {
+  const forwardedHost = headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || headers.get("host")?.trim();
+  if (!host) return "";
+
+  const forwardedProtocol = headers
+    .get("x-forwarded-proto")
+    ?.split(",")[0]
+    ?.trim();
+  const protocol = forwardedProtocol || "http";
+  if (protocol !== "http" && protocol !== "https") return "";
+
+  try {
+    return parsePublicOrigin(`${protocol}://${host}`);
+  } catch {
+    return "";
+  }
+}
+
 export function publicRequestOrigin(
   request: Request,
   configuredPublicUrl = process.env.SLAB_PUBLIC_URL ?? "",

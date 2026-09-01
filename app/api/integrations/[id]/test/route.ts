@@ -5,6 +5,8 @@ import {
   retestCustomMcpIntegration,
   retestPostHogIntegration,
 } from "@/lib/integrations/service";
+import { isGoogleDataProvider } from "@/lib/integrations/google-data-contract";
+import { testGoogleDataIntegration } from "@/lib/integrations/google-data-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +30,9 @@ export async function POST(
     }
     if (integration.provider === "custom_mcp") {
       return Response.json({ data: await retestCustomMcpIntegration(id) });
+    }
+    if (isGoogleDataProvider(integration.provider)) {
+      return Response.json({ data: await testGoogleDataIntegration(id) });
     }
     throw conflict("Integration type does not support testing.");
   } catch (error) {

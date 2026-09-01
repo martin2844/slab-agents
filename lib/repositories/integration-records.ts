@@ -8,7 +8,11 @@ import type {
   IntegrationStatus,
   IntegrationTool,
 } from "@/lib/types";
-import { POSTHOG_TOOLS } from "@/lib/integrations/catalog";
+import {
+  GOOGLE_ANALYTICS_TOOLS,
+  GOOGLE_SEARCH_CONSOLE_TOOLS,
+  POSTHOG_TOOLS,
+} from "@/lib/integrations/catalog";
 import {
   normalizeIntegrationSlug,
   normalizeIntegrationToolKey,
@@ -155,6 +159,10 @@ export function mapIntegration(
   const tools: IntegrationTool[] =
     record.provider === "posthog"
       ? POSTHOG_TOOLS
+      : record.provider === "google_analytics"
+        ? GOOGLE_ANALYTICS_TOOLS
+        : record.provider === "google_search_console"
+          ? GOOGLE_SEARCH_CONSOLE_TOOLS
       : record.provider === "custom_http"
         ? operations
             .filter((operation) => operation.enabled)
@@ -203,6 +211,8 @@ export function mapIntegration(
     version: record.version,
     hasSecret:
       isCalendar ||
+      record.provider === "google_analytics" ||
+      record.provider === "google_search_console" ||
       (record.provider !== "posthog" && record.authType !== "none"),
     hasApiKey:
       record.provider === "posthog" && Boolean(record.credentialsCiphertext),

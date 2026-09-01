@@ -5,6 +5,8 @@ import {
 } from "@/lib/integrations/mcp-server";
 import { isCalendarProvider } from "@/lib/integrations/calendar-contract";
 import { handleCalendarMcpRequest } from "@/lib/integrations/calendar-mcp";
+import { isGoogleDataProvider } from "@/lib/integrations/google-data-contract";
+import { handleGoogleDataMcpRequest } from "@/lib/integrations/google-data-mcp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +24,9 @@ export async function POST(
 
   if (integration.provider !== "posthog") {
     const runId = requestUrl.searchParams.get("run") ?? "";
+    if (isGoogleDataProvider(integration.provider)) {
+      return handleGoogleDataMcpRequest(request, id, runId);
+    }
     if (isCalendarProvider(integration.provider)) {
       return handleCalendarMcpRequest(request, id, runId);
     }

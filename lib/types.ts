@@ -737,7 +737,12 @@ export type CalendarProvider =
   | "calendar_calcom"
   | "calendar_ics";
 export type IntegrationProvider =
-  "posthog" | "custom_http" | "custom_mcp" | CalendarProvider;
+  | "posthog"
+  | "google_analytics"
+  | "google_search_console"
+  | "custom_http"
+  | "custom_mcp"
+  | CalendarProvider;
 // Keep the historic values plus explicit disabled state for configured-but-paused integrations.
 export type IntegrationStatus =
   "connected" | "failed" | "not_tested" | "disabled";

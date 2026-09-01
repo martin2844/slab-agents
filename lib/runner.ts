@@ -11,10 +11,12 @@ import type { Agent, Message, Thread } from "@/lib/types";
 import {
   EMAIL_AGENT_PROMPT,
   CALENDAR_AGENT_PROMPT,
+  GOOGLE_DATA_AGENT_PROMPT,
   POSTHOG_AGENT_PROMPT,
 } from "@/lib/integrations/catalog";
 import { getAgentEmailMcp } from "@/lib/integrations/email-service";
 import { getAgentCalendarIntegrationsMcp } from "@/lib/integrations/calendar-service";
+import { getAgentGoogleDataIntegrationsMcp } from "@/lib/integrations/google-data-service";
 import {
   getAgentCustomIntegrationsMcp,
   getAgentPostHogMcp,
@@ -455,6 +457,13 @@ export async function startRunnerRun(
     input.controlPlaneRunId ?? input.runId,
   );
   const calendarMcpServers = calendarIntegrations.map(({ server }) => server);
+  const googleDataIntegrations = getAgentGoogleDataIntegrationsMcp(
+    input.agent.id,
+    input.controlPlaneRunId ?? input.runId,
+  );
+  const googleDataMcpServers = googleDataIntegrations.map(
+    ({ server }) => server,
+  );
   const exposedToolsByServer = new Map(
     buildAgentToolCatalog({
       agent: input.agent,
@@ -482,6 +491,7 @@ export async function startRunnerRun(
   for (const { server, snapshot } of [
     ...calendarIntegrations,
     ...customIntegrations,
+    ...googleDataIntegrations,
   ]) {
     exposedToolsByServer.set(server.name, snapshot.tools);
   }
@@ -521,6 +531,7 @@ export async function startRunnerRun(
     ...(posthogMcp ? [posthogMcp] : []),
     ...(emailServer ? [emailServer] : []),
     ...calendarMcpServers,
+    ...googleDataMcpServers,
     ...customMcpServers,
   ];
   const policyRunId = input.controlPlaneRunId ?? input.runId;
@@ -581,6 +592,11 @@ export async function startRunnerRun(
       : []),
     ...(calendarMcpServers.some(({ name }) => availableServerNames.has(name))
       ? [CALENDAR_AGENT_PROMPT]
+      : []),
+    ...(googleDataMcpServers.some(({ name }) =>
+      availableServerNames.has(name),
+    )
+      ? [GOOGLE_DATA_AGENT_PROMPT]
       : []),
   ].join("\n\n");
   const instructionParts = [
@@ -722,6 +738,9 @@ export async function startRunnerRun(
       servers: mcpServers.map((server) => server.name),
       customIntegrations: customIntegrations.map(({ snapshot }) => snapshot),
       calendarIntegrations: calendarIntegrations.map(
+        ({ snapshot }) => snapshot,
+      ),
+      googleDataIntegrations: googleDataIntegrations.map(
         ({ snapshot }) => snapshot,
       ),
       docsAccess: docsAccess?.snapshot ?? null,
