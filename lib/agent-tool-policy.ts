@@ -1,7 +1,13 @@
 import "server-only";
 
 import { agentToolPolicyRepository } from "@/lib/repositories/agent-tool-policy-repository";
-import type { Agent, RunToolPolicySnapshot, ToolPolicyMode } from "@/lib/types";
+import { effectiveAgentPermissionMode } from "@/lib/agent-permissions";
+import type {
+  Agent,
+  AgentToolCatalogServer,
+  RunToolPolicySnapshot,
+  ToolPolicyMode,
+} from "@/lib/types";
 
 export type McpToolPolicy = {
   defaultMode: ToolPolicyMode;
@@ -134,7 +140,7 @@ function combinePolicies(
   };
 }
 
-function legacyPolicy(
+function guardedPolicy(
   agent: Agent,
   server: PolicyAwareMcpServer,
 ): McpToolPolicy {
@@ -148,10 +154,36 @@ function legacyPolicy(
   };
 }
 
+function presetPolicy(
+  agent: Agent,
+  server: PolicyAwareMcpServer,
+  catalog: AgentToolCatalogServer | undefined,
+): McpToolPolicy {
+  const permissionMode = effectiveAgentPermissionMode(agent);
+  if (permissionMode === "yolo") {
+    return { defaultMode: "approve", tools: {} };
+  }
+  if (permissionMode !== "full") return guardedPolicy(agent, server);
+
+  const fullPolicy: McpToolPolicy = {
+    defaultMode: "approve",
+    tools: Object.fromEntries(
+      (catalog?.tools ?? [])
+        .filter(({ sensitiveAction }) => sensitiveAction !== null)
+        .map(({ name }) => [name, "prompt" as const]),
+    ),
+  };
+  return server.approval
+    ? combinePolicies(fullPolicy, server.approval)
+    : fullPolicy;
+}
+
 function livePolicies(
   agent: Agent,
   servers: PolicyAwareMcpServer[],
+  catalog: AgentToolCatalogServer[],
 ): RunToolPolicySnapshot["policies"] {
+  const permissionMode = effectiveAgentPermissionMode(agent);
   const saved = new Map(
     agentToolPolicyRepository
       .listForAgent(agent.id)
@@ -159,8 +191,13 @@ function livePolicies(
   );
   return Object.fromEntries(
     servers.map((server) => {
+      const serverCatalog = catalog.find(
+        ({ serverName }) => serverName === server.name,
+      );
       const explicit = saved.get(server.name);
-      if (!explicit) return [server.name, legacyPolicy(agent, server)];
+      if (permissionMode !== "custom" || !explicit) {
+        return [server.name, presetPolicy(agent, server, serverCatalog)];
+      }
       const agentPolicy = {
         defaultMode: explicit.defaultMode,
         tools: explicit.tools,
@@ -179,9 +216,10 @@ export function snapshotAgentToolPolicies(input: {
   runId: string;
   agent: Agent;
   servers: PolicyAwareMcpServer[];
+  catalog?: AgentToolCatalogServer[];
   overrides?: Record<string, McpToolPolicy>;
 }) {
-  const policies = livePolicies(input.agent, input.servers);
+  const policies = livePolicies(input.agent, input.servers, input.catalog ?? []);
   for (const [serverName, override] of Object.entries(input.overrides ?? {})) {
     if (policies[serverName]) {
       policies[serverName] = combinePolicies(policies[serverName], override);
@@ -199,7 +237,13 @@ export function snapshotAgentToolPolicies(input: {
     return [
       {
         ...server,
-        approval: policy ?? legacyPolicy(input.agent, server),
+        approval:
+          policy ??
+          presetPolicy(
+            input.agent,
+            server,
+            input.catalog?.find(({ serverName }) => serverName === server.name),
+          ),
       },
     ];
   });

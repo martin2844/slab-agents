@@ -191,9 +191,9 @@ function Tree({
               className={`flex min-h-8 w-full items-center gap-2 rounded-md pr-2 text-left text-[0.82rem] transition-colors hover:bg-muted ${selected === doc.id ? "bg-muted font-semibold text-foreground" : "text-muted-foreground"}`}
               style={{ paddingLeft: `${8 + depth * 16}px` }}
             >
-              <ChevronRight className="size-3.5" />
-              <FileText className="size-3.5" />
-              <span className="truncate">{doc.title}</span>
+              <ChevronRight className="size-3.5 shrink-0" />
+              <FileText className="size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{doc.title}</span>
             </button>
             <Tree
               documents={documents}
@@ -394,8 +394,10 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
                     onClick={() => setSelected(document.id)}
                     className={`flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[0.82rem] hover:bg-muted ${selected === document.id ? "bg-muted font-semibold text-foreground" : "text-muted-foreground"}`}
                   >
-                    <Search className="size-3.5" />
-                    <span className="truncate">{document.title}</span>
+                    <Search className="size-3.5 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {document.title}
+                    </span>
                   </button>
                 ))}
               </div>

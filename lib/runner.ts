@@ -464,12 +464,13 @@ export async function startRunnerRun(
   const googleDataMcpServers = googleDataIntegrations.map(
     ({ server }) => server,
   );
+  const toolCatalog = buildAgentToolCatalog({
+    agent: input.agent,
+    integrations: configuredIntegrations,
+    emailAccess: configuredEmailAccess,
+  });
   const exposedToolsByServer = new Map(
-    buildAgentToolCatalog({
-      agent: input.agent,
-      integrations: configuredIntegrations,
-      emailAccess: configuredEmailAccess,
-    }).map((server) => {
+    toolCatalog.map((server) => {
       if (!server.integrationId) {
         return [
           server.serverName,
@@ -540,6 +541,7 @@ export async function startRunnerRun(
       runId: policyRunId,
       agent: input.agent,
       servers: liveMcpServers,
+      catalog: toolCatalog,
       overrides: input.toolPolicyOverrides,
     });
   const effectiveToolsByServer = new Map(
@@ -707,6 +709,7 @@ export async function startRunnerRun(
         name: input.agent.name,
         role: input.agent.role,
         instructions: combinedInstructions,
+        permissionMode: input.agent.permissionMode,
         fullAccess: input.agent.fullAccess,
       },
       runtime: {
@@ -760,6 +763,7 @@ export async function startRunnerRun(
       runtime: {
         id: input.agent.runtime,
         model: input.agent.model,
+        permissionMode: input.agent.permissionMode,
         configVersion: isRuntimeId(input.agent.runtime)
           ? getRuntimeConfig(input.agent.runtime).configVersion
           : null,
@@ -901,6 +905,7 @@ export async function runStatelessConfigurationAssistant(
           name: "Slab configuration assistant",
           role: "Edit declarative integration manifests",
           instructions: input.instructions,
+          permissionMode: "guarded",
           fullAccess: false,
         },
         runtime: {

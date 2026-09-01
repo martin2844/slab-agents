@@ -666,10 +666,9 @@ export function HowItWorksGuide() {
                   do not start new runs.
                 </Step>
                 <Step number="03" title="Set tool permissions">
-                  In the agent&apos;s Capabilities tab, set each Work, Docs,
-                  Email, and assigned integration action to No access, Ask, or
-                  Allow. Connector-level safety ceilings still apply, and each
-                  Run freezes its permission snapshot when it reaches Runner.
+                  In the agent&apos;s Capabilities tab, choose Guarded, Full,
+                  YOLO, or a Custom per-tool policy. Connector-level safety
+                  ceilings apply outside YOLO. Each Run freezes its permission snapshot when it reaches Runner.
                 </Step>
                 <Step number="04" title="Assign capabilities">
                   Open the agent&apos;s{" "}

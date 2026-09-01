@@ -19,10 +19,13 @@ export type Agent = {
   runtime: string;
   model: string;
   enabled: boolean;
+  permissionMode: AgentPermissionMode;
   fullAccess: boolean;
   createdAt: string;
   updatedAt: string;
 };
+
+export type AgentPermissionMode = "guarded" | "full" | "yolo" | "custom";
 
 export type ToolPolicyMode = "approve" | "prompt" | "deny";
 
@@ -41,6 +44,7 @@ export type AgentToolCatalogTool = {
   label: string;
   description: string;
   readOnly: boolean;
+  sensitiveAction: "destructive" | "external_communication" | null;
   legacyMode: ToolPolicyMode;
   maximumMode: "approve" | "prompt";
 };
@@ -760,6 +764,7 @@ export type IntegrationTool = {
   name: string;
   description: string;
   readOnly: boolean;
+  destructive?: boolean;
 };
 export type IntegrationOperationParameter = {
   name: string;

@@ -19,6 +19,9 @@ const schema = z.object({
   runtime: z.string().min(1).max(64).optional(),
   model: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
+  permissionMode: z
+    .enum(["guarded", "full", "yolo", "custom"])
+    .optional(),
   fullAccess: z.boolean().optional(),
 });
 export async function GET(
@@ -65,7 +68,17 @@ export async function PATCH(
       input.runtime ?? current.runtime,
       input.model ?? current.model,
     );
-    const agent = agentRepository.updateAgent(id, input);
+    const permissionMode =
+      input.permissionMode ??
+      (input.fullAccess === undefined
+        ? undefined
+        : input.fullAccess
+          ? "full"
+          : "guarded");
+    const agent = agentRepository.updateAgent(id, {
+      ...input,
+      ...(permissionMode ? { permissionMode } : {}),
+    });
     if (!agent) throw notFound("Agent not found");
     return Response.json({ data: agent });
   } catch (error) {

@@ -12,15 +12,16 @@ import type {
 type ToolDefinition = Pick<
   AgentToolCatalogTool,
   "name" | "label" | "description" | "readOnly"
->;
+> & { sensitiveAction?: AgentToolCatalogTool["sensitiveAction"] };
 
 function defineTool(
   name: string,
   label: string,
   description: string,
   readOnly: boolean,
+  sensitiveAction: AgentToolCatalogTool["sensitiveAction"] = null,
 ): ToolDefinition {
-  return { name, label, description, readOnly };
+  return { name, label, description, readOnly, sensitiveAction };
 }
 
 const workTools: ToolDefinition[] = [
@@ -132,6 +133,7 @@ const workTools: ToolDefinition[] = [
     "Delete work item",
     "Permanently delete one work item.",
     false,
+    "destructive",
   ),
   defineTool("add_comment", "Add comment", "Post a Markdown comment.", false),
   defineTool(
@@ -145,6 +147,7 @@ const workTools: ToolDefinition[] = [
     "Unlink work items",
     "Remove an existing relationship.",
     false,
+    "destructive",
   ),
 ];
 
@@ -191,6 +194,7 @@ const docsTools: ToolDefinition[] = [
     "Archive document",
     "Soft-delete a document while retaining history.",
     false,
+    "destructive",
   ),
 ];
 
@@ -201,13 +205,11 @@ export function coreToolDefinitions() {
   };
 }
 
-function coreTool(
-  tool: ToolDefinition,
-  fullAccess: boolean,
-): AgentToolCatalogTool {
+function coreTool(tool: ToolDefinition): AgentToolCatalogTool {
   return {
     ...tool,
-    legacyMode: tool.readOnly || fullAccess ? "approve" : "prompt",
+    sensitiveAction: tool.sensitiveAction ?? null,
+    legacyMode: tool.readOnly ? "approve" : "prompt",
     maximumMode: "approve",
   };
 }
@@ -267,6 +269,7 @@ function emailTools(access: AgentEmailAccess | null): AgentToolCatalogTool[] {
             label: "Send email",
             description: "Send from a verified assigned identity.",
             readOnly: false,
+            sensitiveAction: "external_communication" as const,
             mode:
               access.sendPolicy === "approval_required"
                 ? ("prompt" as const)
@@ -283,6 +286,7 @@ function emailTools(access: AgentEmailAccess | null): AgentToolCatalogTool[] {
                   label: "Reply to email",
                   description: "Reply to a verified original sender.",
                   readOnly: false,
+                  sensitiveAction: "external_communication" as const,
                   mode:
                     access.sendPolicy === "approval_required"
                       ? ("prompt" as const)
@@ -299,6 +303,7 @@ function emailTools(access: AgentEmailAccess | null): AgentToolCatalogTool[] {
   ];
   return tools.map(({ mode, maximumMode, ...tool }) => ({
     ...tool,
+    sensitiveAction: tool.sensitiveAction ?? null,
     legacyMode: mode,
     maximumMode: maximumMode ?? "approve",
   }));
@@ -313,7 +318,6 @@ export function integrationServerName(integration: Integration) {
 }
 
 function integrationToolMode(
-  agent: Agent,
   integration: Integration,
   readOnly: boolean,
 ): Pick<AgentToolCatalogTool, "legacyMode" | "maximumMode"> {
@@ -333,7 +337,7 @@ function integrationToolMode(
     };
   }
   return {
-    legacyMode: agent.fullAccess ? "approve" : "prompt",
+    legacyMode: readOnly ? "approve" : "prompt",
     maximumMode: "approve",
   };
 }
@@ -349,14 +353,14 @@ export function buildAgentToolCatalog(input: {
       label: "Work",
       description: "Projects, work items, assignments, and coordination.",
       integrationId: null,
-      tools: workTools.map((tool) => coreTool(tool, input.agent.fullAccess)),
+      tools: workTools.map(coreTool),
     },
     {
       serverName: "docs",
       label: "Docs",
       description: "Workspace knowledge, revisions, and publishing.",
       integrationId: null,
-      tools: docsTools.map((tool) => coreTool(tool, input.agent.fullAccess)),
+      tools: docsTools.map(coreTool),
     },
   ];
   const email = emailTools(input.emailAccess);
@@ -385,7 +389,8 @@ export function buildAgentToolCatalog(input: {
         label: tool.name,
         description: tool.description,
         readOnly: tool.readOnly,
-        ...integrationToolMode(input.agent, integration, tool.readOnly),
+        sensitiveAction: tool.destructive ? "destructive" : null,
+        ...integrationToolMode(integration, tool.readOnly),
       })),
     });
   }

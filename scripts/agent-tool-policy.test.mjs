@@ -50,7 +50,7 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
     import("../app/api/agents/[id]/tool-policies/route.ts"),
   ]);
 
-  const guarded = agentRepository.createAgent({
+  let guarded = agentRepository.createAgent({
     name: "COO",
     slug: "coo-policy",
     role: "Operations",
@@ -204,6 +204,8 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
     tools: { email_search: "approve", email_send: "approve" },
     expectedVersion: 0,
   });
+  guarded = agentRepository.getAgent(guarded.id);
+  assert.equal(guarded.permissionMode, "custom");
 
   const createRun = (agentId) =>
     runRepository.createRun({
@@ -445,6 +447,7 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
     },
   );
   await runner.contextProfile;
+  assert.equal(runnerBody.agent.permissionMode, "custom");
   assert.deepEqual(
     runnerBody.mcpServers.find(({ name }) => name === "work").approval,
     {
@@ -465,6 +468,7 @@ test("agent tool policies are versioned, restrictive, and immutable per run", as
     },
   );
   assert.equal(runner.capabilitySnapshot.toolPolicies.snapshotId, runnerRun.id);
+  assert.equal(runner.capabilitySnapshot.runtime.permissionMode, "custom");
 
   let retryBody;
   const retry = await startRunnerRun(

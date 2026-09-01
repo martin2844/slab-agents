@@ -24,7 +24,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api } from "@/lib/client-api";
-import type { Agent, RuntimeCatalogItem } from "@/lib/types";
+import type {
+  Agent,
+  AgentPermissionMode,
+  RuntimeCatalogItem,
+} from "@/lib/types";
 
 export function AgentCreateDialog({
   onCreated,
@@ -47,7 +51,8 @@ export function AgentCreateDialog({
     [open, setOpen] = useState(false),
     [saving, setSaving] = useState(false),
     [enabled, setEnabled] = useState(true),
-    [fullAccess, setFullAccess] = useState(false),
+    [permissionMode, setPermissionMode] =
+      useState<AgentPermissionMode>("guarded"),
     [runtime, setRuntime] = useState(initialRuntime),
     [model, setModel] = useState("default");
   const runtimeModels = runtimes.find(({ id }) => id === runtime)?.models ?? [
@@ -67,7 +72,7 @@ export function AgentCreateDialog({
           runtime,
           model,
           enabled,
-          fullAccess,
+          permissionMode,
         }),
       });
       toast.success(`${agent.name} is ready`);
@@ -178,22 +183,29 @@ export function AgentCreateDialog({
                   aria-label="Enable agent"
                 />
               </div>
-              <div className="flex items-center justify-between gap-5 py-4">
+              <div className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center">
                 <div>
-                  <p className="text-sm font-semibold">
-                    Full access to Work and Docs
-                  </p>
+                  <p className="text-sm font-semibold">Permission mode</p>
                   <p className="max-w-md text-xs leading-5 text-muted-foreground">
-                    Auto-approve create, update, archive, and delete actions in
-                    the configured MCP services. Runtime commands still require
-                    approval.
+                    Guard changes, automate routine work, or explicitly allow
+                    every assigned action.
                   </p>
                 </div>
-                <Switch
-                  checked={fullAccess}
-                  onCheckedChange={setFullAccess}
-                  aria-label="Give agent full access to Work and Docs"
-                />
+                <Select
+                  value={permissionMode}
+                  onValueChange={(value) =>
+                    setPermissionMode(value as AgentPermissionMode)
+                  }
+                >
+                  <SelectTrigger aria-label="Agent permission mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="guarded">Guarded</SelectItem>
+                    <SelectItem value="full">Full</SelectItem>
+                    <SelectItem value="yolo">YOLO</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">

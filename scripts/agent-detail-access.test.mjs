@@ -38,6 +38,10 @@ test("granular tool permissions are discoverable in the capabilities tab", () =>
   assert.match(editorSource, /No access/);
   assert.match(editorSource, /Ask/);
   assert.match(editorSource, /Allow/);
+  assert.match(editorSource, /Guarded/);
+  assert.match(editorSource, /Routine work runs automatically/);
+  assert.match(editorSource, /YOLO/);
+  assert.match(editorSource, /runtime sandbox restrictions/);
   assert.match(editorSource, /expectedVersion/);
   assert.match(editorSource, /\/tool-policies/);
   assert.match(editorSource, /type="radio"/);

@@ -188,6 +188,9 @@ export const agentToolPolicyRepository = {
           );
         }
       }
+      db.prepare(
+        "UPDATE agents SET permission_mode='custom',full_access=0,updated_at=? WHERE id=?",
+      ).run(timestamp, input.agentId);
       return agentToolPolicyRepository.get(input.agentId, input.serverName)!;
     });
   },

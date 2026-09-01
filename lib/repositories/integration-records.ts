@@ -153,6 +153,7 @@ export function mapIntegration(
       name: "Cancel event",
       description: "Cancel or delete an existing calendar event.",
       readOnly: false,
+      destructive: true,
     },
   ];
   const isCalendar = record.provider.startsWith("calendar_");
@@ -178,6 +179,7 @@ export function mapIntegration(
               name: tool.name,
               description: tool.description ?? "Custom MCP tool",
               readOnly: tool.readOnlyHint,
+              destructive: tool.destructiveHint,
             }))
           : isCalendar
             ? calendarTools.filter(

@@ -1,19 +1,35 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Ban,
   Check,
   ChevronDown,
   CircleHelp,
+  Flame,
+  Gauge,
   LoaderCircle,
+  ShieldCheck,
+  SlidersHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { api, ApiClientError } from "@/lib/client-api";
 import { cn } from "@/lib/utils";
 import type {
   Agent,
+  AgentPermissionMode,
   AgentToolCatalogServer,
   AgentToolPolicy,
   Integration,
@@ -26,10 +42,56 @@ const modeOptions = [
   { mode: "approve" as const, label: "Allow", icon: Check },
 ];
 
+const permissionModes: Array<{
+  mode: AgentPermissionMode;
+  label: string;
+  description: string;
+  icon: typeof ShieldCheck;
+}> = [
+  {
+    mode: "guarded",
+    label: "Guarded",
+    description: "Reads move freely. Changes pause for operator approval.",
+    icon: ShieldCheck,
+  },
+  {
+    mode: "full",
+    label: "Full",
+    description:
+      "Routine work runs automatically. Email sends, destructive actions, and connector safeguards still ask.",
+    icon: Gauge,
+  },
+  {
+    mode: "yolo",
+    label: "YOLO",
+    description:
+      "Every assigned capability runs without approval or runtime sandbox restrictions.",
+    icon: Flame,
+  },
+  {
+    mode: "custom",
+    label: "Custom",
+    description: "Choose Allow, Ask, or No access for each tool.",
+    icon: SlidersHorizontal,
+  },
+];
+
 function modeForTool(
   policy: AgentToolPolicy | undefined,
   tool: AgentToolCatalogServer["tools"][number],
+  permissionMode: AgentPermissionMode,
 ) {
+  if (permissionMode === "yolo") return "approve";
+  if (permissionMode === "full") {
+    return tool.sensitiveAction || tool.maximumMode === "prompt"
+      ? "prompt"
+      : "approve";
+  }
+  if (permissionMode === "guarded") {
+    return tool.legacyMode === "approve" && tool.maximumMode === "prompt"
+      ? "prompt"
+      : tool.legacyMode;
+  }
   const mode =
     policy?.tools[tool.name] ?? policy?.defaultMode ?? tool.legacyMode;
   return mode === "approve" && tool.maximumMode === "prompt" ? "prompt" : mode;
@@ -48,7 +110,12 @@ export function AgentToolPolicyEditor({
   integrations: Integration[];
   onPolicySaved?: (policy: AgentToolPolicy) => void;
 }) {
+  const router = useRouter();
   const [policies, setPolicies] = useState(initialPolicies);
+  const [permissionMode, setPermissionMode] = useState(agent.permissionMode);
+  const [pendingPermissionMode, setPendingPermissionMode] =
+    useState<AgentPermissionMode | null>(null);
+  const [savingPermissionMode, setSavingPermissionMode] = useState(false);
   const [savingServer, setSavingServer] = useState<string | null>(null);
   const [openServers, setOpenServers] = useState(
     () => new Set(catalog[0] ? [catalog[0].serverName] : []),
@@ -74,6 +141,38 @@ export function AgentToolPolicyEditor({
     [agent.id, catalog, integrations],
   );
 
+  async function changePermissionMode(nextMode: AgentPermissionMode) {
+    if (savingPermissionMode || nextMode === permissionMode) return;
+    const previous = permissionMode;
+    setPermissionMode(nextMode);
+    setSavingPermissionMode(true);
+    try {
+      await api<Agent>(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ permissionMode: nextMode }),
+      });
+      toast.success(`${agent.name} now uses ${nextMode} permissions`);
+      router.refresh();
+    } catch (error) {
+      setPermissionMode(previous);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not update permission mode",
+      );
+    } finally {
+      setSavingPermissionMode(false);
+    }
+  }
+
+  function requestPermissionMode(nextMode: AgentPermissionMode) {
+    if (nextMode === "yolo") {
+      setPendingPermissionMode(nextMode);
+      return;
+    }
+    void changePermissionMode(nextMode);
+  }
+
   async function changeMode(
     server: AgentToolCatalogServer,
     toolName: string,
@@ -91,7 +190,11 @@ export function AgentToolPolicyEditor({
     );
     const tools = { ...(currentPolicy?.tools ?? {}) };
     for (const catalogTool of server.tools) {
-      tools[catalogTool.name] = modeForTool(currentPolicy, catalogTool);
+      tools[catalogTool.name] = modeForTool(
+        currentPolicy,
+        catalogTool,
+        "custom",
+      );
     }
     tools[toolName] = nextMode;
 
@@ -127,6 +230,7 @@ export function AgentToolPolicyEditor({
         ...items.filter((item) => item.serverName !== server.serverName),
         saved,
       ]);
+      setPermissionMode("custom");
       onPolicySaved?.(saved);
       toast.success(
         `${tool.label}: ${modeOptions.find(({ mode }) => mode === nextMode)?.label}`,
@@ -164,6 +268,85 @@ export function AgentToolPolicyEditor({
         </div>
       </div>
 
+      <fieldset className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        <legend className="sr-only">Agent permission mode</legend>
+        {permissionModes.map(({ mode, label, description, icon: Icon }) => (
+          <label
+            key={mode}
+            className={cn(
+              "relative flex min-h-24 cursor-pointer gap-3 rounded-md border p-3 transition-colors has-focus-visible:ring-2 has-focus-visible:ring-ring",
+              permissionMode === mode
+                ? mode === "yolo"
+                  ? "border-destructive/50 bg-destructive/5"
+                  : "border-primary bg-primary/5"
+                : "bg-background hover:border-foreground/25",
+              savingPermissionMode && "cursor-wait opacity-60",
+            )}
+          >
+            <input
+              type="radio"
+              name="agent-permission-mode"
+              value={mode}
+              checked={permissionMode === mode}
+              disabled={savingPermissionMode}
+              onChange={() => requestPermissionMode(mode)}
+              className="sr-only"
+            />
+            <Icon
+              className={cn(
+                "mt-0.5 size-4 shrink-0",
+                mode === "yolo" && permissionMode === mode
+                  ? "text-destructive"
+                  : "text-muted-foreground",
+              )}
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold">{label}</span>
+              <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                {description}
+              </span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+
+      <AlertDialog
+        open={pendingPermissionMode === "yolo"}
+        onOpenChange={(open) => {
+          if (!open) setPendingPermissionMode(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Enable YOLO for {agent.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Every assigned tool and runtime action will execute without an
+              approval prompt or sandbox restriction. This does not grant new
+              integrations, accounts, or tools.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep current mode</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                setPendingPermissionMode(null);
+                void changePermissionMode("yolo");
+              }}
+            >
+              Enable YOLO
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {permissionMode !== "custom" && (
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+          The preset applies to the next run. Assigned integrations and account
+          scopes do not change.
+        </p>
+      )}
+
       <div className="mt-4 space-y-2">
         {visibleServers.map((server) => {
           const policy = policies.find(
@@ -171,7 +354,7 @@ export function AgentToolPolicyEditor({
           );
           const counts = { deny: 0, prompt: 0, approve: 0 };
           for (const tool of server.tools)
-            counts[modeForTool(policy, tool)] += 1;
+            counts[modeForTool(policy, tool, permissionMode)] += 1;
           const isSaving = savingServer === server.serverName;
           return (
             <details
@@ -211,7 +394,11 @@ export function AgentToolPolicyEditor({
               </summary>
               <div className="border-t">
                 {server.tools.map((tool) => {
-                  const selected = modeForTool(policy, tool);
+                  const selected = modeForTool(
+                    policy,
+                    tool,
+                    permissionMode,
+                  );
                   return (
                     <div
                       key={tool.name}
@@ -262,7 +449,11 @@ export function AgentToolPolicyEditor({
                                 name={`${server.serverName}:${tool.name}`}
                                 value={mode}
                                 checked={selected === mode}
-                                disabled={Boolean(savingServer) || capped}
+                                disabled={
+                                  permissionMode !== "custom" ||
+                                  Boolean(savingServer) ||
+                                  capped
+                                }
                                 onChange={() =>
                                   changeMode(server, tool.name, mode)
                                 }

@@ -43,9 +43,6 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
   const [runtime, setRuntime] = useState(data.agent.runtime);
   const [model, setModel] = useState(data.agent.model);
   const [savingRuntime, setSavingRuntime] = useState(false);
-  const [hasCustomPolicy, setHasCustomPolicy] = useState(
-    data.toolPolicies.length > 0,
-  );
 
   async function saveRuntime() {
     setSavingRuntime(true);
@@ -180,11 +177,7 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
               { label: "Runtime", value: runtime },
               {
                 label: "Tool access",
-                value: hasCustomPolicy
-                  ? "Custom policy"
-                  : agent.fullAccess
-                    ? "Legacy full"
-                    : "Guarded",
+                value: agent.permissionMode,
               },
             ].map((item) => (
               <div
@@ -358,7 +351,6 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
             initialPolicies={data.toolPolicies}
             catalog={data.toolCatalog}
             integrations={integrations}
-            onPolicySaved={() => setHasCustomPolicy(true)}
           />
           <section className="rounded-lg border bg-card p-4">
             <div>

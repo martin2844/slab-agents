@@ -49,11 +49,12 @@ export async function PUT(
     const agent = agentRepository.getAgent(id);
     if (!agent) throw notFound("Agent not found");
     const input = schema.parse(await request.json());
-    return Response.json({
-      data: agentToolPolicyRepository.save({
+    const saved = agentToolPolicyRepository.save({
         agentId: agent.id,
         ...input,
-      }),
+      });
+    return Response.json({
+      data: saved,
     });
   } catch (error) {
     return apiError(error);

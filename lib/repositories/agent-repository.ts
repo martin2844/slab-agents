@@ -3,7 +3,25 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { db, now } from "@/lib/db/database";
 import { bool, type Row } from "@/lib/repositories/repository-helpers";
-import type { Agent, AgentQuickAction } from "@/lib/types";
+import type {
+  Agent,
+  AgentPermissionMode,
+  AgentQuickAction,
+} from "@/lib/types";
+import { usesUnrestrictedRuntime } from "@/lib/agent-permissions";
+
+function permissionMode(row: Row): AgentPermissionMode {
+  const value = row.permission_mode;
+  if (
+    value === "guarded" ||
+    value === "full" ||
+    value === "yolo" ||
+    value === "custom"
+  ) {
+    return value;
+  }
+  return bool(row.full_access) ? "full" : "guarded";
+}
 
 function mapAgent(row: Row): Agent {
   return {
@@ -15,6 +33,7 @@ function mapAgent(row: Row): Agent {
     runtime: String(row.runtime ?? "codex"),
     model: String(row.model),
     enabled: bool(row.enabled),
+    permissionMode: permissionMode(row),
     fullAccess: bool(row.full_access),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
@@ -57,12 +76,14 @@ export const agentRepository = {
       | "model"
       | "enabled"
       | "fullAccess"
-    > & { runtime?: string },
+    > & { runtime?: string; permissionMode?: AgentPermissionMode },
   ) {
     const id = randomUUID(),
       timestamp = now();
+    const permissionMode =
+      input.permissionMode ?? (input.fullAccess ? "full" : "guarded");
     db.prepare(
-      "INSERT INTO agents (id,name,slug,role,instructions,runtime,model,enabled,full_access,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO agents (id,name,slug,role,instructions,runtime,model,enabled,permission_mode,full_access,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     ).run(
       id,
       input.name,
@@ -72,7 +93,8 @@ export const agentRepository = {
       input.runtime ?? "codex",
       input.model,
       input.enabled ? 1 : 0,
-      input.fullAccess ? 1 : 0,
+      permissionMode,
+      usesUnrestrictedRuntime(permissionMode) ? 1 : 0,
       timestamp,
       timestamp,
     );
@@ -164,14 +186,22 @@ export const agentRepository = {
         | "runtime"
         | "model"
         | "enabled"
+        | "permissionMode"
         | "fullAccess"
       >
     >,
   ) {
     const current = agentRepository.getAgent(id);
     if (!current) return null;
+    const permissionMode =
+      input.permissionMode ??
+      (input.fullAccess === undefined
+        ? current.permissionMode
+        : input.fullAccess
+          ? "full"
+          : "guarded");
     db.prepare(
-      "UPDATE agents SET name=?, slug=?, role=?, instructions=?, runtime=?, model=?, enabled=?, full_access=?, updated_at=? WHERE id=?",
+      "UPDATE agents SET name=?, slug=?, role=?, instructions=?, runtime=?, model=?, enabled=?, permission_mode=?, full_access=?, updated_at=? WHERE id=?",
     ).run(
       input.name ?? current.name,
       input.slug ?? current.slug,
@@ -180,7 +210,8 @@ export const agentRepository = {
       input.runtime ?? current.runtime,
       input.model ?? current.model,
       (input.enabled ?? current.enabled) ? 1 : 0,
-      (input.fullAccess ?? current.fullAccess) ? 1 : 0,
+      permissionMode,
+      usesUnrestrictedRuntime(permissionMode) ? 1 : 0,
       now(),
       current.id,
     );

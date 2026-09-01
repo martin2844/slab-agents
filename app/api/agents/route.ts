@@ -12,6 +12,9 @@ const schema = z.object({
   runtime: z.string().min(1).max(64).default("codex"),
   model: z.string().min(1).default("default"),
   enabled: z.boolean().default(true),
+  permissionMode: z
+    .enum(["guarded", "full", "yolo", "custom"])
+    .default("guarded"),
   fullAccess: z.boolean().default(false),
 });
 const slugify = (value: string) =>
@@ -32,8 +35,20 @@ export async function POST(request: Request) {
       suffix = 2;
     while (agentRepository.getAgent(slug))
       slug = `${slugify(input.name)}-${suffix++}`;
+    const permissionMode =
+      input.permissionMode === "guarded" && input.fullAccess
+        ? "full"
+        : input.permissionMode;
     return Response.json(
-      { data: agentRepository.createAgent({ ...input, slug }) },
+      {
+        data: agentRepository.createAgent({
+          ...input,
+          slug,
+          permissionMode,
+          fullAccess:
+            permissionMode === "full" || permissionMode === "yolo",
+        }),
+      },
       { status: 201 },
     );
   } catch (error) {
