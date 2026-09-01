@@ -37,6 +37,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/client-api";
+import { googleOAuthCallbackUrl } from "@/lib/integrations/google-oauth-contract";
 import type {
   Agent,
   GmailOAuthSettings,
@@ -96,9 +97,7 @@ export function GoogleDataIntegrationEditor({
     };
   }, [open]);
 
-  const callbackUrl = callbackOrigin
-    ? new URL("/api/integrations/google-data/callback", callbackOrigin).toString()
-    : "/api/integrations/google-data/callback";
+  const callbackUrl = googleOAuthCallbackUrl(callbackOrigin);
 
   function setTool(agentId: string, toolKey: string, checked: boolean) {
     setPermissions((current) => {
@@ -297,7 +296,7 @@ export function GoogleDataIntegrationEditor({
               </div>
             ) : null}
             <label className="mt-4 grid gap-2 text-sm font-semibold">
-              Authorized redirect URI
+              Workspace Google callback
               <Input value={callbackUrl} readOnly className="font-mono text-xs" />
             </label>
             <div className="mt-3 flex items-start gap-2 rounded-lg bg-muted/60 p-3 text-xs leading-5 text-muted-foreground">

@@ -33,7 +33,7 @@ test("How it works documents the shipped ecosystem and provider setup", async ()
     "CalDAV",
     "Cal.com",
     "calendar_find_availability",
-    "calendar/google/callback",
+    "integrations/google/callback",
     "calendar/microsoft/callback",
     "Proton does not currently support CalDAV",
     "Capability snapshots are immutable during a run",

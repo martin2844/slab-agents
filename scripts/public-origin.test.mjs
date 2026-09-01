@@ -8,6 +8,11 @@ import {
   forwardedRequestOrigin,
   publicRequestOrigin,
 } from "../lib/request-origin.ts";
+import {
+  GOOGLE_OAUTH_CALLBACK_PATH,
+  googleOAuthCallbackUrl,
+  googleOAuthDestinationForProvider,
+} from "../lib/integrations/google-oauth-contract.ts";
 
 const read = (filename) =>
   readFile(new URL(`../${filename}`, import.meta.url), "utf8");
@@ -87,6 +92,7 @@ test("Gmail and Microsoft OAuth handlers use the public origin resolver", async 
     ]);
 
   assert.match(connectRoute, /publicRequestOrigin\(request\)/);
+  assert.match(connectRoute, /GOOGLE_OAUTH_CALLBACK_PATH/);
   assert.match(callbackRoute, /emailSettingsRedirect\(request/);
   assert.match(microsoftConnect, /publicRequestOrigin\(request\)/);
   assert.match(microsoftCallback, /emailSettingsRedirect\(request/);
@@ -94,13 +100,42 @@ test("Gmail and Microsoft OAuth handlers use the public origin resolver", async 
 
 test("Gmail OAuth returns to Email settings and preserves the result", () => {
   const request = new Request(
-    "https://0.0.0.0:3009/api/integrations/email/google/callback",
+    "https://0.0.0.0:3009/api/integrations/google/callback",
   );
 
   assert.equal(
     emailSettingsRedirect(request, "connected", "https://agents.c5h.dev").href,
     "https://agents.c5h.dev/settings?tab=email&email=connected",
   );
+});
+
+test("all Google integrations share one public callback and route by OAuth state owner", async () => {
+  assert.equal(GOOGLE_OAUTH_CALLBACK_PATH, "/api/integrations/google/callback");
+  assert.equal(
+    googleOAuthCallbackUrl("https://agents.c5h.dev"),
+    "https://agents.c5h.dev/api/integrations/google/callback",
+  );
+  assert.equal(googleOAuthDestinationForProvider("google_analytics"), "integrations");
+  assert.equal(
+    googleOAuthDestinationForProvider("google_search_console"),
+    "integrations",
+  );
+  assert.equal(googleOAuthDestinationForProvider("calendar_google"), "calendar");
+  assert.equal(googleOAuthDestinationForProvider(null), "email");
+
+  const [callbackRoute, callbackService, dataConnect, calendarConnect] =
+    await Promise.all([
+      read("app/api/integrations/google/callback/route.ts"),
+      read("lib/integrations/google-oauth-service.ts"),
+      read("app/api/integrations/google-data/[id]/oauth/route.ts"),
+      read("app/api/integrations/calendar/[id]/oauth/route.ts"),
+    ]);
+  assert.match(callbackRoute, /completeGoogleOAuthCallback/);
+  assert.match(callbackService, /finishGoogleDataOAuth/);
+  assert.match(callbackService, /finishGoogleCalendarOAuth/);
+  assert.match(callbackService, /completeGmailConnection/);
+  assert.match(dataConnect, /GOOGLE_OAUTH_CALLBACK_PATH/);
+  assert.match(calendarConnect, /GOOGLE_OAUTH_CALLBACK_PATH/);
 });
 
 test("calendar OAuth uses the configured public origin for authorization and callbacks", async () => {

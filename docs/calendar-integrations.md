@@ -78,7 +78,7 @@ without an approval prompt. A shared ICS account is always read-only.
    exact redirect URI:
 
    ```text
-   https://<workspace-domain>/api/integrations/calendar/google/callback
+   https://<workspace-domain>/api/integrations/google/callback
    ```
 
 6. Add that URI to the OAuth client's authorized redirect URIs.

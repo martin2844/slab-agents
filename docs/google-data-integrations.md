@@ -10,8 +10,12 @@ Create or select a Google Cloud project, then configure an OAuth 2.0 Web
 application. Add the exact callback shown by Slab:
 
 ```text
-https://your-slab-host/api/integrations/google-data/callback
+https://your-slab-host/api/integrations/google/callback
 ```
+
+This is the workspace's shared Google callback for Gmail, Analytics, Search
+Console, and Google Calendar. A reused OAuth client only needs this one Slab
+redirect URI.
 
 For Google Analytics, enable:
 

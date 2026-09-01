@@ -47,6 +47,12 @@ export const integrationRepository = {
       now(),
     );
   },
+  getIntegrationOAuthStateProvider(id: string) {
+    const row = db
+      .prepare("SELECT provider FROM integration_oauth_states WHERE id=?")
+      .get(id) as { provider?: IntegrationProvider } | undefined;
+    return row?.provider ?? null;
+  },
   consumeIntegrationOAuthState(id: string) {
     const transaction = db.transaction(() => {
       const row = db

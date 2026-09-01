@@ -1287,8 +1287,10 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
                 >
                   Use:
                   <code className="mt-2 block break-all font-mono text-foreground">
-                    https://&lt;your-domain&gt;/api/integrations/email/google/callback
+                    https://&lt;your-domain&gt;/api/integrations/google/callback
                   </code>
+                  This is the workspace&apos;s shared Google callback for Gmail,
+                  Analytics, Search Console, and Google Calendar.
                 </Callout>
                 <Callout title="Never register 0.0.0.0" tone="warning">
                   <code className="font-mono text-foreground">0.0.0.0</code> is
@@ -1581,7 +1583,7 @@ Tool:       clasificar_metrics__get_metrics_sales`}</CodeBlock>
                   <Step number="04" title="Register the callback">
                     Add the exact HTTPS redirect URI shown by the Calendar form:
                     <code className="mt-2 block break-all font-mono text-foreground">
-                      https://&lt;your-domain&gt;/api/integrations/calendar/google/callback
+                      https://&lt;your-domain&gt;/api/integrations/google/callback
                     </code>
                   </Step>
                   <Step number="05" title="Authorize">
@@ -1804,7 +1806,9 @@ chat message B
                 Copy the Authorized redirect URI shown by Slab Agents and
                 register the exact value in the OAuth client. Scheme, host,
                 port, path, and trailing slash must match. Never use 0.0.0.0.
-                For a domain install, use the HTTPS domain callback.
+                For a domain install, use the HTTPS domain callback. Gmail,
+                Analytics, Search Console, and Google Calendar share this one
+                callback by default.
               </TroubleshootingItem>
               <TroubleshootingItem
                 title="Google blocks the selected account"
@@ -1838,9 +1842,10 @@ chat message B
                 symptom="Google or Microsoft rejects the calendar callback"
               >
                 Register the exact HTTPS callback shown in Settings → Calendar.
-                Calendar and Email use different callback paths. Do not reuse
-                the Gmail callback, localhost, 0.0.0.0, or a private container
-                address for a public domain installation.
+                Google Calendar uses the same workspace Google callback as
+                Gmail and Google Data. Do not use localhost, 0.0.0.0, a legacy
+                provider-specific callback, or a private container address for
+                a public domain installation.
               </TroubleshootingItem>
               <TroubleshootingItem
                 title="Calendar connects but the agent sees no tools"

@@ -1,5 +1,6 @@
 import { apiError, notFound } from "@/lib/api";
 import { startGoogleDataOAuth } from "@/lib/integrations/google-data-service";
+import { GOOGLE_OAUTH_CALLBACK_PATH } from "@/lib/integrations/google-oauth-contract";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { publicRequestOrigin } from "@/lib/request-origin";
 
@@ -16,7 +17,7 @@ export async function POST(
       throw notFound("Google integration not found.");
     }
     const redirectUri = new URL(
-      "/api/integrations/google-data/callback",
+      GOOGLE_OAUTH_CALLBACK_PATH,
       publicRequestOrigin(request),
     ).toString();
     return Response.json({

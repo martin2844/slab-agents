@@ -1799,7 +1799,7 @@ These exclusions keep the first release a safe single-host product rather than a
 ## 31. Immediate next action
 
 1. Configure a real Google Web OAuth client from Settings, register the exact
-   `https://agents.c5h.dev/api/integrations/email/google/callback` URI, and
+   `https://agents.c5h.dev/api/integrations/google/callback` URI, and
    complete one Gmail connection smoke test.
 2. Implement and verify backup/restore before adding panel-triggered update
    execution.

@@ -11,6 +11,7 @@ import {
   GOOGLE_SEARCH_CONSOLE_TOOL_KEYS,
 } from "../lib/integrations/google-data-contract.ts";
 import { googleDataIntegrationSchema } from "../lib/integrations/google-data-schema.ts";
+import { GOOGLE_OAUTH_CALLBACK_PATH } from "../lib/integrations/google-oauth-contract.ts";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -83,6 +84,13 @@ test("Google integration cards use local product marks", async () => {
   assert.match(analyticsMark, /<svg/);
   assert.match(searchConsoleMark, /^<svg/);
   assert.doesNotMatch(view, /ChartNoAxesCombined/);
+});
+
+test("Google Data displays the workspace-wide Google callback", async () => {
+  const editor = await read("components/google-data-integration-editor.tsx");
+  assert.equal(GOOGLE_OAUTH_CALLBACK_PATH, "/api/integrations/google/callback");
+  assert.match(editor, /googleOAuthCallbackUrl/);
+  assert.match(editor, /Workspace Google callback/);
 });
 
 test("Google Analytics lists properties and runs bounded reports", async () => {

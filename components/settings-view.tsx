@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/client-api";
+import { GOOGLE_OAUTH_CALLBACK_PATH } from "@/lib/integrations/google-oauth-contract";
 import {
   clearSettingsCallback,
   settingsPageUrl,
@@ -207,7 +208,7 @@ export function SettingsView({
     configuredCalendarCallbackOrigin,
   );
   const [gmailCallbackUrl, setGmailCallbackUrl] = useState(
-    "/api/integrations/email/google/callback",
+    GOOGLE_OAUTH_CALLBACK_PATH,
   );
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -595,7 +596,7 @@ export function SettingsView({
                     variant="outline"
                     onClick={() => {
                       setGmailCallbackUrl(
-                        `${window.location.origin}/api/integrations/email/google/callback`,
+                        `${window.location.origin}${GOOGLE_OAUTH_CALLBACK_PATH}`,
                       );
                       setEmailOpen(true);
                     }}

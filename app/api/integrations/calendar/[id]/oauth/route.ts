@@ -1,6 +1,7 @@
 import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { apiError, conflict, notFound } from "@/lib/api";
 import { startCalendarOAuth } from "@/lib/integrations/calendar-service";
+import { GOOGLE_OAUTH_CALLBACK_PATH } from "@/lib/integrations/google-oauth-contract";
 import { publicRequestOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
@@ -19,7 +20,7 @@ export async function POST(
     const provider = integration.provider;
     const callbackPath =
       provider === "calendar_google"
-        ? "/api/integrations/calendar/google/callback"
+        ? GOOGLE_OAUTH_CALLBACK_PATH
         : provider === "calendar_microsoft"
           ? "/api/integrations/calendar/microsoft/callback"
           : null;

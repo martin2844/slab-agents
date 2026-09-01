@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/client-api";
+import { GOOGLE_OAUTH_CALLBACK_PATH } from "@/lib/integrations/google-oauth-contract";
 import type {
   Agent,
   CalendarProvider,
@@ -530,7 +531,7 @@ function CalendarForm({
     form.provider === "calendar_microsoft";
   const callbackPath =
     form.provider === "calendar_google"
-      ? "/api/integrations/calendar/google/callback"
+      ? GOOGLE_OAUTH_CALLBACK_PATH
       : "/api/integrations/calendar/microsoft/callback";
   return (
     <div className="space-y-5">
