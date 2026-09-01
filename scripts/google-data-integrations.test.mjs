@@ -49,6 +49,20 @@ test("Google data integration schemas and tool keys are explicit", () => {
   assert.ok(keys.every((key) => /^(google_analytics|search_console)_/.test(key)));
 });
 
+test("Google integration cards use local product marks", async () => {
+  const [view, analyticsMark, searchConsoleMark] = await Promise.all([
+    read("components/integrations-view.tsx"),
+    read("public/integrations/google-analytics.svg"),
+    read("public/integrations/google-search-console.svg"),
+  ]);
+
+  assert.match(view, /\/integrations\/google-analytics\.svg/);
+  assert.match(view, /\/integrations\/google-search-console\.svg/);
+  assert.match(analyticsMark, /^<svg/);
+  assert.match(searchConsoleMark, /^<svg/);
+  assert.doesNotMatch(view, /ChartNoAxesCombined/);
+});
+
 test("Google Analytics lists properties and runs bounded reports", async () => {
   const requests = [];
   await withFetch(

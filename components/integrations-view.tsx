@@ -4,7 +4,6 @@ import Image from "next/image";
 import { useMemo, useState } from "react";
 import {
   Check,
-  ChartNoAxesCombined,
   CircleAlert,
   FileJson2,
   KeyRound,
@@ -14,7 +13,6 @@ import {
   PlugZap,
   Puzzle,
   RefreshCw,
-  Search,
   ShieldCheck,
   Wrench,
   X,
@@ -338,15 +336,27 @@ function ProviderMark({ provider }: { provider: Integration["provider"] }) {
   if (provider === "posthog") return <BrandMark />;
   if (provider === "google_analytics") {
     return (
-      <div className="grid size-8 place-items-center rounded-md border bg-background text-muted-foreground">
-        <ChartNoAxesCombined className="size-4" />
+      <div className="grid size-8 place-items-center rounded-md border bg-background">
+        <Image
+          src="/integrations/google-analytics.svg"
+          alt=""
+          width={32}
+          height={32}
+          className="size-5"
+        />
       </div>
     );
   }
   if (provider === "google_search_console") {
     return (
-      <div className="grid size-8 place-items-center rounded-md border bg-background text-muted-foreground">
-        <Search className="size-4" />
+      <div className="grid size-8 place-items-center rounded-md border bg-background">
+        <Image
+          src="/integrations/google-search-console.svg"
+          alt=""
+          width={32}
+          height={32}
+          className="size-5"
+        />
       </div>
     );
   }
