@@ -346,7 +346,14 @@ export type ThreadData = {
   messages: Message[];
 };
 
-export type RunsData = { runs: Run[]; approvals: Approval[]; agents: Agent[] };
+export type RunConversation = Pick<Thread, "id" | "agentId" | "title">;
+
+export type RunsData = {
+  runs: Run[];
+  approvals: Approval[];
+  agents: Agent[];
+  conversations: RunConversation[];
+};
 
 export type RunDetailData = {
   run: Run;

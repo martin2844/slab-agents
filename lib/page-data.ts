@@ -200,23 +200,35 @@ export function getThreadPageData(id: string): ThreadData | null {
 }
 
 export function getRunsPageData(): RunsData {
+  const runs = runRepository.listRuns();
   const approvals = [
     ...approvalRepository.list("pending"),
     ...approvalRepository.listRecent(),
   ];
   return {
-    runs: runRepository.listRuns(),
+    runs,
     approvals: [
       ...new Map(approvals.map((approval) => [approval.id, approval])).values(),
     ],
     agents: agentRepository.listAgents(),
+    conversations: conversationRepository
+      .listThreadsByIds(
+        runs.flatMap((run) => (run.threadId ? [run.threadId] : [])),
+      )
+      .map(({ id, agentId, title }) => ({ id, agentId, title })),
   };
 }
 
 export function getRunsActivityData(): Partial<RunsData> {
+  const runs = runRepository.listRuns(20);
   return {
-    runs: runRepository.listRuns(20),
+    runs,
     approvals: approvalRepository.list("pending"),
+    conversations: conversationRepository
+      .listThreadsByIds(
+        runs.flatMap((run) => (run.threadId ? [run.threadId] : [])),
+      )
+      .map(({ id, agentId, title }) => ({ id, agentId, title })),
   };
 }
 

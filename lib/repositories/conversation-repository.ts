@@ -62,6 +62,16 @@ export const conversationRepository = {
         .all(agentId) as Row[]
     ).map(mapThread);
   },
+  listThreadsByIds(ids: string[]) {
+    const uniqueIds = [...new Set(ids)];
+    if (!uniqueIds.length) return [];
+    const placeholders = uniqueIds.map(() => "?").join(",");
+    return (
+      db
+        .prepare(`SELECT * FROM threads WHERE id IN (${placeholders})`)
+        .all(...uniqueIds) as Row[]
+    ).map(mapThread);
+  },
   getThread(id: string) {
     const row = db.prepare("SELECT * FROM threads WHERE id=?").get(id) as
       Row | undefined;
