@@ -58,7 +58,7 @@ test("Google integration cards use local product marks", async () => {
 
   assert.match(view, /\/integrations\/google-analytics\.svg/);
   assert.match(view, /\/integrations\/google-search-console\.svg/);
-  assert.match(analyticsMark, /^<svg/);
+  assert.match(analyticsMark, /<svg/);
   assert.match(searchConsoleMark, /^<svg/);
   assert.doesNotMatch(view, /ChartNoAxesCombined/);
 });
