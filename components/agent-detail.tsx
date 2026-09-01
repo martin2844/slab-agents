@@ -2,12 +2,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
+  Activity,
   ArrowRight,
   Bot,
   CalendarClock,
+  LayoutDashboard,
   ListTodo,
   MessageSquare,
   Play,
+  ScrollText,
   Sparkles,
   Puzzle,
   BookOpenText,
@@ -28,11 +31,55 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/page-header";
+import {
+  SettingRow,
+  SettingSection,
+  SettingsStatusBadge,
+  settingControlWidths,
+} from "@/components/settings-layout";
+import {
+  SectionNavigationFrame,
+  sectionNavigationItemClass,
+  sectionNavigationItemsClass,
+  sectionNavigationScrollerClass,
+} from "@/components/section-navigation";
 import { StatusBadge } from "@/components/status-badge";
 import { api } from "@/lib/client-api";
 import type { AgentDetailData, Integration } from "@/lib/types";
-import { formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
+
+const AGENT_PAGES = {
+  overview: {
+    label: "Overview",
+    description: "Current state, execution defaults, and operator actions.",
+    icon: LayoutDashboard,
+  },
+  instructions: {
+    label: "Instructions",
+    description: "Persistent operating instructions used for every new run.",
+    icon: ScrollText,
+  },
+  capabilities: {
+    label: "Capabilities",
+    description: "Permissions, knowledge sources, and connected tools.",
+    icon: Puzzle,
+  },
+  automations: {
+    label: "Automations",
+    description: "Recurring and event-triggered work assigned to this agent.",
+    icon: CalendarClock,
+  },
+  runs: {
+    label: "Runs",
+    description: "Recent execution history for this agent.",
+    icon: Activity,
+  },
+} as const;
+
+type AgentPage = keyof typeof AGENT_PAGES;
+
 export function AgentDetail({ data }: { data: AgentDetailData }) {
+  const [activePage, setActivePage] = useState<AgentPage>("overview");
   const [quickActions, setQuickActions] = useState(data.quickActions),
     [integrations, setIntegrations] = useState(data.integrations),
     [savingIntegration, setSavingIntegration] = useState<string | null>(null);
@@ -137,6 +184,7 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
   );
   const queued = data.runs.filter((run) => run.status === "queued").length;
   const state = !agent.enabled ? "disabled" : (activeRun?.status ?? "idle");
+  const page = AGENT_PAGES[activePage];
   return (
     <>
       <PageHeader
@@ -154,365 +202,433 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
           </div>
         }
       />
-      <Tabs defaultValue="overview" className="space-y-5">
-        <TabsList className="h-9 w-full justify-start overflow-x-auto rounded-lg border bg-card p-1 sm:w-auto">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="instructions">Instructions</TabsTrigger>
-          <TabsTrigger value="capabilities">Capabilities</TabsTrigger>
-          <TabsTrigger value="automations">Automations</TabsTrigger>
-          <TabsTrigger value="runs">Runs</TabsTrigger>
-        </TabsList>
+      <Tabs
+        value={activePage}
+        onValueChange={(value) => {
+          if (value in AGENT_PAGES) setActivePage(value as AgentPage);
+        }}
+        className="gap-0"
+      >
+        <SectionNavigationFrame>
+          <div className={sectionNavigationScrollerClass}>
+            <TabsList
+              variant="line"
+              aria-label={`${agent.name} sections`}
+              className={cn(
+                sectionNavigationItemsClass,
+                "h-auto w-max justify-start rounded-none p-0",
+              )}
+            >
+              {Object.entries(AGENT_PAGES).map(
+                ([value, { label, icon: Icon }]) => (
+                  <TabsTrigger
+                    key={value}
+                    value={value}
+                    className={cn(
+                      sectionNavigationItemClass,
+                      "flex-none font-[525] text-muted-foreground after:!bottom-[-1px] data-active:font-[650] data-active:text-foreground [&_svg]:text-muted-foreground/75 data-active:[&_svg]:text-foreground",
+                    )}
+                  >
+                    <Icon aria-hidden="true" className="size-3.5" />
+                    {label}
+                  </TabsTrigger>
+                ),
+              )}
+            </TabsList>
+          </div>
+        </SectionNavigationFrame>
 
-        <TabsContent value="overview" className="space-y-5">
-          <section className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-2 xl:grid-cols-5">
-            {[
-              { label: "State", value: state.replaceAll("_", " ") },
-              {
-                label: "Current work",
-                value:
-                  activeRun?.issueKey ??
-                  (activeRun?.mode === "review" ? "Operational review" : "—"),
-              },
-              { label: "Queue", value: queued ? `${queued} queued` : "Clear" },
-              { label: "Runtime", value: runtime },
-              {
-                label: "Tool access",
-                value: agent.permissionMode,
-              },
-            ].map((item) => (
-              <div
-                key={item.label}
-                className="min-h-20 border-b p-3 sm:odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0"
-              >
-                <p className="font-mono text-[0.68rem] font-medium uppercase tracking-[0.02em] text-muted-foreground">
-                  {item.label}
-                </p>
-                <p className="mt-2 truncate text-sm font-semibold capitalize">
-                  {item.value}
-                </p>
-              </div>
-            ))}
-          </section>
-
-          <section className="rounded-lg border bg-card p-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
-              <div className="grid flex-1 gap-1.5 text-xs font-semibold">
-                Runtime
-                <Select
-                  value={runtime}
-                  onValueChange={(value) => {
-                    setRuntime(value);
-                    setModel("default");
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {data.runtimes
-                      .filter(
-                        (item) =>
-                          (item.enabled &&
-                            item.registered &&
-                            item.health === "available") ||
-                          item.id === runtime,
-                      )
-                      .map((item) => (
-                        <SelectItem key={item.id} value={item.id}>
-                          {item.displayName}
-                          {!item.enabled ? " · disabled" : ""}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid flex-1 gap-1.5 text-xs font-semibold">
-                Model
-                <Select value={model} onValueChange={setModel}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[
-                      ...new Set([
-                        model,
-                        ...(data.runtimes.find(({ id }) => id === runtime)
-                          ?.models ?? ["default"]),
-                      ]),
-                    ].map((item) => (
-                      <SelectItem key={item} value={item}>
-                        {item === "default" ? "Workspace default" : item}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button
-                variant="outline"
-                onClick={saveRuntime}
-                disabled={savingRuntime}
-              >
-                {savingRuntime ? "Saving…" : "Save runtime"}
-              </Button>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              New runs snapshot this runtime and model. Existing queued and
-              historical runs keep their original selection.
+        <main className="min-w-0 max-w-[80rem] pt-6">
+          <div className="mb-5">
+            <h2 className="text-xl font-semibold tracking-[-0.025em]">
+              {page.label}
+            </h2>
+            <p className="mt-1 text-sm leading-5 text-muted-foreground">
+              {page.description}
             </p>
-          </section>
+          </div>
 
-          <section className="rounded-lg border bg-card p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold">Quick tasks</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Start ad-hoc work or reuse a configured prompt.
-                </p>
-              </div>
-              <AgentQuickActionsEditor
-                agentId={agent.id}
-                actions={quickActions}
-                onChange={setQuickActions}
-              />
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <AgentRunDialog
-                agent={agent}
-                label="Run now"
-                icon={Play}
-                variant="default"
-                defaultMode="review"
-              />
-              {quickActions.map((action) => (
-                <AgentRunDialog
-                  key={action.id}
-                  agent={agent}
-                  label={action.label}
-                  icon={Sparkles}
-                  defaultPrompt={action.prompt}
-                  variant="outline"
-                />
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-lg border bg-card p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Threads</h2>
-              <span className="text-xs text-muted-foreground">
-                {data.threads.length} conversations
-              </span>
-            </div>
-            <div className="mt-3 divide-y border-y">
-              {data.threads.map((thread) => (
-                <Link
-                  key={thread.id}
-                  href={`/agents/${agent.id}/threads/${thread.id}`}
-                  className="group flex min-h-12 items-center justify-between"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <MessageSquare className="size-3.5 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {thread.title}
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        Updated {formatDateTime(thread.updatedAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
-                </Link>
-              ))}
-              {!data.threads.length && (
-                <p className="py-5 text-sm text-muted-foreground">
-                  No conversations yet.
-                </p>
-              )}
-            </div>
-          </section>
-        </TabsContent>
-
-        <TabsContent value="instructions">
-          <section className="rounded-lg border bg-card p-4 sm:p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <Bot className="size-4" />
-              <h2 className="text-sm font-semibold">System instructions</h2>
-            </div>
-            <pre className="max-h-[65vh] overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-4 font-sans text-sm leading-6">
-              {agent.instructions}
-            </pre>
-          </section>
-        </TabsContent>
-
-        <TabsContent value="capabilities" className="space-y-5">
-          <AgentToolPolicyEditor
-            agent={agent}
-            initialPolicies={data.toolPolicies}
-            catalog={data.toolCatalog}
-            integrations={integrations}
-          />
-          <section className="rounded-lg border bg-card p-4">
-            <div>
-              <h2 className="text-sm font-semibold">Knowledge sources</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Choose which synchronized collections this agent can read in new
-                runs.
-              </p>
-            </div>
-            {knowledgeSources.length ? (
-              <div className="mt-4 divide-y rounded-md border">
-                {knowledgeSources.map((source) => {
-                  const assigned = source.agentIds.includes(agent.id);
-                  return (
-                    <div
-                      key={source.id}
-                      className="flex items-center justify-between gap-4 p-4"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <BookOpenText className="size-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold">
-                            {source.name}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {source.kind} · {source.itemCount} documents ·{" "}
-                            {source.status.replaceAll("_", " ")}
-                          </p>
-                        </div>
-                      </div>
-                      <Switch
-                        checked={assigned}
-                        disabled={savingSource === source.id}
-                        onCheckedChange={(checked) =>
-                          changeSourceAccess(source.id, checked)
-                        }
-                        aria-label={`${source.name} for ${agent.name}`}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-muted-foreground">
-                No knowledge sources configured.
-              </p>
-            )}
-          </section>
-          <section className="rounded-lg border bg-card p-4">
-            <div>
-              <h2 className="text-sm font-semibold">Integrations</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Choose which configured capabilities are included in this
-                agent&apos;s next run.
-              </p>
-            </div>
-            {integrations.length ? (
-              <div className="mt-4 divide-y rounded-md border">
-                {integrations.map((integration) => {
-                  const assigned =
-                    (integration.permissions[agent.id] ?? []).length > 0;
-                  return (
-                    <div
-                      key={integration.id}
-                      className="flex items-center justify-between gap-4 p-4"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <Puzzle className="size-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold">
-                            {integration.name}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {integration.tools.length} tools ·{" "}
-                            {integration.status.replace("_", " ")}
-                            {integration.provider.startsWith("calendar_")
-                              ? ` · ${integration.writePolicy?.replace("_", " ") ?? "approval required"}`
-                              : ""}
-                          </p>
-                        </div>
-                      </div>
-                      <Switch
-                        checked={assigned}
-                        disabled={
-                          savingIntegration === integration.id ||
-                          !integration.enabled ||
-                          integration.status !== "connected"
-                        }
-                        onCheckedChange={(checked) =>
-                          changeIntegrationAccess(integration, checked)
-                        }
-                        aria-label={`${integration.name} for ${agent.name}`}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-muted-foreground">
-                No integrations configured. Add one from Settings.
-              </p>
-            )}
-          </section>
-        </TabsContent>
-
-        <TabsContent value="automations">
-          <section className="rounded-lg border bg-card p-4">
-            <div className="flex items-center gap-2">
-              <CalendarClock className="size-4" />
-              <h2 className="text-sm font-semibold">Automations</h2>
-            </div>
-            <div className="mt-3 divide-y border-y">
-              {data.automations.map((item) => (
-                <div
-                  key={item.id}
-                  className="grid min-h-14 gap-1 py-2 sm:grid-cols-[1fr_auto] sm:items-center"
-                >
-                  <p className="text-sm font-semibold">{item.name}</p>
-                  <p className="font-mono text-xs text-muted-foreground">
-                    {item.cronExpression ?? "Manual"}
-                  </p>
-                </div>
-              ))}
-              {!data.automations.length && (
-                <p className="py-5 text-sm text-muted-foreground">
-                  Nothing scheduled.
-                </p>
-              )}
-            </div>
-          </section>
-        </TabsContent>
-
-        <TabsContent value="runs">
-          <section className="rounded-lg border bg-card p-4">
-            <h2 className="text-sm font-semibold">Recent runs</h2>
-            <div className="mt-3 divide-y border-y">
-              {data.runs.map((run) => (
-                <Link
-                  key={run.id}
-                  href={`/runs/${run.id}`}
-                  className="grid min-h-12 grid-cols-[minmax(0,1fr)_auto] items-center gap-3"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate font-mono text-xs">
-                      {run.id}
-                    </span>
-                    <span className="mt-0.5 block text-xs capitalize text-muted-foreground">
-                      {run.mode.replaceAll("_", " ")} ·{" "}
-                      {run.trigger.replaceAll("_", " ")}
-                    </span>
+          <TabsContent value="overview" className="space-y-6">
+            <SettingSection
+              title="Agent status"
+              description="Live operational state and execution defaults."
+            >
+              <SettingRow
+                title="Current state"
+                description={
+                  activeRun?.issueKey
+                    ? `Working on ${activeRun.issueKey}.`
+                    : activeRun?.mode === "review"
+                      ? "Running an operational review."
+                      : "No active work assigned."
+                }
+              >
+                <div className="flex min-h-9 flex-wrap items-center gap-x-4 gap-y-2">
+                  <StatusBadge status={state} />
+                  <span className="text-sm text-muted-foreground">
+                    {queued ? `${queued} queued` : "Queue clear"}
                   </span>
-                  <StatusBadge status={run.status} />
-                </Link>
+                  <SettingsStatusBadge tone="neutral">
+                    {agent.permissionMode} permissions
+                  </SettingsStatusBadge>
+                </div>
+              </SettingRow>
+              <SettingRow
+                title="Runtime"
+                description="New runs snapshot this runtime and model. Queued and historical runs keep their original selection."
+                layout="wide"
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                  <label
+                    className={cn(
+                      "grid gap-1.5 text-xs font-semibold",
+                      settingControlWidths.compact,
+                    )}
+                  >
+                    Runtime
+                    <Select
+                      value={runtime}
+                      onValueChange={(value) => {
+                        setRuntime(value);
+                        setModel("default");
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {data.runtimes
+                          .filter(
+                            (item) =>
+                              (item.enabled &&
+                                item.registered &&
+                                item.health === "available") ||
+                              item.id === runtime,
+                          )
+                          .map((item) => (
+                            <SelectItem key={item.id} value={item.id}>
+                              {item.displayName}
+                              {!item.enabled ? " · disabled" : ""}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
+                  <label
+                    className={cn(
+                      "grid gap-1.5 text-xs font-semibold",
+                      settingControlWidths.medium,
+                    )}
+                  >
+                    Model
+                    <Select value={model} onValueChange={setModel}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[
+                          ...new Set([
+                            model,
+                            ...(data.runtimes.find(({ id }) => id === runtime)
+                              ?.models ?? ["default"]),
+                          ]),
+                        ].map((item) => (
+                          <SelectItem key={item} value={item}>
+                            {item === "default" ? "Workspace default" : item}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
+                  <Button
+                    variant="outline"
+                    onClick={saveRuntime}
+                    disabled={savingRuntime}
+                    className="w-fit"
+                  >
+                    {savingRuntime ? "Saving…" : "Save runtime"}
+                  </Button>
+                </div>
+              </SettingRow>
+              <SettingRow
+                title="Permissions"
+                description="Control which assigned tools run automatically or require approval."
+              >
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-fit"
+                  onClick={() => setActivePage("capabilities")}
+                >
+                  Manage permissions
+                  <ArrowRight />
+                </Button>
+              </SettingRow>
+            </SettingSection>
+
+            <SettingSection
+              title="Quick tasks"
+              description="Start ad-hoc work or reuse a configured instruction."
+              action={
+                <AgentQuickActionsEditor
+                  agentId={agent.id}
+                  actions={quickActions}
+                  onChange={setQuickActions}
+                />
+              }
+            >
+              <SettingRow
+                title="Start work"
+                description={`${quickActions.length} reusable ${quickActions.length === 1 ? "task" : "tasks"} configured.`}
+                layout="wide"
+              >
+                <div className="flex flex-wrap gap-2">
+                  <AgentRunDialog
+                    agent={agent}
+                    label="Run now"
+                    icon={Play}
+                    variant="default"
+                    defaultMode="review"
+                  />
+                  {quickActions.map((action) => (
+                    <AgentRunDialog
+                      key={action.id}
+                      agent={agent}
+                      label={action.label}
+                      icon={Sparkles}
+                      defaultPrompt={action.prompt}
+                      variant="outline"
+                    />
+                  ))}
+                </div>
+              </SettingRow>
+            </SettingSection>
+
+            <SettingSection
+              title="Threads"
+              description={`${data.threads.length} ${data.threads.length === 1 ? "conversation" : "conversations"}.`}
+            >
+              {data.threads.map((thread) => (
+                <SettingRow
+                  key={thread.id}
+                  title={
+                    <span className="flex min-w-0 items-center gap-2">
+                      <MessageSquare className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{thread.title}</span>
+                    </span>
+                  }
+                  description={`Updated ${formatDateTime(thread.updatedAt)}`}
+                >
+                  <Button asChild variant="ghost" size="sm" className="w-fit">
+                    <Link href={`/agents/${agent.id}/threads/${thread.id}`}>
+                      Open thread
+                      <ArrowRight />
+                    </Link>
+                  </Button>
+                </SettingRow>
               ))}
-              {!data.runs.length && (
-                <p className="py-5 text-sm text-muted-foreground">
-                  No runs yet.
-                </p>
-              )}
-            </div>
-          </section>
-        </TabsContent>
+              {!data.threads.length ? (
+                <SettingRow
+                  title="No conversations yet"
+                  description="Chat with this agent to create its first product thread."
+                >
+                  <AgentChatDialog agent={agent} />
+                </SettingRow>
+              ) : null}
+            </SettingSection>
+          </TabsContent>
+
+          <TabsContent value="instructions">
+            <SettingSection
+              title="Agent instructions"
+              description="Persistent identity, operating rules, and domain context."
+            >
+              <SettingRow
+                title={
+                  <span className="inline-flex items-center gap-2">
+                    <Bot className="size-4 text-muted-foreground" />
+                    System instructions
+                  </span>
+                }
+                description="Applied to each new execution context."
+                layout="wide"
+              >
+                <pre className="max-h-[65vh] overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-4 font-sans text-sm leading-6">
+                  {agent.instructions}
+                </pre>
+              </SettingRow>
+            </SettingSection>
+          </TabsContent>
+
+          <TabsContent value="capabilities" className="space-y-6">
+            <AgentToolPolicyEditor
+              agent={agent}
+              initialPolicies={data.toolPolicies}
+              catalog={data.toolCatalog}
+              integrations={integrations}
+            />
+            <SettingSection
+              title="Knowledge sources"
+              description="Choose which synchronized collections this agent can read in new runs."
+            >
+              {knowledgeSources.map((source) => {
+                const assigned = source.agentIds.includes(agent.id);
+                return (
+                  <SettingRow
+                    key={source.id}
+                    title={
+                      <span className="inline-flex min-w-0 items-center gap-2">
+                        <BookOpenText className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{source.name}</span>
+                      </span>
+                    }
+                    description={`${source.kind} · ${source.itemCount} documents · ${source.status.replaceAll("_", " ")}`}
+                  >
+                    <Switch
+                      checked={assigned}
+                      disabled={savingSource === source.id}
+                      onCheckedChange={(checked) =>
+                        changeSourceAccess(source.id, checked)
+                      }
+                      aria-label={`${source.name} for ${agent.name}`}
+                    />
+                  </SettingRow>
+                );
+              })}
+              {!knowledgeSources.length ? (
+                <SettingRow
+                  title="No knowledge sources configured"
+                  description="Add a source before assigning collection-level access."
+                >
+                  <Button asChild variant="ghost" size="sm" className="w-fit">
+                    <Link href="/docs">Open Docs</Link>
+                  </Button>
+                </SettingRow>
+              ) : null}
+            </SettingSection>
+            <SettingSection
+              title="Integrations"
+              description="Choose which configured capabilities are included in this agent's next run."
+            >
+              {integrations.map((integration) => {
+                const assigned =
+                  (integration.permissions[agent.id] ?? []).length > 0;
+                return (
+                  <SettingRow
+                    key={integration.id}
+                    title={
+                      <span className="inline-flex min-w-0 items-center gap-2">
+                        <Puzzle className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{integration.name}</span>
+                      </span>
+                    }
+                    description={`${integration.tools.length} tools · ${integration.status.replace("_", " ")}${
+                      integration.provider.startsWith("calendar_")
+                        ? ` · ${integration.writePolicy?.replace("_", " ") ?? "approval required"}`
+                        : ""
+                    }`}
+                  >
+                    <Switch
+                      checked={assigned}
+                      disabled={
+                        savingIntegration === integration.id ||
+                        !integration.enabled ||
+                        integration.status !== "connected"
+                      }
+                      onCheckedChange={(checked) =>
+                        changeIntegrationAccess(integration, checked)
+                      }
+                      aria-label={`${integration.name} for ${agent.name}`}
+                    />
+                  </SettingRow>
+                );
+              })}
+              {!integrations.length ? (
+                <SettingRow
+                  title="No integrations configured"
+                  description="Connect a capability before assigning it to this agent."
+                >
+                  <Button asChild variant="ghost" size="sm" className="w-fit">
+                    <Link href="/integrations">Open Integrations</Link>
+                  </Button>
+                </SettingRow>
+              ) : null}
+            </SettingSection>
+          </TabsContent>
+
+          <TabsContent value="automations">
+            <SettingSection
+              title="Assigned automations"
+              description="Recurring and event-triggered work routed to this agent."
+            >
+              {data.automations.map((item) => (
+                <SettingRow
+                  key={item.id}
+                  title={
+                    <span className="inline-flex items-center gap-2">
+                      <CalendarClock className="size-4 text-muted-foreground" />
+                      {item.name}
+                    </span>
+                  }
+                  description="Automation schedule"
+                >
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {item.cronExpression ?? "Manual"}
+                  </span>
+                </SettingRow>
+              ))}
+              {!data.automations.length ? (
+                <SettingRow
+                  title="Nothing scheduled"
+                  description="This agent has no assigned automations."
+                >
+                  <Button asChild variant="ghost" size="sm" className="w-fit">
+                    <Link href="/automations">Open Automations</Link>
+                  </Button>
+                </SettingRow>
+              ) : null}
+            </SettingSection>
+          </TabsContent>
+
+          <TabsContent value="runs">
+            <SettingSection
+              title="Recent runs"
+              description="Execution history, status, trigger, and mode."
+            >
+              {data.runs.map((run) => (
+                <SettingRow
+                  key={run.id}
+                  title={<span className="font-mono text-xs">{run.id}</span>}
+                  description={`${run.mode.replaceAll("_", " ")} · ${run.trigger.replaceAll("_", " ")}`}
+                >
+                  <div className="flex min-h-9 flex-wrap items-center gap-3">
+                    <StatusBadge status={run.status} />
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href={`/runs/${run.id}`}>
+                        View run
+                        <ArrowRight />
+                      </Link>
+                    </Button>
+                  </div>
+                </SettingRow>
+              ))}
+              {!data.runs.length ? (
+                <SettingRow
+                  title="No runs yet"
+                  description="Give this agent a task to create its first run."
+                >
+                  <AgentRunDialog
+                    agent={agent}
+                    label="Give task"
+                    icon={ListTodo}
+                    variant="default"
+                  />
+                </SettingRow>
+              ) : null}
+            </SettingSection>
+          </TabsContent>
+        </main>
       </Tabs>
     </>
   );

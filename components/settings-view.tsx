@@ -29,6 +29,12 @@ import { BudgetSettings } from "@/components/budget-settings";
 import { OperatorNotificationsSettings } from "@/components/operator-notifications-settings";
 import { PageHeader } from "@/components/page-header";
 import {
+  SectionNavigationFrame,
+  sectionNavigationItemClass,
+  sectionNavigationItemsClass,
+  sectionNavigationScrollerClass,
+} from "@/components/section-navigation";
+import {
   SettingRow,
   SettingSection,
   SettingsStatusBadge,
@@ -1049,60 +1055,56 @@ function SettingsNavigation({
     return () => resizeObserver.disconnect();
   }, [activePage, hasWorkspaceChanges]);
 
+  const unsavedIndicator = hasWorkspaceChanges ? (
+    <button
+      type="button"
+      onClick={() => onNavigate("connections")}
+      className="flex h-11 shrink-0 items-center gap-1.5 border-l bg-background px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:px-3"
+    >
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-accent" />
+      <span className="hidden sm:inline">Unsaved workspace changes</span>
+      <span className="sm:hidden">Unsaved</span>
+    </button>
+  ) : undefined;
+
   return (
-    <div className="sticky top-16 z-20 -mt-5 bg-background/95 backdrop-blur-sm lg:top-0">
-      <div className="flex min-w-0 items-end border-b">
-        <nav
-          ref={scrollerRef}
-          aria-label="Settings sections"
-          className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          <div className="flex min-w-max gap-6">
-            {SETTINGS_NAVIGATION.map(({ page, icon: Icon }) => {
-              const active = activePage === page;
-              return (
-                <button
-                  ref={active ? activeTabRef : undefined}
-                  key={page}
-                  type="button"
-                  aria-current={active ? "page" : undefined}
-                  onClick={() => onNavigate(page)}
+    <SectionNavigationFrame trailing={unsavedIndicator}>
+      <nav
+        ref={scrollerRef}
+        aria-label="Settings sections"
+        className={sectionNavigationScrollerClass}
+      >
+        <div className={sectionNavigationItemsClass}>
+          {SETTINGS_NAVIGATION.map(({ page, icon: Icon }) => {
+            const active = activePage === page;
+            return (
+              <button
+                ref={active ? activeTabRef : undefined}
+                key={page}
+                type="button"
+                aria-current={active ? "page" : undefined}
+                onClick={() => onNavigate(page)}
+                className={cn(
+                  sectionNavigationItemClass,
+                  active
+                    ? "font-[650] text-foreground after:bg-accent"
+                    : "font-[525] text-muted-foreground after:bg-transparent hover:text-foreground",
+                )}
+              >
+                <Icon
+                  aria-hidden="true"
                   className={cn(
-                    "relative flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap text-sm transition-colors after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                    active
-                      ? "font-[650] text-foreground after:bg-accent"
-                      : "font-[525] text-muted-foreground after:bg-transparent hover:text-foreground",
+                    "size-3.5",
+                    active ? "text-foreground" : "text-muted-foreground/75",
                   )}
-                >
-                  <Icon
-                    aria-hidden="true"
-                    className={cn(
-                      "size-3.5",
-                      active ? "text-foreground" : "text-muted-foreground/75",
-                    )}
-                  />
-                  {SETTINGS_PAGES[page].label}
-                </button>
-              );
-            })}
-          </div>
-        </nav>
-        {hasWorkspaceChanges ? (
-          <button
-            type="button"
-            onClick={() => onNavigate("connections")}
-            className="flex h-11 shrink-0 items-center gap-1.5 border-l bg-background px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:px-3"
-          >
-            <span
-              aria-hidden="true"
-              className="size-1.5 rounded-full bg-accent"
-            />
-            <span className="hidden sm:inline">Unsaved workspace changes</span>
-            <span className="sm:hidden">Unsaved</span>
-          </button>
-        ) : null}
-      </div>
-    </div>
+                />
+                {SETTINGS_PAGES[page].label}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    </SectionNavigationFrame>
   );
 }
 

@@ -12,13 +12,9 @@ const editorSource = await readFile(
 );
 
 test("granular tool permissions are discoverable in the capabilities tab", () => {
-  const capabilitiesTab = detailSource.indexOf(
-    '<TabsTrigger value="capabilities">Capabilities</TabsTrigger>',
-  );
+  const capabilitiesTab = detailSource.indexOf("capabilities: {");
   const accessControl = detailSource.indexOf("AgentToolPolicyEditor");
-  const runsTab = detailSource.indexOf(
-    '<TabsTrigger value="runs">Runs</TabsTrigger>',
-  );
+  const runsTab = detailSource.indexOf("runs: {");
 
   assert.notEqual(
     capabilitiesTab,
@@ -47,4 +43,8 @@ test("granular tool permissions are discoverable in the capabilities tab", () =>
   assert.match(editorSource, /type="radio"/);
   assert.doesNotMatch(editorSource, /role="radio"/);
   assert.doesNotMatch(detailSource, /Full access to Work & Docs/);
+  assert.match(detailSource, /SectionNavigationFrame/);
+  assert.match(detailSource, /SettingSection/);
+  assert.match(detailSource, /SettingRow/);
+  assert.doesNotMatch(detailSource, /rounded-lg border bg-card p-4/);
 });

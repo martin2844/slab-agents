@@ -42,6 +42,10 @@ test("settings uses a sticky horizontal icon-and-text navigation in product orde
     new URL("../components/settings-view.tsx", import.meta.url),
     "utf8",
   );
+  const navigationPrimitive = await readFile(
+    new URL("../components/section-navigation.tsx", import.meta.url),
+    "utf8",
+  );
   const navigation = source.slice(
     source.indexOf("function SettingsNavigation"),
     source.indexOf("function ConnectionPanel"),
@@ -62,10 +66,11 @@ test("settings uses a sticky horizontal icon-and-text navigation in product orde
     "calendar",
     "security",
   ]);
-  assert.match(navigation, /sticky top-16/);
-  assert.match(navigation, /lg:top-0/);
-  assert.match(navigation, /overflow-x-auto/);
-  assert.match(navigation, /items-end border-b/);
+  assert.match(navigation, /SectionNavigationFrame/);
+  assert.match(navigationPrimitive, /sticky top-16/);
+  assert.match(navigationPrimitive, /lg:top-0/);
+  assert.match(navigationPrimitive, /overflow-x-auto/);
+  assert.match(navigationPrimitive, /items-end border-b/);
   assert.match(navigation, /after:bg-accent/);
   assert.match(navigation, /icon: Icon/);
   assert.match(
