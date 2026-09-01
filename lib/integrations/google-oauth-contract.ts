@@ -1,4 +1,8 @@
-export const GOOGLE_OAUTH_CALLBACK_PATH = "/api/integrations/google/callback";
+// Keep the callback that existing Gmail OAuth clients already allowlisted.
+// The handler routes Analytics, Search Console, Calendar, and Gmail by the
+// server-owned OAuth state, so every Google capability can share this URI.
+export const GOOGLE_OAUTH_CALLBACK_PATH =
+  "/api/integrations/email/google/callback";
 
 export type GoogleOAuthDestination = "calendar" | "email" | "integrations";
 

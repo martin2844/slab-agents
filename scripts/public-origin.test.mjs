@@ -93,7 +93,7 @@ test("Gmail and Microsoft OAuth handlers use the public origin resolver", async 
 
   assert.match(connectRoute, /publicRequestOrigin\(request\)/);
   assert.match(connectRoute, /GOOGLE_OAUTH_CALLBACK_PATH/);
-  assert.match(callbackRoute, /emailSettingsRedirect\(request/);
+  assert.match(callbackRoute, /integrations\/google\/callback\/route/);
   assert.match(microsoftConnect, /publicRequestOrigin\(request\)/);
   assert.match(microsoftCallback, /emailSettingsRedirect\(request/);
 });
@@ -110,10 +110,13 @@ test("Gmail OAuth returns to Email settings and preserves the result", () => {
 });
 
 test("all Google integrations share one public callback and route by OAuth state owner", async () => {
-  assert.equal(GOOGLE_OAUTH_CALLBACK_PATH, "/api/integrations/google/callback");
+  assert.equal(
+    GOOGLE_OAUTH_CALLBACK_PATH,
+    "/api/integrations/email/google/callback",
+  );
   assert.equal(
     googleOAuthCallbackUrl("https://agents.c5h.dev"),
-    "https://agents.c5h.dev/api/integrations/google/callback",
+    "https://agents.c5h.dev/api/integrations/email/google/callback",
   );
   assert.equal(googleOAuthDestinationForProvider("google_analytics"), "integrations");
   assert.equal(
