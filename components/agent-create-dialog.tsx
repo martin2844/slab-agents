@@ -29,6 +29,11 @@ import type {
   AgentPermissionMode,
   RuntimeCatalogItem,
 } from "@/lib/types";
+import {
+  reasoningEffortLabel,
+  reasoningEffortsForModel,
+  type ReasoningEffort,
+} from "@/lib/runtime-reasoning";
 
 export function AgentCreateDialog({
   onCreated,
@@ -54,10 +59,17 @@ export function AgentCreateDialog({
     [permissionMode, setPermissionMode] =
       useState<AgentPermissionMode>("guarded"),
     [runtime, setRuntime] = useState(initialRuntime),
-    [model, setModel] = useState("default");
-  const runtimeModels = runtimes.find(({ id }) => id === runtime)?.models ?? [
-    "default",
-  ];
+    [model, setModel] = useState("default"),
+    [reasoningEffort, setReasoningEffort] =
+      useState<ReasoningEffort>("default");
+  const runtimeDefinition = runtimes.find(({ id }) => id === runtime);
+  const runtimeModels = runtimeDefinition?.models ?? ["default"];
+  const availableEfforts =
+    runtime === "codex"
+      ? reasoningEffortsForModel(model).filter((effort) =>
+          runtimeDefinition?.reasoningEfforts.includes(effort),
+        )
+      : [];
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -71,6 +83,7 @@ export function AgentCreateDialog({
           instructions: form.get("instructions"),
           runtime,
           model,
+          reasoningEffort,
           enabled,
           permissionMode,
         }),
@@ -139,6 +152,7 @@ export function AgentCreateDialog({
                   onValueChange={(value) => {
                     setRuntime(value);
                     setModel("default");
+                    setReasoningEffort("default");
                   }}
                 >
                   <SelectTrigger>
@@ -155,7 +169,17 @@ export function AgentCreateDialog({
               </label>
               <label className="grid gap-2 text-sm font-semibold">
                 Model
-                <Select value={model} onValueChange={setModel}>
+                <Select
+                  value={model}
+                  onValueChange={(value) => {
+                    setModel(value);
+                    if (
+                      !reasoningEffortsForModel(value).includes(reasoningEffort)
+                    ) {
+                      setReasoningEffort("default");
+                    }
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -168,6 +192,28 @@ export function AgentCreateDialog({
                   </SelectContent>
                 </Select>
               </label>
+              {runtime === "codex" ? (
+                <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
+                  Reasoning effort
+                  <Select
+                    value={reasoningEffort}
+                    onValueChange={(value) =>
+                      setReasoningEffort(value as ReasoningEffort)
+                    }
+                  >
+                    <SelectTrigger className="sm:max-w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableEfforts.map((effort) => (
+                        <SelectItem key={effort} value={effort}>
+                          {reasoningEffortLabel(effort)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </label>
+              ) : null}
             </div>
             <div className="divide-y border-y">
               <div className="flex items-center justify-between gap-5 py-4">

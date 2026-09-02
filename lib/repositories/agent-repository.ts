@@ -3,11 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { db, now } from "@/lib/db/database";
 import { bool, type Row } from "@/lib/repositories/repository-helpers";
-import type {
-  Agent,
-  AgentPermissionMode,
-  AgentQuickAction,
-} from "@/lib/types";
+import type { Agent, AgentPermissionMode, AgentQuickAction } from "@/lib/types";
 import { usesUnrestrictedRuntime } from "@/lib/agent-permissions";
 
 function permissionMode(row: Row): AgentPermissionMode {
@@ -32,6 +28,9 @@ function mapAgent(row: Row): Agent {
     instructions: String(row.instructions),
     runtime: String(row.runtime ?? "codex"),
     model: String(row.model),
+    reasoningEffort: String(
+      row.reasoning_effort ?? "default",
+    ) as Agent["reasoningEffort"],
     enabled: bool(row.enabled),
     permissionMode: permissionMode(row),
     fullAccess: bool(row.full_access),
@@ -76,14 +75,18 @@ export const agentRepository = {
       | "model"
       | "enabled"
       | "fullAccess"
-    > & { runtime?: string; permissionMode?: AgentPermissionMode },
+    > & {
+      runtime?: string;
+      reasoningEffort?: Agent["reasoningEffort"];
+      permissionMode?: AgentPermissionMode;
+    },
   ) {
     const id = randomUUID(),
       timestamp = now();
     const permissionMode =
       input.permissionMode ?? (input.fullAccess ? "full" : "guarded");
     db.prepare(
-      "INSERT INTO agents (id,name,slug,role,instructions,runtime,model,enabled,permission_mode,full_access,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO agents (id,name,slug,role,instructions,runtime,model,reasoning_effort,enabled,permission_mode,full_access,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
     ).run(
       id,
       input.name,
@@ -92,6 +95,7 @@ export const agentRepository = {
       input.instructions,
       input.runtime ?? "codex",
       input.model,
+      input.reasoningEffort ?? "default",
       input.enabled ? 1 : 0,
       permissionMode,
       usesUnrestrictedRuntime(permissionMode) ? 1 : 0,
@@ -185,6 +189,7 @@ export const agentRepository = {
         | "instructions"
         | "runtime"
         | "model"
+        | "reasoningEffort"
         | "enabled"
         | "permissionMode"
         | "fullAccess"
@@ -201,7 +206,7 @@ export const agentRepository = {
           ? "full"
           : "guarded");
     db.prepare(
-      "UPDATE agents SET name=?, slug=?, role=?, instructions=?, runtime=?, model=?, enabled=?, permission_mode=?, full_access=?, updated_at=? WHERE id=?",
+      "UPDATE agents SET name=?, slug=?, role=?, instructions=?, runtime=?, model=?, reasoning_effort=?, enabled=?, permission_mode=?, full_access=?, updated_at=? WHERE id=?",
     ).run(
       input.name ?? current.name,
       input.slug ?? current.slug,
@@ -209,6 +214,7 @@ export const agentRepository = {
       input.instructions ?? current.instructions,
       input.runtime ?? current.runtime,
       input.model ?? current.model,
+      input.reasoningEffort ?? current.reasoningEffort,
       (input.enabled ?? current.enabled) ? 1 : 0,
       permissionMode,
       usesUnrestrictedRuntime(permissionMode) ? 1 : 0,

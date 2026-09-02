@@ -14,12 +14,14 @@ import {
   Sparkles,
   Puzzle,
   BookOpenText,
+  Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AgentChatDialog } from "@/components/agent-chat-dialog";
 import { AgentRunDialog } from "@/components/agent-run-dialog";
 import { AgentQuickActionsEditor } from "@/components/agent-quick-actions-editor";
 import { AgentToolPolicyEditor } from "@/components/agent-tool-policy-editor";
+import { AgentEmailAccessEditor } from "@/components/agent-email-access-editor";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +48,11 @@ import {
 import { StatusBadge } from "@/components/status-badge";
 import { api } from "@/lib/client-api";
 import type { AgentDetailData, Integration } from "@/lib/types";
+import {
+  reasoningEffortLabel,
+  reasoningEffortsForModel,
+  type ReasoningEffort,
+} from "@/lib/runtime-reasoning";
 import { cn, formatDateTime } from "@/lib/utils";
 
 const AGENT_PAGES = {
@@ -89,14 +96,18 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
   const [savingSource, setSavingSource] = useState<string | null>(null);
   const [runtime, setRuntime] = useState(data.agent.runtime);
   const [model, setModel] = useState(data.agent.model);
+  const [reasoningEffort, setReasoningEffort] = useState(
+    data.agent.reasoningEffort,
+  );
   const [savingRuntime, setSavingRuntime] = useState(false);
+  const [email, setEmail] = useState(data.email);
 
   async function saveRuntime() {
     setSavingRuntime(true);
     try {
       await api(`/api/agents/${data.agent.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ runtime, model }),
+        body: JSON.stringify({ runtime, model, reasoningEffort }),
       });
       toast.success("Agent runtime updated");
     } catch (error) {
@@ -185,11 +196,21 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
   const queued = data.runs.filter((run) => run.status === "queued").length;
   const state = !agent.enabled ? "disabled" : (activeRun?.status ?? "idle");
   const page = AGENT_PAGES[activePage];
+  const runtimeDefinition = data.runtimes.find(({ id }) => id === runtime);
+  const availableEfforts =
+    runtime === "codex"
+      ? reasoningEffortsForModel(model).filter((effort) =>
+          runtimeDefinition?.reasoningEfforts.includes(effort),
+        )
+      : [];
+  const emailAccess = email.assignments.find(
+    ({ agentId }) => agentId === agent.id,
+  );
   return (
     <>
       <PageHeader
         title={agent.name}
-        description={`${agent.role} · ${runtime} · ${model}`}
+        description={`${agent.role} · ${runtime} · ${model}${reasoningEffort === "default" ? "" : ` · ${reasoningEffort} effort`}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <AgentChatDialog agent={agent} />
@@ -275,7 +296,7 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
               </SettingRow>
               <SettingRow
                 title="Runtime"
-                description="New runs snapshot this runtime and model. Queued and historical runs keep their original selection."
+                description="New runs snapshot this runtime, model, and reasoning effort. Queued and historical runs keep their original selection."
                 layout="wide"
               >
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
@@ -291,6 +312,7 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
                       onValueChange={(value) => {
                         setRuntime(value);
                         setModel("default");
+                        setReasoningEffort("default");
                       }}
                     >
                       <SelectTrigger className="w-full">
@@ -321,7 +343,19 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
                     )}
                   >
                     Model
-                    <Select value={model} onValueChange={setModel}>
+                    <Select
+                      value={model}
+                      onValueChange={(value) => {
+                        setModel(value);
+                        if (
+                          !reasoningEffortsForModel(value).includes(
+                            reasoningEffort,
+                          )
+                        ) {
+                          setReasoningEffort("default");
+                        }
+                      }}
+                    >
                       <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
@@ -340,6 +374,33 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
                       </SelectContent>
                     </Select>
                   </label>
+                  {runtime === "codex" ? (
+                    <label
+                      className={cn(
+                        "grid gap-1.5 text-xs font-semibold",
+                        settingControlWidths.compact,
+                      )}
+                    >
+                      Reasoning effort
+                      <Select
+                        value={reasoningEffort}
+                        onValueChange={(value) =>
+                          setReasoningEffort(value as ReasoningEffort)
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableEfforts.map((effort) => (
+                            <SelectItem key={effort} value={effort}>
+                              {reasoningEffortLabel(effort)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </label>
+                  ) : null}
                   <Button
                     variant="outline"
                     onClick={saveRuntime}
@@ -468,6 +529,67 @@ export function AgentDetail({ data }: { data: AgentDetailData }) {
               catalog={data.toolCatalog}
               integrations={integrations}
             />
+            <SettingSection
+              title="Email access"
+              description="Choose mailboxes and scoped read, draft, and send permissions for this agent. Raw connector tokens never enter the browser."
+              action={
+                <Button asChild variant="ghost" size="sm">
+                  <Link href="/settings?tab=email">
+                    Manage Email
+                    <ArrowRight />
+                  </Link>
+                </Button>
+              }
+            >
+              {email.accounts.length > 0 ? (
+                <SettingRow
+                  title={
+                    <span className="inline-flex min-w-0 items-center gap-2">
+                      <Mail className="size-4 shrink-0 text-muted-foreground" />
+                      slab-email
+                    </span>
+                  }
+                  description={`${email.accounts.length} ${email.accounts.length === 1 ? "mailbox" : "mailboxes"} available · ${email.status.replaceAll("_", " ")}`}
+                  layout="wide"
+                >
+                  <AgentEmailAccessEditor
+                    key={emailAccess?.updatedAt ?? "new-email-profile"}
+                    agent={agent}
+                    accounts={email.accounts}
+                    access={emailAccess}
+                    showAgentIdentity={false}
+                    onSaved={(saved) =>
+                      setEmail((current) => ({
+                        ...current,
+                        assignments: [
+                          ...current.assignments.filter(
+                            ({ agentId }) => agentId !== saved.agentId,
+                          ),
+                          saved,
+                        ],
+                      }))
+                    }
+                    onRevoked={setEmail}
+                  />
+                </SettingRow>
+              ) : (
+                <SettingRow
+                  title="No Email mailboxes available"
+                  description={
+                    email.lastError ??
+                    "Connect and test an Email service before assigning access."
+                  }
+                >
+                  <SettingsStatusBadge
+                    tone={
+                      email.status === "connected" ? "neutral" : "requirement"
+                    }
+                  >
+                    {email.status.replaceAll("_", " ")}
+                  </SettingsStatusBadge>
+                </SettingRow>
+              )}
+            </SettingSection>
             <SettingSection
               title="Knowledge sources"
               description="Choose which synchronized collections this agent can read in new runs."

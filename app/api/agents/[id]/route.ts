@@ -4,7 +4,11 @@ import { agentRepository } from "@/lib/repositories/agent-repository";
 import { conversationRepository } from "@/lib/repositories/conversation-repository";
 import { z } from "zod";
 import { apiError, notFound } from "@/lib/api";
-import { assertRuntimeSelectable } from "@/lib/runtime-config";
+import {
+  assertReasoningEffortSelectable,
+  assertRuntimeSelectable,
+} from "@/lib/runtime-config";
+import { reasoningEfforts } from "@/lib/runtime-reasoning";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { agentToolPolicyRepository } from "@/lib/repositories/agent-tool-policy-repository";
 import { emailAccessRepository } from "@/lib/repositories/email-access-repository";
@@ -18,10 +22,9 @@ const schema = z.object({
   instructions: z.string().min(10).optional(),
   runtime: z.string().min(1).max(64).optional(),
   model: z.string().min(1).optional(),
+  reasoningEffort: z.enum(reasoningEfforts).optional(),
   enabled: z.boolean().optional(),
-  permissionMode: z
-    .enum(["guarded", "full", "yolo", "custom"])
-    .optional(),
+  permissionMode: z.enum(["guarded", "full", "yolo", "custom"]).optional(),
   fullAccess: z.boolean().optional(),
 });
 export async function GET(
@@ -64,10 +67,15 @@ export async function PATCH(
     const current = agentRepository.getAgent(id);
     if (!current) throw notFound("Agent not found");
     const input = schema.parse(await request.json());
-    assertRuntimeSelectable(
-      input.runtime ?? current.runtime,
-      input.model ?? current.model,
-    );
+    const runtime = input.runtime ?? current.runtime;
+    const model = input.model ?? current.model;
+    const runtimeSelectionChanged =
+      runtime !== current.runtime || model !== current.model;
+    const reasoningEffort =
+      input.reasoningEffort ??
+      (runtimeSelectionChanged ? "default" : current.reasoningEffort);
+    assertRuntimeSelectable(runtime, model);
+    assertReasoningEffortSelectable(runtime, model, reasoningEffort);
     const permissionMode =
       input.permissionMode ??
       (input.fullAccess === undefined
@@ -77,6 +85,7 @@ export async function PATCH(
           : "guarded");
     const agent = agentRepository.updateAgent(id, {
       ...input,
+      reasoningEffort,
       ...(permissionMode ? { permissionMode } : {}),
     });
     if (!agent) throw notFound("Agent not found");

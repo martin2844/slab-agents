@@ -595,9 +595,7 @@ export async function startRunnerRun(
     ...(calendarMcpServers.some(({ name }) => availableServerNames.has(name))
       ? [CALENDAR_AGENT_PROMPT]
       : []),
-    ...(googleDataMcpServers.some(({ name }) =>
-      availableServerNames.has(name),
-    )
+    ...(googleDataMcpServers.some(({ name }) => availableServerNames.has(name))
       ? [GOOGLE_DATA_AGENT_PROMPT]
       : []),
   ].join("\n\n");
@@ -715,6 +713,10 @@ export async function startRunnerRun(
       runtime: {
         type: input.agent.runtime,
         model: input.agent.model === "default" ? null : input.agent.model,
+        effort:
+          input.agent.reasoningEffort === "default"
+            ? null
+            : input.agent.reasoningEffort,
         authentication: getRuntimeAuthentication(input.agent.runtime),
       },
       budget: input.budget ?? null,
@@ -763,6 +765,7 @@ export async function startRunnerRun(
       runtime: {
         id: input.agent.runtime,
         model: input.agent.model,
+        reasoningEffort: input.agent.reasoningEffort,
         permissionMode: input.agent.permissionMode,
         configVersion: isRuntimeId(input.agent.runtime)
           ? getRuntimeConfig(input.agent.runtime).configVersion

@@ -105,7 +105,7 @@ export function RunDetail({ data }: { data: RunDetailData }) {
               ["Issue", data.run.issueKey ?? "None"],
               [
                 "Runtime",
-                `${data.run.runtime} / ${data.run.model} · ${runtimeContinuity ?? "fresh"}`,
+                `${data.run.runtime} / ${data.run.model}${data.run.reasoningEffort === "default" ? "" : ` / ${data.run.reasoningEffort}`} · ${runtimeContinuity ?? "fresh"}`,
               ],
             ].map(([label, value]) => (
               <div

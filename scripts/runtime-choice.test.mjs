@@ -330,6 +330,38 @@ test("runtime configuration, model selection, and credentials stay server-side",
   assert.equal(run.runtime, "claude");
   assert.equal(run.model, "claude-sonnet-4-20250514");
 
+  const codexAgent = agentRepository.createAgent({
+    name: "Codex Operator",
+    slug: "codex-operator",
+    role: "Operations",
+    instructions: "Operate through Codex with an explicit reasoning profile.",
+    runtime: "codex",
+    model: "gpt-5.6-terra",
+    reasoningEffort: "high",
+    enabled: true,
+    fullAccess: false,
+  });
+  const codexThread = conversationRepository.createThread(
+    codexAgent.id,
+    "Codex runtime",
+  );
+  const codexRun = createRunExecution({
+    agentId: codexAgent.id,
+    threadId: codexThread.id,
+    trigger: "chat",
+    mode: "chat",
+    prompt: "Confirm the Codex runtime profile.",
+  });
+  assert.equal(codexRun.runtime, "codex");
+  assert.equal(codexRun.model, "gpt-5.6-terra");
+  assert.equal(codexRun.reasoningEffort, "high");
+  agentRepository.updateAgent(codexAgent.id, { reasoningEffort: "low" });
+  assert.equal(
+    codexRun.reasoningEffort,
+    "high",
+    "queued runs must preserve the reasoning effort captured at creation",
+  );
+
   const directAgent = agentRepository.createAgent({
     name: "Direct Operator",
     slug: "direct-operator",
@@ -480,6 +512,14 @@ test("runtime configuration, model selection, and credentials stay server-side",
   assert.equal(
     publicCatalog.find(({ id }) => id === "openrouter")?.health,
     "available",
+  );
+  assert.deepEqual(
+    publicCatalog.find(({ id }) => id === "codex")?.models.slice(0, 4),
+    ["default", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+  );
+  assert.deepEqual(
+    publicCatalog.find(({ id }) => id === "codex")?.reasoningEfforts,
+    ["default", "none", "low", "medium", "high", "xhigh", "max"],
   );
 
   const fullRunnerFetch = globalThis.fetch;

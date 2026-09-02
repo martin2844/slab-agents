@@ -18,6 +18,9 @@ function mapRun(row: Row): Run {
     status: row.status as RunStatus,
     runtime: String(row.runtime),
     model: String(row.model ?? "default"),
+    reasoningEffort: String(
+      row.reasoning_effort ?? "default",
+    ) as Run["reasoningEffort"],
     startedAt: row.started_at ? String(row.started_at) : null,
     completedAt: row.completed_at ? String(row.completed_at) : null,
     error: row.error ? String(row.error) : null,
@@ -46,6 +49,7 @@ export const runRepository = {
     automationId?: string | null;
     runtime?: string;
     model?: string;
+    reasoningEffort?: Run["reasoningEffort"];
     trigger: Run["trigger"];
     mode: Run["mode"];
     issueKey?: string | null;
@@ -54,7 +58,7 @@ export const runRepository = {
     const id = input.id ?? randomUUID();
     const createdAt = now();
     db.prepare(
-      "INSERT INTO runs (id,agent_id,thread_id,automation_id,status,runtime,model,trigger,mode,issue_key,run_instructions,created_at,queued_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO runs (id,agent_id,thread_id,automation_id,status,runtime,model,reasoning_effort,trigger,mode,issue_key,run_instructions,created_at,queued_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     ).run(
       id,
       input.agentId,
@@ -63,6 +67,7 @@ export const runRepository = {
       "queued",
       input.runtime ?? "codex",
       input.model ?? "default",
+      input.reasoningEffort ?? "default",
       input.trigger,
       input.mode,
       input.issueKey ?? null,

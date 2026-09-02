@@ -1,7 +1,11 @@
 import { agentRepository } from "@/lib/repositories/agent-repository";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
-import { assertRuntimeSelectable } from "@/lib/runtime-config";
+import {
+  assertReasoningEffortSelectable,
+  assertRuntimeSelectable,
+} from "@/lib/runtime-config";
+import { reasoningEfforts } from "@/lib/runtime-reasoning";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +15,7 @@ const schema = z.object({
   instructions: z.string().min(10).max(20_000),
   runtime: z.string().min(1).max(64).default("codex"),
   model: z.string().min(1).default("default"),
+  reasoningEffort: z.enum(reasoningEfforts).default("default"),
   enabled: z.boolean().default(true),
   permissionMode: z
     .enum(["guarded", "full", "yolo", "custom"])
@@ -31,6 +36,11 @@ export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
     assertRuntimeSelectable(input.runtime, input.model);
+    assertReasoningEffortSelectable(
+      input.runtime,
+      input.model,
+      input.reasoningEffort,
+    );
     let slug = slugify(input.name),
       suffix = 2;
     while (agentRepository.getAgent(slug))
@@ -45,8 +55,7 @@ export async function POST(request: Request) {
           ...input,
           slug,
           permissionMode,
-          fullAccess:
-            permissionMode === "full" || permissionMode === "yolo",
+          fullAccess: permissionMode === "full" || permissionMode === "yolo",
         }),
       },
       { status: 201 },

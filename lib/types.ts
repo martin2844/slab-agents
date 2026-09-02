@@ -9,6 +9,7 @@ import type {
   EmailAutomationMatch,
   PersistedAutomationWorkflowStep,
 } from "@/lib/automation-workflow";
+import type { ReasoningEffort } from "@/lib/runtime-reasoning";
 
 export type Agent = {
   id: string;
@@ -18,6 +19,7 @@ export type Agent = {
   instructions: string;
   runtime: string;
   model: string;
+  reasoningEffort: ReasoningEffort;
   enabled: boolean;
   permissionMode: AgentPermissionMode;
   fullAccess: boolean;
@@ -117,6 +119,7 @@ export type Run = {
   status: RunStatus;
   runtime: string;
   model: string;
+  reasoningEffort: ReasoningEffort;
   startedAt: string | null;
   completedAt: string | null;
   error: string | null;
@@ -338,6 +341,7 @@ export type AgentDetailData = {
   automations: Automation[];
   runs: Run[];
   runtimes: RuntimeCatalogItem[];
+  email: EmailIntegrationState;
 };
 
 export type ThreadData = {
@@ -524,6 +528,7 @@ export type RuntimeCatalogItem = {
   lastVerifiedAt: string | null;
   configVersion: number;
   models: string[];
+  reasoningEfforts: ReasoningEffort[];
   defaultModel: string;
   baseUrl: string | null;
   apiFormat: "responses" | "chat_completions" | null;

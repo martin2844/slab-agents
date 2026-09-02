@@ -17,6 +17,10 @@ import {
   type RunnerRuntimeSummary,
 } from "@/lib/runner";
 import type { RuntimeCatalogItem } from "@/lib/types";
+import {
+  codexSelectableModels,
+  reasoningEfforts,
+} from "@/lib/runtime-reasoning";
 
 const fallbackDefinitions: Record<
   RuntimeId,
@@ -107,9 +111,10 @@ function catalogItem(
   const config = getRuntimeConfig(runtimeId);
   const fallback = fallbackDefinitions[runtimeId];
   const definition = runner ?? fallback;
-  const authModes = runner && Array.isArray(runner.authModes)
-    ? runner.authModes
-    : fallback.authModes;
+  const authModes =
+    runner && Array.isArray(runner.authModes)
+      ? runner.authModes
+      : fallback.authModes;
   const capabilities =
     runner?.capabilities && typeof runner.capabilities === "object"
       ? runner.capabilities
@@ -160,7 +165,11 @@ function catalogItem(
     healthDetail,
     lastVerifiedAt: config.lastVerifiedAt,
     configVersion: config.configVersion,
-    models: config.models,
+    models:
+      runtimeId === "codex"
+        ? [...new Set([...codexSelectableModels, ...config.models])]
+        : config.models,
+    reasoningEfforts: runtimeId === "codex" ? [...reasoningEfforts] : [],
     defaultModel: config.defaultModel,
     baseUrl: config.baseUrl,
     apiFormat: config.apiFormat,

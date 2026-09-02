@@ -10,7 +10,6 @@ import {
   Pencil,
   Power,
   RefreshCw,
-  Send,
   Server,
   ShieldCheck,
   Trash2,
@@ -36,11 +35,10 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/client-api";
+import { AgentEmailAccessEditor } from "@/components/agent-email-access-editor";
 import type {
   Agent,
-  AgentEmailAccess,
   EmailIntegrationState,
-  EmailSendPolicy,
   ManagedProtonChallenge,
 } from "@/lib/types";
 
@@ -170,7 +168,9 @@ export function EmailIntegrationEditor({
     const groups = new Map<string, EmailIntegrationState["accounts"][number]>();
     for (const account of state.accounts) {
       if (!account.managed) continue;
-      const login = (account.managedBridgeLogin ?? account.emailAddress).toLowerCase();
+      const login = (
+        account.managedBridgeLogin ?? account.emailAddress
+      ).toLowerCase();
       const current = groups.get(login);
       if (!current || account.emailAddress.toLowerCase() === login) {
         groups.set(login, account);
@@ -291,7 +291,10 @@ export function EmailIntegrationEditor({
       const result = await api<{
         setup:
           | ManagedProtonChallenge
-          | { state: "connected"; account: EmailIntegrationState["accounts"][number] };
+          | {
+              state: "connected";
+              account: EmailIntegrationState["accounts"][number];
+            };
         state: EmailIntegrationState;
       }>("/api/integrations/email/proton", {
         method: "POST",
@@ -318,7 +321,9 @@ export function EmailIntegrationEditor({
       toast.success("Proton mailbox connected");
     } catch (error) {
       setManagedProton((value) => ({ ...value, password: "" }));
-      toast.error(error instanceof Error ? error.message : "Proton login failed");
+      toast.error(
+        error instanceof Error ? error.message : "Proton login failed",
+      );
     } finally {
       setBusy(null);
     }
@@ -332,7 +337,10 @@ export function EmailIntegrationEditor({
       const result = await api<{
         setup:
           | ManagedProtonChallenge
-          | { state: "connected"; account: EmailIntegrationState["accounts"][number] };
+          | {
+              state: "connected";
+              account: EmailIntegrationState["accounts"][number];
+            };
         state: EmailIntegrationState;
       }>("/api/integrations/email/proton/challenge", {
         method: "POST",
@@ -358,7 +366,9 @@ export function EmailIntegrationEditor({
       setShowProton(false);
       toast.success("Proton mailbox connected");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Proton verification failed");
+      toast.error(
+        error instanceof Error ? error.message : "Proton verification failed",
+      );
     } finally {
       setBusy(null);
     }
@@ -372,10 +382,13 @@ export function EmailIntegrationEditor({
     if (!challengeId) return;
     try {
       update(
-        await api<EmailIntegrationState>("/api/integrations/email/proton/abort", {
-          method: "POST",
-          body: JSON.stringify({ challengeId }),
-        }),
+        await api<EmailIntegrationState>(
+          "/api/integrations/email/proton/abort",
+          {
+            method: "POST",
+            body: JSON.stringify({ challengeId }),
+          },
+        ),
       );
     } catch {
       // The setup expires server-side; closing the dialog must remain responsive.
@@ -422,7 +435,9 @@ export function EmailIntegrationEditor({
     setShowProton(true);
   }
 
-  function startEditAccount(account: EmailIntegrationState["accounts"][number]) {
+  function startEditAccount(
+    account: EmailIntegrationState["accounts"][number],
+  ) {
     setEditingAccountId(account.id);
     setProtonMode("manual");
     setProton({
@@ -552,7 +567,9 @@ export function EmailIntegrationEditor({
                 : {
                     displayName: apiMailbox.displayName,
                     ...(apiMailbox.apiKey ? { apiKey: apiMailbox.apiKey } : {}),
-                    ...(apiMailbox.baseUrl ? { baseUrl: apiMailbox.baseUrl } : {}),
+                    ...(apiMailbox.baseUrl
+                      ? { baseUrl: apiMailbox.baseUrl }
+                      : {}),
                     ...(providerSetup === "agentmail"
                       ? { inboxId: apiMailbox.inboxId }
                       : { inboundEnabled: apiMailbox.inboundEnabled }),
@@ -573,7 +590,9 @@ export function EmailIntegrationEditor({
       );
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Provider could not be connected",
+        error instanceof Error
+          ? error.message
+          : "Provider could not be connected",
       );
     } finally {
       setBusy(null);
@@ -601,7 +620,8 @@ export function EmailIntegrationEditor({
       });
       return;
     }
-    if (account.provider !== "agentmail" && account.provider !== "resend") return;
+    if (account.provider !== "agentmail" && account.provider !== "resend")
+      return;
     setProviderSetup(account.provider);
     setApiMailbox({
       emailAddress: account.emailAddress,
@@ -626,10 +646,9 @@ export function EmailIntegrationEditor({
           latencyMs: number;
           message?: string;
           connectionStatus?: string | null;
-        }>(
-          `/api/integrations/email/accounts/${accountId}/test`,
-          { method: "POST" },
-        );
+        }>(`/api/integrations/email/accounts/${accountId}/test`, {
+          method: "POST",
+        });
         update(await api<EmailIntegrationState>("/api/integrations/email"));
         if (result.status !== "ok") {
           toast.error(
@@ -721,7 +740,9 @@ export function EmailIntegrationEditor({
               <MailCheck className="size-4" />
               <h3 className="font-semibold">Microsoft OAuth</h3>
               <Badge
-                variant={state.microsoftOAuth.configured ? "default" : "outline"}
+                variant={
+                  state.microsoftOAuth.configured ? "default" : "outline"
+                }
               >
                 {state.microsoftOAuth.configured ? "Configured" : "Optional"}
               </Badge>
@@ -864,7 +885,8 @@ export function EmailIntegrationEditor({
                   only by slab-email.
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Managed Proton Bridge: {state.protonBridge.available
+                  Managed Proton Bridge:{" "}
+                  {state.protonBridge.available
                     ? `${state.protonBridge.state}${state.protonBridge.version ? ` · v${state.protonBridge.version}` : ""}`
                     : "unavailable on this installation"}
                 </p>
@@ -975,39 +997,135 @@ export function EmailIntegrationEditor({
                 {providerSetup === "imap-smtp" ? (
                   <>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <Field label="Email address" value={imap.emailAddress} onChange={(emailAddress) => setImap((value) => ({ ...value, emailAddress }))} />
-                      <Field label="Display name" value={imap.displayName} onChange={(displayName) => setImap((value) => ({ ...value, displayName }))} />
-                      <Field label="Username" value={imap.username} onChange={(username) => setImap((value) => ({ ...value, username }))} autoComplete="off" />
-                      <Field label="App password" type="password" value={imap.password} onChange={(password) => setImap((value) => ({ ...value, password }))} autoComplete="new-password" />
+                      <Field
+                        label="Email address"
+                        value={imap.emailAddress}
+                        onChange={(emailAddress) =>
+                          setImap((value) => ({ ...value, emailAddress }))
+                        }
+                      />
+                      <Field
+                        label="Display name"
+                        value={imap.displayName}
+                        onChange={(displayName) =>
+                          setImap((value) => ({ ...value, displayName }))
+                        }
+                      />
+                      <Field
+                        label="Username"
+                        value={imap.username}
+                        onChange={(username) =>
+                          setImap((value) => ({ ...value, username }))
+                        }
+                        autoComplete="off"
+                      />
+                      <Field
+                        label="App password"
+                        type="password"
+                        value={imap.password}
+                        onChange={(password) =>
+                          setImap((value) => ({ ...value, password }))
+                        }
+                        autoComplete="new-password"
+                      />
                     </div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_7rem_9rem]">
-                      <Field label="IMAP host" value={imap.imapHost} onChange={(imapHost) => setImap((value) => ({ ...value, imapHost }))} />
-                      <Field label="Port" value={imap.imapPort} onChange={(imapPort) => setImap((value) => ({ ...value, imapPort }))} />
-                      <TlsSelect label="IMAP TLS" value={imap.imapTlsMode} onChange={(imapTlsMode) => setImap((value) => ({ ...value, imapTlsMode }))} />
-                      <Field label="SMTP host" value={imap.smtpHost} onChange={(smtpHost) => setImap((value) => ({ ...value, smtpHost }))} />
-                      <Field label="Port" value={imap.smtpPort} onChange={(smtpPort) => setImap((value) => ({ ...value, smtpPort }))} />
-                      <TlsSelect label="SMTP TLS" value={imap.smtpTlsMode} onChange={(smtpTlsMode) => setImap((value) => ({ ...value, smtpTlsMode }))} />
+                      <Field
+                        label="IMAP host"
+                        value={imap.imapHost}
+                        onChange={(imapHost) =>
+                          setImap((value) => ({ ...value, imapHost }))
+                        }
+                      />
+                      <Field
+                        label="Port"
+                        value={imap.imapPort}
+                        onChange={(imapPort) =>
+                          setImap((value) => ({ ...value, imapPort }))
+                        }
+                      />
+                      <TlsSelect
+                        label="IMAP TLS"
+                        value={imap.imapTlsMode}
+                        onChange={(imapTlsMode) =>
+                          setImap((value) => ({ ...value, imapTlsMode }))
+                        }
+                      />
+                      <Field
+                        label="SMTP host"
+                        value={imap.smtpHost}
+                        onChange={(smtpHost) =>
+                          setImap((value) => ({ ...value, smtpHost }))
+                        }
+                      />
+                      <Field
+                        label="Port"
+                        value={imap.smtpPort}
+                        onChange={(smtpPort) =>
+                          setImap((value) => ({ ...value, smtpPort }))
+                        }
+                      />
+                      <TlsSelect
+                        label="SMTP TLS"
+                        value={imap.smtpTlsMode}
+                        onChange={(smtpTlsMode) =>
+                          setImap((value) => ({ ...value, smtpTlsMode }))
+                        }
+                      />
                     </div>
                   </>
                 ) : (
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <Field label="Email address" value={apiMailbox.emailAddress} onChange={(emailAddress) => setApiMailbox((value) => ({ ...value, emailAddress }))} />
-                    <Field label="Display name" value={apiMailbox.displayName} onChange={(displayName) => setApiMailbox((value) => ({ ...value, displayName }))} />
+                    <Field
+                      label="Email address"
+                      value={apiMailbox.emailAddress}
+                      onChange={(emailAddress) =>
+                        setApiMailbox((value) => ({ ...value, emailAddress }))
+                      }
+                    />
+                    <Field
+                      label="Display name"
+                      value={apiMailbox.displayName}
+                      onChange={(displayName) =>
+                        setApiMailbox((value) => ({ ...value, displayName }))
+                      }
+                    />
                     {providerSetup === "agentmail" && (
-                      <Field label="Inbox ID" value={apiMailbox.inboxId} onChange={(inboxId) => setApiMailbox((value) => ({ ...value, inboxId }))} />
+                      <Field
+                        label="Inbox ID"
+                        value={apiMailbox.inboxId}
+                        onChange={(inboxId) =>
+                          setApiMailbox((value) => ({ ...value, inboxId }))
+                        }
+                      />
                     )}
-                    <Field label="API key" type="password" value={apiMailbox.apiKey} onChange={(apiKey) => setApiMailbox((value) => ({ ...value, apiKey }))} autoComplete="new-password" />
+                    <Field
+                      label="API key"
+                      type="password"
+                      value={apiMailbox.apiKey}
+                      onChange={(apiKey) =>
+                        setApiMailbox((value) => ({ ...value, apiKey }))
+                      }
+                      autoComplete="new-password"
+                    />
                     <Field
                       label="API base URL (optional)"
                       value={apiMailbox.baseUrl}
-                      onChange={(baseUrl) => setApiMailbox((value) => ({ ...value, baseUrl }))}
+                      onChange={(baseUrl) =>
+                        setApiMailbox((value) => ({ ...value, baseUrl }))
+                      }
                     />
                     {providerSetup === "resend" && (
                       <label className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold">
                         Inbound email enabled
                         <Switch
                           checked={apiMailbox.inboundEnabled}
-                          onCheckedChange={(inboundEnabled) => setApiMailbox((value) => ({ ...value, inboundEnabled }))}
+                          onCheckedChange={(inboundEnabled) =>
+                            setApiMailbox((value) => ({
+                              ...value,
+                              inboundEnabled,
+                            }))
+                          }
                         />
                       </label>
                     )}
@@ -1019,13 +1137,24 @@ export function EmailIntegrationEditor({
                     disabled={
                       busy === `create:${providerSetup}` ||
                       (providerSetup === "imap-smtp"
-                        ? !imap.emailAddress || !imap.imapHost || !imap.smtpHost || (!editingProviderAccountId && !imap.password)
-                        : !apiMailbox.emailAddress || (!editingProviderAccountId && !apiMailbox.apiKey) ||
-                          (providerSetup === "agentmail" && !apiMailbox.inboxId))
+                        ? !imap.emailAddress ||
+                          !imap.imapHost ||
+                          !imap.smtpHost ||
+                          (!editingProviderAccountId && !imap.password)
+                        : !apiMailbox.emailAddress ||
+                          (!editingProviderAccountId && !apiMailbox.apiKey) ||
+                          (providerSetup === "agentmail" &&
+                            !apiMailbox.inboxId))
                     }
                   >
-                    {busy === `create:${providerSetup}` ? <LoaderCircle className="animate-spin" /> : <Check />}
-                    {editingProviderAccountId ? "Save changes" : "Connect provider"}
+                    {busy === `create:${providerSetup}` ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : (
+                      <Check />
+                    )}
+                    {editingProviderAccountId
+                      ? "Save changes"
+                      : "Connect provider"}
                   </Button>
                 </div>
               </div>
@@ -1057,9 +1186,11 @@ export function EmailIntegrationEditor({
                   <>
                     {managedProton.challenge ? (
                       <div className="grid gap-3">
-                        {managedProton.challenge.challengeType === "human_verification" ? (
+                        {managedProton.challenge.challengeType ===
+                        "human_verification" ? (
                           <div className="rounded-lg border bg-background p-3 text-sm">
-                            Complete Proton&apos;s human verification, then continue.
+                            Complete Proton&apos;s human verification, then
+                            continue.
                             {managedProton.challenge.verificationUrl && (
                               <a
                                 className="ml-1 font-semibold text-primary underline"
@@ -1074,14 +1205,18 @@ export function EmailIntegrationEditor({
                         ) : (
                           <Field
                             label={
-                              managedProton.challenge.challengeType === "two_factor"
+                              managedProton.challenge.challengeType ===
+                              "two_factor"
                                 ? "Two-factor code"
                                 : "Mailbox password"
                             }
                             type="password"
                             value={managedProton.challengeValue}
                             onChange={(challengeValue) =>
-                              setManagedProton((value) => ({ ...value, challengeValue }))
+                              setManagedProton((value) => ({
+                                ...value,
+                                challengeValue,
+                              }))
                             }
                             autoComplete="one-time-code"
                           />
@@ -1093,7 +1228,10 @@ export function EmailIntegrationEditor({
                           label="Proton email"
                           value={managedProton.emailAddress}
                           onChange={(emailAddress) =>
-                            setManagedProton((value) => ({ ...value, emailAddress }))
+                            setManagedProton((value) => ({
+                              ...value,
+                              emailAddress,
+                            }))
                           }
                           autoComplete="username"
                         />
@@ -1101,7 +1239,10 @@ export function EmailIntegrationEditor({
                           label="Display name"
                           value={managedProton.displayName}
                           onChange={(displayName) =>
-                            setManagedProton((value) => ({ ...value, displayName }))
+                            setManagedProton((value) => ({
+                              ...value,
+                              displayName,
+                            }))
                           }
                         />
                         <div className="sm:col-span-2">
@@ -1110,7 +1251,10 @@ export function EmailIntegrationEditor({
                             type="password"
                             value={managedProton.password}
                             onChange={(password) =>
-                              setManagedProton((value) => ({ ...value, password }))
+                              setManagedProton((value) => ({
+                                ...value,
+                                password,
+                              }))
                             }
                             autoComplete="current-password"
                           />
@@ -1118,11 +1262,18 @@ export function EmailIntegrationEditor({
                       </div>
                     )}
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-                      <Button variant="link" className="px-0" onClick={startManualProton}>
+                      <Button
+                        variant="link"
+                        className="px-0"
+                        onClick={startManualProton}
+                      >
                         Connect an existing Bridge instead
                       </Button>
                       <div className="flex gap-2">
-                        <Button variant="ghost" onClick={() => void closeProtonSetup()}>
+                        <Button
+                          variant="ghost"
+                          onClick={() => void closeProtonSetup()}
+                        >
                           Cancel
                         </Button>
                         <Button
@@ -1144,12 +1295,15 @@ export function EmailIntegrationEditor({
                               !managedProton.challengeValue)
                           }
                         >
-                          {busy === "proton-managed" || busy === "proton-challenge" ? (
+                          {busy === "proton-managed" ||
+                          busy === "proton-challenge" ? (
                             <LoaderCircle className="animate-spin" />
                           ) : (
                             <Check />
                           )}
-                          {managedProton.challenge ? "Continue" : "Connect account"}
+                          {managedProton.challenge
+                            ? "Continue"
+                            : "Connect account"}
                         </Button>
                       </div>
                     </div>
@@ -1157,23 +1311,106 @@ export function EmailIntegrationEditor({
                 ) : (
                   <>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label="Email address" value={proton.emailAddress} onChange={(emailAddress) => setProton((value) => ({ ...value, emailAddress }))} disabled={editingAccountId !== null} />
-                      <Field label="Display name" value={proton.displayName} onChange={(displayName) => setProton((value) => ({ ...value, displayName }))} />
-                      <Field label="Bridge username" value={proton.username} onChange={(username) => setProton((value) => ({ ...value, username }))} autoComplete="off" />
-                      <Field label="Bridge password" type="password" value={proton.password} onChange={(password) => setProton((value) => ({ ...value, password }))} autoComplete="new-password" />
+                      <Field
+                        label="Email address"
+                        value={proton.emailAddress}
+                        onChange={(emailAddress) =>
+                          setProton((value) => ({ ...value, emailAddress }))
+                        }
+                        disabled={editingAccountId !== null}
+                      />
+                      <Field
+                        label="Display name"
+                        value={proton.displayName}
+                        onChange={(displayName) =>
+                          setProton((value) => ({ ...value, displayName }))
+                        }
+                      />
+                      <Field
+                        label="Bridge username"
+                        value={proton.username}
+                        onChange={(username) =>
+                          setProton((value) => ({ ...value, username }))
+                        }
+                        autoComplete="off"
+                      />
+                      <Field
+                        label="Bridge password"
+                        type="password"
+                        value={proton.password}
+                        onChange={(password) =>
+                          setProton((value) => ({ ...value, password }))
+                        }
+                        autoComplete="new-password"
+                      />
                     </div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_7rem_9rem]">
-                      <Field label="IMAP host" value={proton.imapHost} onChange={(imapHost) => setProton((value) => ({ ...value, imapHost }))} />
-                      <Field label="Port" value={proton.imapPort} onChange={(imapPort) => setProton((value) => ({ ...value, imapPort }))} />
-                      <TlsSelect label="IMAP TLS" value={proton.imapTlsMode} onChange={(imapTlsMode) => setProton((value) => ({ ...value, imapTlsMode }))} />
-                      <Field label="SMTP host" value={proton.smtpHost} onChange={(smtpHost) => setProton((value) => ({ ...value, smtpHost }))} />
-                      <Field label="Port" value={proton.smtpPort} onChange={(smtpPort) => setProton((value) => ({ ...value, smtpPort }))} />
-                      <TlsSelect label="SMTP TLS" value={proton.smtpTlsMode} onChange={(smtpTlsMode) => setProton((value) => ({ ...value, smtpTlsMode }))} />
+                      <Field
+                        label="IMAP host"
+                        value={proton.imapHost}
+                        onChange={(imapHost) =>
+                          setProton((value) => ({ ...value, imapHost }))
+                        }
+                      />
+                      <Field
+                        label="Port"
+                        value={proton.imapPort}
+                        onChange={(imapPort) =>
+                          setProton((value) => ({ ...value, imapPort }))
+                        }
+                      />
+                      <TlsSelect
+                        label="IMAP TLS"
+                        value={proton.imapTlsMode}
+                        onChange={(imapTlsMode) =>
+                          setProton((value) => ({ ...value, imapTlsMode }))
+                        }
+                      />
+                      <Field
+                        label="SMTP host"
+                        value={proton.smtpHost}
+                        onChange={(smtpHost) =>
+                          setProton((value) => ({ ...value, smtpHost }))
+                        }
+                      />
+                      <Field
+                        label="Port"
+                        value={proton.smtpPort}
+                        onChange={(smtpPort) =>
+                          setProton((value) => ({ ...value, smtpPort }))
+                        }
+                      />
+                      <TlsSelect
+                        label="SMTP TLS"
+                        value={proton.smtpTlsMode}
+                        onChange={(smtpTlsMode) =>
+                          setProton((value) => ({ ...value, smtpTlsMode }))
+                        }
+                      />
                     </div>
                     <div className="mt-4 flex justify-end gap-2">
-                      <Button variant="ghost" onClick={() => void closeProtonSetup()}>Cancel</Button>
-                      <Button onClick={editingAccountId ? updateAccount : createProton} disabled={busy === "proton" || busy === "account-edit" || !proton.emailAddress || (!editingAccountId && !proton.password)}>
-                        {busy === "proton" || busy === "account-edit" ? <LoaderCircle className="animate-spin" /> : <Check />}
+                      <Button
+                        variant="ghost"
+                        onClick={() => void closeProtonSetup()}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={
+                          editingAccountId ? updateAccount : createProton
+                        }
+                        disabled={
+                          busy === "proton" ||
+                          busy === "account-edit" ||
+                          !proton.emailAddress ||
+                          (!editingAccountId && !proton.password)
+                        }
+                      >
+                        {busy === "proton" || busy === "account-edit" ? (
+                          <LoaderCircle className="animate-spin" />
+                        ) : (
+                          <Check />
+                        )}
                         {editingAccountId ? "Save changes" : "Connect account"}
                       </Button>
                     </div>
@@ -1208,19 +1445,19 @@ export function EmailIntegrationEditor({
                         !["gmail", "microsoft_graph"].includes(
                           account.provider,
                         ) && (
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label="Edit account"
-                          onClick={() =>
-                            account.provider === "proton_bridge"
-                              ? startEditAccount(account)
-                              : startEditAdditionalProvider(account)
-                          }
-                          disabled={busy !== null}
-                        >
-                          <Pencil />
-                        </Button>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label="Edit account"
+                            onClick={() =>
+                              account.provider === "proton_bridge"
+                                ? startEditAccount(account)
+                                : startEditAdditionalProvider(account)
+                            }
+                            disabled={busy !== null}
+                          >
+                            <Pencil />
+                          </Button>
                         )}
                       <Button
                         size="sm"
@@ -1286,9 +1523,9 @@ export function EmailIntegrationEditor({
                         account.connection.imapHost,
                       ) && (
                         <p className="text-xs leading-5 text-amber-700 sm:basis-full dark:text-amber-300">
-                          Bridge on Windows is not reachable from WSL NAT through
-                          127.0.0.1. Enable WSL mirrored networking or run
-                          slab-email on Windows beside Bridge.
+                          Bridge on Windows is not reachable from WSL NAT
+                          through 127.0.0.1. Enable WSL mirrored networking or
+                          run slab-email on Windows beside Bridge.
                         </p>
                       )}
                   </div>
@@ -1312,7 +1549,7 @@ export function EmailIntegrationEditor({
             </p>
             <div className="mt-4 divide-y rounded-lg border">
               {agents.map((agent) => (
-                <AgentAccessRow
+                <AgentEmailAccessEditor
                   key={agent.id}
                   agent={agent}
                   accounts={state.accounts}
@@ -1417,216 +1654,5 @@ function TlsSelect({
         </SelectContent>
       </Select>
     </label>
-  );
-}
-
-function AgentAccessRow({
-  agent,
-  accounts,
-  access,
-  onSaved,
-  onRevoked,
-}: {
-  agent: Agent;
-  accounts: EmailIntegrationState["accounts"];
-  access?: AgentEmailAccess;
-  onSaved: (access: AgentEmailAccess) => void;
-  onRevoked: (state: EmailIntegrationState) => void;
-}) {
-  const [accountIds, setAccountIds] = useState(access?.accountIds ?? []);
-  const [readEnabled, setReadEnabled] = useState(access?.readEnabled ?? true);
-  const [draftEnabled, setDraftEnabled] = useState(
-    access?.draftEnabled ?? false,
-  );
-  const [sendEnabled, setSendEnabled] = useState(access?.sendEnabled ?? false);
-  const [sendPolicy, setSendPolicy] = useState<EmailSendPolicy>(
-    access?.sendPolicy ?? "disabled",
-  );
-  const [saving, setSaving] = useState(false);
-  const summary = useMemo(
-    () =>
-      accountIds.length
-        ? `${accountIds.length} account${accountIds.length === 1 ? "" : "s"}`
-        : "Not configured",
-    [accountIds],
-  );
-  const selectedAccounts = useMemo(
-    () => accounts.filter(({ id }) => accountIds.includes(id)),
-    [accountIds, accounts],
-  );
-  const supportsRead = selectedAccounts.some(({ capabilities }) => capabilities.read);
-  const supportsDraft = selectedAccounts.some(({ capabilities }) => capabilities.draft);
-  const supportsSend = selectedAccounts.some(({ capabilities }) => capabilities.send);
-
-  async function save() {
-    setSaving(true);
-    try {
-      const saved = await api<AgentEmailAccess>(
-        `/api/integrations/email/agents/${agent.id}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            accountIds,
-            readEnabled: supportsRead && readEnabled,
-            draftEnabled: supportsDraft && draftEnabled,
-            sendEnabled: supportsSend && sendEnabled,
-            sendPolicy:
-              supportsSend && sendEnabled ? sendPolicy : "disabled",
-          }),
-        },
-      );
-      onSaved(saved);
-      toast.success(`${agent.name} Email access updated`);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Profile could not be saved",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function revoke() {
-    setSaving(true);
-    try {
-      const next = await api<EmailIntegrationState>(
-        `/api/integrations/email/agents/${agent.id}`,
-        { method: "DELETE" },
-      );
-      onRevoked(next);
-      toast.success(`${agent.name} Email token revoked`);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Token could not be revoked",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold">{agent.name}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {agent.role} · {summary}
-          </p>
-        </div>
-        {access && <Badge variant="outline">Token {access.tokenPrefix}…</Badge>}
-        {access && (
-          <Button variant="ghost" size="sm" onClick={revoke} disabled={saving}>
-            <Trash2 /> Revoke
-          </Button>
-        )}
-        <Button
-          size="sm"
-          onClick={save}
-          disabled={saving || accountIds.length === 0}
-        >
-          {saving ? <LoaderCircle className="animate-spin" /> : <Check />} Save
-          profile
-        </Button>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {accounts.map((account) => (
-          <label
-            key={account.id}
-            className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold"
-          >
-            <Switch
-              size="sm"
-              checked={accountIds.includes(account.id)}
-              onCheckedChange={(checked) =>
-                setAccountIds((current) =>
-                  checked
-                    ? [...new Set([...current, account.id])]
-                    : current.filter((id) => id !== account.id),
-                )
-              }
-            />
-            <span className="min-w-0">
-              <span className="block truncate">{account.displayName}</span>
-              <span className="block truncate font-mono text-[11px] font-normal text-muted-foreground">
-                {account.emailAddress}
-              </span>
-            </span>
-          </label>
-        ))}
-      </div>
-      {selectedAccounts.length > 0 && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Actual sender{selectedAccounts.length === 1 ? "" : "s"}:{" "}
-          <span className="font-mono text-foreground">
-            {selectedAccounts
-              .map(({ displayName, emailAddress }) =>
-                `${displayName} <${emailAddress}>`,
-              )
-              .join(", ")}
-          </span>
-          . Agent instructions and message signatures do not change the SMTP
-          sender.
-        </p>
-      )}
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="flex items-center justify-between rounded-lg bg-muted/50 p-3 text-sm font-semibold">
-          Read{" "}
-          <Switch
-            size="sm"
-            checked={supportsRead && readEnabled}
-            onCheckedChange={setReadEnabled}
-            disabled={!supportsRead}
-          />
-        </label>
-        <label className="flex items-center justify-between rounded-lg bg-muted/50 p-3 text-sm font-semibold">
-          Draft{" "}
-          <Switch
-            size="sm"
-            checked={supportsDraft && draftEnabled}
-            onCheckedChange={setDraftEnabled}
-            disabled={!supportsDraft}
-          />
-        </label>
-        <label className="flex items-center justify-between rounded-lg bg-muted/50 p-3 text-sm font-semibold">
-          Send{" "}
-          <Switch
-            size="sm"
-            checked={supportsSend && sendEnabled}
-            onCheckedChange={(checked) => {
-              setSendEnabled(checked);
-              if (!checked) setSendPolicy("disabled");
-              else if (sendPolicy === "disabled")
-                setSendPolicy("approval_required");
-            }}
-            disabled={!supportsSend}
-          />
-        </label>
-        <label className="grid gap-1.5 rounded-lg bg-muted/50 p-3 text-xs font-semibold">
-          <span className="flex items-center gap-1.5">
-            <Send className="size-3.5" /> Send policy
-          </span>
-          <Select
-            value={supportsSend ? sendPolicy : "disabled"}
-            onValueChange={(value) => {
-              const policy = value as EmailSendPolicy;
-              setSendPolicy(policy);
-              setSendEnabled(policy !== "disabled");
-            }}
-            disabled={!supportsSend}
-          >
-            <SelectTrigger className="w-full bg-background">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="disabled">Disabled</SelectItem>
-              <SelectItem value="approval_required">
-                Approval required
-              </SelectItem>
-              <SelectItem value="autonomous">Autonomous</SelectItem>
-            </SelectContent>
-          </Select>
-        </label>
-      </div>
-    </div>
   );
 }

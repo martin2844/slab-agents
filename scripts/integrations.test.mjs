@@ -5,12 +5,14 @@ import test from "node:test";
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("Integrations stays focused on external tools while Email is an optional Setting", async () => {
-  const [source, settings, emailEditor, catalog] = await Promise.all([
-    read("components/integrations-view.tsx"),
-    read("components/settings-view.tsx"),
-    read("components/email-integration-editor.tsx"),
-    read("lib/integrations/catalog.ts"),
-  ]);
+  const [source, settings, emailEditor, emailAccessEditor, catalog] =
+    await Promise.all([
+      read("components/integrations-view.tsx"),
+      read("components/settings-view.tsx"),
+      read("components/email-integration-editor.tsx"),
+      read("components/agent-email-access-editor.tsx"),
+      read("lib/integrations/catalog.ts"),
+    ]);
   assert.match(source, /Active integrations/);
   assert.match(source, /Add integrations/);
   assert.match(source, /Personal API key/);
@@ -25,8 +27,9 @@ test("Integrations stays focused on external tools while Email is an optional Se
   assert.match(emailEditor, /managedProtonGroups/);
   assert.match(emailEditor, /Sync \{account\.managedBridgeLogin/);
   assert.match(emailEditor, /split-address mode/);
-  assert.match(emailEditor, /Actual sender/);
-  assert.match(emailEditor, /signatures do not change the SMTP/);
+  assert.match(emailEditor, /AgentEmailAccessEditor/);
+  assert.match(emailAccessEditor, /Actual sender/);
+  assert.match(emailAccessEditor, /signatures do not change the SMTP/);
   assert.match(emailEditor, /Proton\s+password is used for this login only/);
   assert.match(emailEditor, /Connect an existing Bridge instead/);
   assert.match(emailEditor, /Two-factor code/);
@@ -47,7 +50,7 @@ test("Integrations stays focused on external tools while Email is an optional Se
   assert.match(emailEditor, /Authorized redirect URI/);
   assert.match(emailEditor, /Save OAuth credentials/);
   assert.match(emailEditor, /Agent access profiles/);
-  assert.match(emailEditor, /Approval required/);
+  assert.match(emailAccessEditor, /Approval required/);
   assert.match(emailEditor, /if \(result\.status !== "ok"\)/);
   assert.match(emailEditor, /Mailbox connection failed/);
   assert.match(emailEditor, /Connection failed/);
@@ -144,15 +147,16 @@ test("managed Proton aliases are synchronized and deleted as account groups", as
 });
 
 test("Email credentials and one-time connector tokens stay outside browser payloads and SQLite", async () => {
-  const [migration, service, vault, client, runner, route, gmailSettingsRoute] = await Promise.all([
-    read("db/migrations/202608180007_email_integration.cjs"),
-    read("lib/integrations/email-service.ts"),
-    read("lib/integrations/email-token-vault.ts"),
-    read("lib/integrations/email-client.ts"),
-    read("lib/runner.ts"),
-    read("app/api/integrations/email/agents/[agentId]/route.ts"),
-    read("app/api/integrations/email/gmail/settings/route.ts"),
-  ]);
+  const [migration, service, vault, client, runner, route, gmailSettingsRoute] =
+    await Promise.all([
+      read("db/migrations/202608180007_email_integration.cjs"),
+      read("lib/integrations/email-service.ts"),
+      read("lib/integrations/email-token-vault.ts"),
+      read("lib/integrations/email-client.ts"),
+      read("lib/runner.ts"),
+      read("app/api/integrations/email/agents/[agentId]/route.ts"),
+      read("app/api/integrations/email/gmail/settings/route.ts"),
+    ]);
   assert.doesNotMatch(
     migration,
     /raw_token|token_ciphertext|password|refresh_token/,

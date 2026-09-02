@@ -165,7 +165,7 @@ function loadOverviewUsage(currentTime: Date) {
 
 export function getAgentDetailPageData(
   id: string,
-): Omit<AgentDetailData, "runtimes"> | null {
+): Omit<AgentDetailData, "runtimes" | "email"> | null {
   const agent = agentRepository.getAgent(id);
   if (!agent) return null;
   const integrations = integrationRepository.listIntegrations();

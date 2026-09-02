@@ -6,6 +6,11 @@ import type { RuntimeConfigRecord } from "@/lib/repositories/runtime-config-repo
 import { OperationalError } from "@/lib/operational-error";
 
 import { decryptLocalSecret, encryptLocalSecret } from "@/lib/secrets";
+import {
+  codexSelectableModels,
+  reasoningEffortsForModel,
+  type ReasoningEffort,
+} from "@/lib/runtime-reasoning";
 
 export const runtimeIds = [
   "codex",
@@ -69,7 +74,7 @@ export const runtimeDefaults: Record<
     enabled: true,
     authMode: "runtime_owned",
     defaultModel: "default",
-    models: ["default", "gpt-5.4", "gpt-5.5"],
+    models: [...codexSelectableModels],
   },
   claude: {
     runtimeId: "claude",
@@ -240,6 +245,24 @@ export function assertRuntimeSelectable(runtimeId: string, model: string) {
   ) {
     throw new OperationalError(
       "The selected model is not available for this runtime.",
+    );
+  }
+}
+
+export function assertReasoningEffortSelectable(
+  runtimeId: string,
+  model: string,
+  effort: ReasoningEffort,
+) {
+  if (effort === "default") return;
+  if (runtimeId !== "codex") {
+    throw new OperationalError(
+      "Reasoning effort is currently configurable only for Codex.",
+    );
+  }
+  if (!reasoningEffortsForModel(model).includes(effort)) {
+    throw new OperationalError(
+      `${effort} reasoning effort is not available for ${model}.`,
     );
   }
 }

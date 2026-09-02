@@ -101,6 +101,7 @@ export function createRunExecution(input: {
       automationId: input.automationId,
       runtime: agent.runtime,
       model,
+      reasoningEffort: agent.reasoningEffort,
       trigger: execution.trigger,
       mode: execution.mode,
       issueKey: execution.issueKey,
@@ -485,7 +486,12 @@ export async function* executeRun(
         const runner = await startRunner({
           runId: attemptRunnerRunId,
           controlPlaneRunId: run.id,
-          agent: { ...agent, runtime: run.runtime, model: run.model },
+          agent: {
+            ...agent,
+            runtime: run.runtime,
+            model: run.model,
+            reasoningEffort: run.reasoningEffort,
+          },
           thread: { ...thread, runtimeThreadId },
           messages,
           prompt: runInput.body,
