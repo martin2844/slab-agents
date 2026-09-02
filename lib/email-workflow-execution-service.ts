@@ -138,6 +138,8 @@ function createStepRun(input: {
     prompt: buildEmailWorkflowStepPrompt({
       step: definition,
       event: input.execution.event,
+      isFinalStep:
+        input.step.stepIndex === input.execution.definition.steps.length - 1,
       previousOutput: input.previousOutput,
     }),
     eventInstructions: workflowEventInstructions,

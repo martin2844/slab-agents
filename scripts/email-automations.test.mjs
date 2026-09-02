@@ -599,9 +599,16 @@ test("email trigger semantics frame message metadata as untrusted input", async 
       receivedAt: "2026-08-27T12:00:00.000Z",
       discoveredAt: "2026-08-27T12:00:01.000Z",
     },
+    isFinalStep: true,
   });
   assert.match(prompt, /email_get_message/);
   assert.match(prompt, /untrusted external input/);
+  assert.match(
+    prompt,
+    /asking the operator explicitly whether they want it sent/,
+  );
+  assert.match(prompt, /use email_reply/);
+  assert.match(prompt, /never replace it with email_send/);
   assert.match(prompt, /"accountId": "account-7"/);
   assert.match(prompt, /"messageId": "message-7"/);
   assert.ok(Buffer.byteLength(prompt, "utf8") < 32_768);
@@ -616,4 +623,55 @@ test("email trigger semantics frame message metadata as untrusted input", async 
   const schedulerSource = await readFile("lib/scheduler.ts", "utf8");
   assert.doesNotMatch(schedulerSource, /await tickEmailAutomations\(\)/);
   assert.match(schedulerSource, /void tickEmailAutomations\(\)\.catch/);
+});
+
+test("only terminal email analysis asks the operator before a proposed reply is sent", async () => {
+  const { buildEmailWorkflowStepPrompt } =
+    await import("../lib/email-workflow-prompt.ts");
+  const event = {
+    id: 8,
+    accountId: "account-8",
+    provider: "gmail",
+    messageId: "message-8",
+    threadId: "thread-8",
+    from: { address: "external@example.com" },
+    to: [{ address: "support@example.com" }],
+    subject: "Pricing question",
+    receivedAt: "2026-08-27T12:00:00.000Z",
+    discoveredAt: "2026-08-27T12:00:01.000Z",
+  };
+  const analyzeStep = {
+    id: "analyze",
+    type: "agent_task",
+    agentId: "11111111-1111-4111-8111-111111111111",
+    action: "analyze",
+    prompt: "Analyze this message.",
+  };
+  const intermediate = buildEmailWorkflowStepPrompt({
+    step: analyzeStep,
+    event,
+    isFinalStep: false,
+  });
+  const terminal = buildEmailWorkflowStepPrompt({
+    step: analyzeStep,
+    event,
+    isFinalStep: true,
+  });
+  const terminalDraft = buildEmailWorkflowStepPrompt({
+    step: { ...analyzeStep, id: "draft", action: "draft_reply" },
+    event,
+    isFinalStep: true,
+  });
+
+  assert.match(intermediate, /for the next workflow step/);
+  assert.doesNotMatch(intermediate, /asking the operator explicitly/);
+  assert.match(terminal, /for the operator/);
+  assert.match(
+    terminal,
+    /asking the operator explicitly whether they want it sent/,
+  );
+  assert.match(
+    terminalDraft,
+    /asking the operator explicitly whether they want it sent/,
+  );
 });
