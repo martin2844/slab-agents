@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { register } from "node:module";
+import { createRequire, register } from "node:module";
 import knexFactory from "knex";
 
 register("./test-alias-loader.mjs", import.meta.url);
@@ -209,4 +209,29 @@ test("custom capabilities remain a per-run snapshot, including an empty snapshot
       .tools.find((tool) => tool.key === "internal_api__health")?.description,
     "Updated health description",
   );
+
+  const migrationDatabase = knexFactory({
+    client: "better-sqlite3",
+    connection: { filename },
+    useNullAsDefault: true,
+  });
+  const require = createRequire(import.meta.url);
+  const dynamicAccessMigration = require(
+    "../db/migrations/202609030041_dynamic_custom_integration_access.cjs",
+  );
+  await dynamicAccessMigration.down(migrationDatabase);
+  assert.deepEqual(
+    integrationRepository.listIntegrationPermissions(integration.id)[agent.id],
+    [
+      "internal_api__details",
+      "internal_api__health",
+      "internal_api__prices",
+    ],
+  );
+  await dynamicAccessMigration.up(migrationDatabase);
+  assert.deepEqual(
+    integrationRepository.listIntegrationPermissions(integration.id)[agent.id],
+    ["*"],
+  );
+  await migrationDatabase.destroy();
 });
