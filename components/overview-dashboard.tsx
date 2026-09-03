@@ -499,7 +499,7 @@ export function OverviewDashboard({
 
             <div className="rounded-lg border bg-card p-4">
               <SectionHeader
-                title="Upcoming"
+                title="Upcoming automations"
                 meta={`${data.upcomingAutomations.length} active`}
               />
               <div className="divide-y border-y">
