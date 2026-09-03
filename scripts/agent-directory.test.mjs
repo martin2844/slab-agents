@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { register } from "node:module";
 
-import { createWorkCoordinationContext } from "../lib/agent-directory.ts";
+register("./test-alias-loader.mjs", import.meta.url);
+const { createWorkCoordinationContext } = await import(
+  "../lib/agent-directory.ts"
+);
 
 const agent = (overrides = {}) => ({
   id: "agent-clara",
@@ -333,4 +337,30 @@ test("run instructions name every integration tool in the current capability sna
     context.directoryInstructions,
     /Treat listed tools as available for this run/,
   );
+});
+
+test("dynamic all-tools grants remain truthful in the cross-agent directory", () => {
+  const context = createWorkCoordinationContext({
+    agents: [agent({ id: "agent-vera", name: "Vera", slug: "vera" })],
+    integrations: [
+      {
+        name: "Metrics",
+        serverName: "custom_http_metrics",
+        enabled: true,
+        status: "connected",
+        permissions: { "agent-vera": ["*"] },
+        tools: [{ key: "metrics__prices" }],
+      },
+    ],
+    toolPolicies: [
+      {
+        agentId: "agent-vera",
+        serverName: "custom_http_metrics",
+        defaultMode: "deny",
+        tools: { metrics__prices: "approve" },
+      },
+    ],
+  });
+
+  assert.deepEqual(context.directory.entries[0].integrations, ["Metrics"]);
 });

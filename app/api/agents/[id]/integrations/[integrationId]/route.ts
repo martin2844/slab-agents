@@ -2,6 +2,7 @@ import { agentRepository } from "@/lib/repositories/agent-repository";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { z } from "zod";
 import { apiError, notFound } from "@/lib/api";
+import { ALL_INTEGRATION_TOOLS } from "@/lib/integrations/tool-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,7 +30,13 @@ export async function PATCH(
     const data = integrationRepository.setAgentIntegrationTools(
       integrationId,
       agentId,
-      input.enabled ? integration.tools.map((tool) => tool.key) : [],
+      input.enabled &&
+        (integration.provider === "custom_http" ||
+          integration.provider === "custom_mcp")
+        ? [ALL_INTEGRATION_TOOLS]
+        : input.enabled
+          ? integration.tools.map((tool) => tool.key)
+          : [],
       input.expectedVersion,
     );
     return Response.json({ data });

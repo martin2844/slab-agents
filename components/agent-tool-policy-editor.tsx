@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { api, ApiClientError } from "@/lib/client-api";
+import { integrationToolIsGranted } from "@/lib/integrations/tool-access";
 import { cn } from "@/lib/utils";
 import type {
   Agent,
@@ -134,7 +135,7 @@ export function AgentToolPolicyEditor({
           {
             ...server,
             tools: server.tools.filter((tool) =>
-              assignedTools.includes(tool.name),
+              integrationToolIsGranted(assignedTools, tool.name),
             ),
           },
         ];

@@ -139,4 +139,74 @@ test("custom capabilities remain a per-run snapshot, including an empty snapshot
   const snapshotC = service.getAgentCustomIntegrationsMcp(agent.id, runC.id);
   assert.equal(snapshotC[0].snapshot.tools.length, 2);
   assert.notEqual(snapshotC[0].snapshot.version, snapshotB[0].snapshot.version);
+
+  const beforeDynamicGrant = integrationRepository.getIntegration(
+    integration.id,
+  );
+  const dynamicGrant = await service.saveCustomHttpIntegration({
+    id: integration.id,
+    expectedVersion: beforeDynamicGrant.version,
+    name: integration.name,
+    baseUrl: "https://internal.example.test",
+    authType: "none",
+    permissions: { [agent.id]: ["*"] },
+    operations: [
+      firstOperation,
+      { key: "details", name: "Details", method: "GET", path: "/details" },
+    ],
+  });
+  assert.deepEqual(dynamicGrant.permissions[agent.id], ["*"]);
+
+  const dynamicRunA = createRun();
+  const dynamicSnapshotA = service.getAgentCustomIntegrationsMcp(
+    agent.id,
+    dynamicRunA.id,
+  );
+  assert.deepEqual(dynamicSnapshotA[0].snapshot.tools, [
+    "internal_api__details",
+    "internal_api__health",
+  ]);
+
+  const currentDynamicGrant = integrationRepository.getIntegration(
+    integration.id,
+  );
+  await service.saveCustomHttpIntegration({
+    id: integration.id,
+    expectedVersion: currentDynamicGrant.version,
+    name: integration.name,
+    baseUrl: "https://internal.example.test",
+    authType: "none",
+    permissions: { [agent.id]: ["*"] },
+    operations: [
+      { ...firstOperation, description: "Updated health description" },
+      { key: "details", name: "Details", method: "GET", path: "/details" },
+      { key: "prices", name: "Prices", method: "GET", path: "/prices" },
+    ],
+  });
+
+  const retryDynamicRunA = service.getAgentCustomIntegrationsMcp(
+    agent.id,
+    dynamicRunA.id,
+  );
+  assert.deepEqual(
+    retryDynamicRunA[0].snapshot.tools,
+    dynamicSnapshotA[0].snapshot.tools,
+  );
+
+  const dynamicRunB = createRun();
+  const dynamicSnapshotB = service.getAgentCustomIntegrationsMcp(
+    agent.id,
+    dynamicRunB.id,
+  );
+  assert.deepEqual(dynamicSnapshotB[0].snapshot.tools, [
+    "internal_api__details",
+    "internal_api__health",
+    "internal_api__prices",
+  ]);
+  assert.equal(
+    integrationRepository
+      .getIntegration(integration.id)
+      .tools.find((tool) => tool.key === "internal_api__health")?.description,
+    "Updated health description",
+  );
 });

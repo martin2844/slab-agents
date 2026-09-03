@@ -46,6 +46,10 @@ import {
   IntegrationVersionConflictError,
 } from "@/lib/integrations/errors";
 import { redactIntegrationText } from "@/lib/integrations/redaction";
+import {
+  ALL_INTEGRATION_TOOLS,
+  expandIntegrationToolGrants,
+} from "@/lib/integrations/tool-access";
 
 const DEFAULT_HTTP_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 32 * 1024;
@@ -247,6 +251,11 @@ function normalizePermissionTools(
   const result: Record<string, string[]> = {};
   for (const [agentId, requestedTools] of Object.entries(permissions ?? {})) {
     if (!validAgentIds.has(agentId) || !Array.isArray(requestedTools)) continue;
+
+    if (requestedTools.includes(ALL_INTEGRATION_TOOLS)) {
+      if (available.size > 0) result[agentId] = [ALL_INTEGRATION_TOOLS];
+      continue;
+    }
 
     const normalized = requestedTools
       .map((raw) => normalizeIntegrationToolKey(String(raw)))
@@ -1140,12 +1149,16 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
     return candidates.flatMap(({ integration, allowedTools, version }) => {
       if (
         !integration ||
-        allowedTools.length === 0 ||
         (integration.provider !== "custom_http" &&
           integration.provider !== "custom_mcp")
       ) {
         return [];
       }
+      const effectiveAllowedTools = expandIntegrationToolGrants(
+        allowedTools,
+        integration.tools.map((tool) => tool.key),
+      );
+      if (effectiveAllowedTools.length === 0) return [];
       const token = randomBytes(32).toString("base64url");
       const capability = integrationRepository.saveRunIntegrationCapability({
         runId,
@@ -1153,7 +1166,7 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
         agentId,
         integrationVersion: version,
         tokenHash: hashCapabilityToken(token),
-        allowedTools,
+        allowedTools: effectiveAllowedTools,
       });
       return [
         {

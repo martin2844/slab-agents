@@ -66,6 +66,12 @@ import {
   normalizeIntegrationSlug,
   normalizeIntegrationToolKey,
 } from "@/lib/integrations/naming";
+import {
+  ALL_INTEGRATION_TOOLS,
+  collapseCompleteIntegrationToolGrants,
+  grantsAllIntegrationTools,
+  integrationToolIsGranted,
+} from "@/lib/integrations/tool-access";
 import type {
   Agent,
   CustomHttpEditableDefinition,
@@ -819,8 +825,11 @@ function CustomHttpEditor({
   const [importSource, setImportSource] = useState("");
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [enabled, setEnabled] = useState(integration?.enabled ?? true);
-  const [permissions, setPermissions] = useState<Record<string, string[]>>(
-    integration?.permissions ?? {},
+  const [permissions, setPermissions] = useState<Record<string, string[]>>(() =>
+    collapseCompleteIntegrationToolGrants(
+      integration?.permissions ?? {},
+      integration?.tools.map((tool) => tool.key) ?? [],
+    ),
   );
   const [operations, setOperations] = useState<EditableHttpOperation[]>(
     integration?.operations && integration.operations.length
@@ -961,9 +970,12 @@ function CustomHttpEditor({
   function setPermission(agentId: string, toolKey: string, enabled: boolean) {
     setPermissions((current) => {
       const existing = current[agentId] ?? [];
+      const editable = grantsAllIntegrationTools(existing)
+        ? operationToolKeys
+        : existing;
       const tools = enabled
-        ? [...new Set([...existing, toolKey])]
-        : existing.filter((key) => key !== toolKey);
+        ? [...new Set([...editable, toolKey])]
+        : editable.filter((key) => key !== toolKey);
       return { ...current, [agentId]: tools };
     });
   }
@@ -971,7 +983,7 @@ function CustomHttpEditor({
   function setAllTools(agentId: string, enabled: boolean) {
     setPermissions((current) => ({
       ...current,
-      [agentId]: enabled ? operationToolKeys : [],
+      [agentId]: enabled ? [ALL_INTEGRATION_TOOLS] : [],
     }));
   }
 
@@ -1153,7 +1165,9 @@ function CustomHttpEditor({
       Object.fromEntries(
         Object.entries(current).map(([agentId, tools]) => [
           agentId,
-          tools.filter((tool) => allowedTools.has(tool)),
+          grantsAllIntegrationTools(tools)
+            ? tools
+            : tools.filter((tool) => allowedTools.has(tool)),
         ]),
       ),
     );
@@ -1661,7 +1675,13 @@ function CustomHttpEditor({
           </section>
           <section className="py-5">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="font-semibold">Agent tool access</h3>
+              <div>
+                <h3 className="font-semibold">Agent tool access</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  All tools follows future operation changes. Individual
+                  selections remain fixed.
+                </p>
+              </div>
             </div>
             <div className="mt-4 divide-y rounded-lg border">
               {agents.length ? (
@@ -1669,9 +1689,10 @@ function CustomHttpEditor({
                   const agentTools = permissions[agent.id] ?? [];
                   const allEnabled =
                     operationToolKeys.length > 0 &&
-                    operationToolKeys.every((toolKey) =>
-                      agentTools.includes(toolKey),
-                    );
+                    (grantsAllIntegrationTools(agentTools) ||
+                      operationToolKeys.every((toolKey) =>
+                        agentTools.includes(toolKey),
+                      ));
                   return (
                     <div key={agent.id} className="p-4">
                       <div className="flex items-center justify-between">
@@ -1700,8 +1721,10 @@ function CustomHttpEditor({
                             .map((operationKey) => {
                               const toolKey = `${slug}__${normalizeIntegrationToolKey(operationKey)}`;
                               const selected =
-                                permissions[agent.id]?.includes(toolKey) ??
-                                false;
+                                integrationToolIsGranted(
+                                  permissions[agent.id] ?? [],
+                                  toolKey,
+                                );
                               return (
                                 <label
                                   key={toolKey}
@@ -1793,8 +1816,11 @@ function CustomMcpEditor({
     integration?.authHeaderName ?? "X-API-Key",
   );
   const [secret, setSecret] = useState("");
-  const [permissions, setPermissions] = useState<Record<string, string[]>>(
-    integration?.permissions ?? {},
+  const [permissions, setPermissions] = useState<Record<string, string[]>>(() =>
+    collapseCompleteIntegrationToolGrants(
+      integration?.permissions ?? {},
+      integration?.tools.map((tool) => tool.key) ?? [],
+    ),
   );
   const [saving, setSaving] = useState(false);
   const [enabled, setEnabled] = useState(integration?.enabled ?? true);
@@ -1809,6 +1835,13 @@ function CustomMcpEditor({
       ),
     [integration?.slug, integration?.name, name],
   );
+  const availableToolKeys = useMemo(
+    () =>
+      (integration?.mcpTools ?? []).map(
+        (tool) => `${slug}__${normalizeIntegrationToolKey(tool.name)}`,
+      ),
+    [integration?.mcpTools, slug],
+  );
 
   function normalizeToolPermission(toolName: string) {
     const short = normalizeIntegrationToolKey(toolName);
@@ -1820,19 +1853,18 @@ function CustomMcpEditor({
   }
 
   function setAllTools(agentId: string, enabled: boolean) {
-    const availableTools = (integration?.mcpTools ?? []).map(
-      (tool) => normalizeToolPermission(tool.name).full,
-    );
     setPermissions((current) => ({
       ...current,
-      [agentId]: enabled ? availableTools : [],
+      [agentId]: enabled ? [ALL_INTEGRATION_TOOLS] : [],
     }));
   }
 
   function setPermission(agentId: string, toolKey: string, enabled: boolean) {
     setPermissions((current) => {
       const selected = current[agentId] ?? [];
-      const withSet = new Set(selected);
+      const withSet = new Set(
+        grantsAllIntegrationTools(selected) ? availableToolKeys : selected,
+      );
       const normalized = normalizeIntegrationToolKey(toolKey);
       const full = `${slug}__${normalized}`;
       const variants = [normalized, full];
@@ -1978,7 +2010,8 @@ function CustomMcpEditor({
                 <h3 className="font-semibold">Agent tool access</h3>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Permissions are enforced when the MCP tool index is built for
-                  each run.
+                  each run. All tools follows future server changes; individual
+                  selections remain fixed.
                 </p>
               </div>
               <Badge variant="outline">
@@ -2006,10 +2039,11 @@ function CustomMcpEditor({
                   });
                   const allEnabled =
                     toolEntries.length > 0 &&
-                    toolEntries.every(
-                      ({ short, full }) =>
-                        selectedSet.has(short) || selectedSet.has(full),
-                    );
+                    (grantsAllIntegrationTools(selected) ||
+                      toolEntries.every(
+                        ({ short, full }) =>
+                          selectedSet.has(short) || selectedSet.has(full),
+                      ));
                   return (
                     <div key={agent.id} className="p-4">
                       <div className="flex items-center justify-between">
@@ -2034,7 +2068,11 @@ function CustomMcpEditor({
                         {toolEntries.length ? (
                           toolEntries.map(({ tool, short, full }) => {
                             const isChecked =
-                              selectedSet.has(short) || selectedSet.has(full);
+                              integrationToolIsGranted(
+                                selected,
+                                short,
+                                full,
+                              );
                             return (
                               <label
                                 key={tool.name}

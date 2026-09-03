@@ -1,3 +1,5 @@
+import { expandIntegrationToolGrants } from "@/lib/integrations/tool-access";
+
 export type AgentDirectorySource = {
   id: string;
   name: string;
@@ -13,6 +15,7 @@ export type AgentDirectoryIntegration = {
   enabled: boolean;
   status: string;
   permissions: Record<string, string[]>;
+  tools?: Array<{ key: string }>;
 };
 
 export type AgentDirectoryEmailAccess = {
@@ -227,11 +230,17 @@ export function createWorkCoordinationContext(input: {
             if (!integration.enabled || integration.status !== "connected") {
               return false;
             }
-            const assignedTools = runScopedTools
+            const grants = runScopedTools
               ? integration.serverName
                 ? (runScopedTools[integration.serverName] ?? [])
                 : []
               : (integration.permissions[agent.id] ?? []);
+            const assignedTools = runScopedTools
+              ? grants
+              : expandIntegrationToolGrants(
+                  grants,
+                  integration.tools?.map((tool) => tool.key) ?? grants,
+                );
             if (!assignedTools.length) return false;
             if (runScopedTools) return true;
             return assignedTools.some(
