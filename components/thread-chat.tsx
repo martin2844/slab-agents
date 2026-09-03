@@ -72,10 +72,15 @@ export function ThreadChat({
       initialRunId ? "running" : null,
     ),
     [runError, setRunError] = useState<string | null>(null),
-    bottomRef = useRef<HTMLDivElement>(null);
+    bottomRef = useRef<HTMLDivElement>(null),
+    pendingApprovalId = approval?.approvalId;
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [data?.messages, partial]);
+  useEffect(() => {
+    if (!pendingApprovalId) return;
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [pendingApprovalId]);
   useEffect(() => {
     if (!backgroundRunId) return;
     let cancelled = false;

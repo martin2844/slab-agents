@@ -74,3 +74,14 @@ test("Background chat polling observes terminal run state before reloading messa
   assert.match(chat, /throw await apiClientError\(response\)/);
   assert.doesNotMatch(chat, /new Error\(body\.error/);
 });
+
+test("Thread chat reveals each new approval without pinning scroll to polling updates", async () => {
+  const chat = await read("components/thread-chat.tsx");
+
+  assert.match(chat, /pendingApprovalId = approval\?\.approvalId;/);
+  assert.match(
+    chat,
+    /useEffect\(\(\) => \{\s*if \(!pendingApprovalId\) return;\s*bottomRef\.current\?\.scrollIntoView\(\{ behavior: "smooth" \}\);\s*\}, \[pendingApprovalId\]\);/,
+  );
+  assert.doesNotMatch(chat, /\}, \[approval\]\);/);
+});
