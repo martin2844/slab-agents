@@ -300,3 +300,37 @@ test("run-scoped tools hide connectors added after the snapshot", () => {
   assert.equal(context.directory.entries[0].email, null);
   assert.doesNotMatch(context.directoryInstructions, /New calendar|Email/);
 });
+
+test("run instructions name every integration tool in the current capability snapshot", () => {
+  const context = createWorkCoordinationContext({
+    agents: [agent({ id: "agent-vera", name: "Vera", slug: "vera" })],
+    currentAgentId: "agent-vera",
+    currentRunToolsByServer: {
+      custom_http_agent_metrics_api: ["agent_metrics_api__get_prices"],
+    },
+    integrations: [
+      {
+        name: "Clasificar Agent metrics API",
+        serverName: "custom_http_agent_metrics_api",
+        enabled: true,
+        status: "connected",
+        permissions: {
+          "agent-vera": ["agent_metrics_api__get_prices"],
+        },
+      },
+    ],
+  });
+
+  assert.match(
+    context.directoryInstructions,
+    /Current agent integration tools in this run \(authoritative snapshot\)/,
+  );
+  assert.match(
+    context.directoryInstructions,
+    /Clasificar Agent metrics API: `agent_metrics_api__get_prices`/,
+  );
+  assert.match(
+    context.directoryInstructions,
+    /Treat listed tools as available for this run/,
+  );
+});

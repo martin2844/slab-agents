@@ -265,6 +265,17 @@ export function createWorkCoordinationContext(input: {
     semantics: "snapshot_at_run_start",
     entries,
   };
+  const currentIntegrationTools = Object.entries(
+    input.currentRunToolsByServer ?? {},
+  ).flatMap(([serverName, tools]) => {
+    const integration = integrations.find(
+      (candidate) => candidate.serverName === serverName,
+    );
+    if (!integration || tools.length === 0) return [];
+    return [
+      `- ${compact(integration.name, 80)}: ${tools.map((tool) => `\`${tool}\``).join(", ")}`,
+    ];
+  });
   const directoryInstructions = [
     "Enabled agent directory (generated from the current control-plane configuration):",
     ...(entries.length
@@ -290,6 +301,16 @@ export function createWorkCoordinationContext(input: {
           ];
         })
       : ["- No enabled agents are currently registered."]),
+    ...(input.currentRunToolsByServer === undefined
+      ? []
+      : [
+          "",
+          "Current agent integration tools in this run (authoritative snapshot):",
+          ...(currentIntegrationTools.length
+            ? currentIntegrationTools
+            : ["- None"]),
+          "Treat listed tools as available for this run. Capability changes made later apply to the next run.",
+        ]),
   ].join("\n");
   const currentRunWorkTools = input.currentRunWorkTools;
   const coordinationInstructions = (
