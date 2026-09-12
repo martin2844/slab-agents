@@ -391,6 +391,20 @@ export function buildAgentToolCatalog(input: {
         readOnly: tool.readOnly,
         sensitiveAction: tool.destructive ? "destructive" : null,
         ...integrationToolMode(integration, tool.readOnly),
+        ...(integration.provider === "whatsapp" && !tool.readOnly
+          ? {
+              legacyMode:
+                integration.whatsappWriteModes?.[input.agent.id] ===
+                "autonomous"
+                  ? ("approve" as const)
+                  : ("prompt" as const),
+              maximumMode:
+                integration.whatsappWriteModes?.[input.agent.id] ===
+                "autonomous"
+                  ? ("approve" as const)
+                  : ("prompt" as const),
+            }
+          : {}),
       })),
     });
   }

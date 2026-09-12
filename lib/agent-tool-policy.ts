@@ -161,7 +161,8 @@ function presetPolicy(
 ): McpToolPolicy {
   const permissionMode = effectiveAgentPermissionMode(agent);
   if (permissionMode === "yolo") {
-    return { defaultMode: "approve", tools: {} };
+    return server.name.startsWith("whatsapp_") && server.approval
+      ? server.approval : { defaultMode: "approve", tools: {} };
   }
   if (permissionMode !== "full") return guardedPolicy(agent, server);
 

@@ -4,6 +4,7 @@ import { agentRepository } from "@/lib/repositories/agent-repository";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { runRepository } from "@/lib/repositories/run-repository";
 import { withImmediateTransaction } from "@/lib/db/transaction";
+import type { McpToolPolicy } from "@/lib/agent-tool-policy";
 import { filterToolsByRunPolicy } from "@/lib/agent-tool-policy";
 import type { IntegrationRecord } from "@/lib/repositories/integration-repository";
 
@@ -1073,7 +1074,9 @@ export function getRunCustomIntegrationRuntimeAccess(
   const record = integrationRepository.getIntegrationRecord(integrationId);
   if (
     !record ||
-    (record.provider !== "custom_http" && record.provider !== "custom_mcp")
+    (record.provider !== "custom_http" &&
+      record.provider !== "custom_mcp" &&
+      record.provider !== "whatsapp")
   ) {
     return { status: "unauthorized" };
   }
@@ -1108,7 +1111,8 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
         );
         return (
           integration?.provider === "custom_http" ||
-          integration?.provider === "custom_mcp"
+          integration?.provider === "custom_mcp" ||
+          integration?.provider === "whatsapp"
         );
       });
     const alreadyCaptured = integrationRepository.hasRunIntegrationSnapshot(
@@ -1126,7 +1130,8 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
               integration.enabled &&
               integration.status === "connected" &&
               (integration.provider === "custom_http" ||
-                integration.provider === "custom_mcp"),
+                integration.provider === "custom_mcp" ||
+                integration.provider === "whatsapp"),
           )
           .map((integration) => ({
             integration,
@@ -1150,7 +1155,8 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
       if (
         !integration ||
         (integration.provider !== "custom_http" &&
-          integration.provider !== "custom_mcp")
+          integration.provider !== "custom_mcp" &&
+          integration.provider !== "whatsapp")
       ) {
         return [];
       }
@@ -1176,11 +1182,25 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
               `/api/integrations/${encodeURIComponent(integration.id)}/mcp?run=${encodeURIComponent(runId)}`,
             ),
             credentials: { bearerToken: token },
+            ...(integration.provider === "whatsapp"
+              ? {
+                  approval: {
+                    defaultMode: "approve" as const,
+                    tools: {
+                      whatsapp_send_text:
+                        integration.whatsappWriteModes?.[agentId] ===
+                        "autonomous"
+                          ? ("approve" as const)
+                          : ("prompt" as const),
+                    },
+                  },
+                }
+              : {}),
             ...(integration.provider === "custom_http"
               ? {
                   approval: {
                     defaultMode: "approve" as const,
-                    tools: {},
+                    tools: {} as McpToolPolicy["tools"],
                   },
                 }
               : {}),

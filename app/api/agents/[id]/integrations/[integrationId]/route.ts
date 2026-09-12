@@ -35,7 +35,7 @@ export async function PATCH(
           integration.provider === "custom_mcp")
         ? [ALL_INTEGRATION_TOOLS]
         : input.enabled
-          ? integration.tools.map((tool) => tool.key)
+          ? integration.tools.filter((tool) => integration.provider !== "whatsapp" || tool.readOnly).map((tool) => tool.key)
           : [],
       input.expectedVersion,
     );

@@ -1,3 +1,4 @@
+import { getWhatsAppState } from "@/lib/integrations/whatsapp";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { apiError, conflict, notFound } from "@/lib/api";
 import {
@@ -22,6 +23,7 @@ export async function POST(
       throw notFound("Integration not found.");
     }
 
+    if (integration.provider === "whatsapp") return Response.json({ data: (await getWhatsAppState()).integration }, { headers: { "Cache-Control": "no-store" } });
     if (integration.provider === "posthog") {
       return Response.json({ data: await retestPostHogIntegration(id) });
     }

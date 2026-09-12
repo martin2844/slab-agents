@@ -1,0 +1,107 @@
+import assert from "node:assert/strict";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { register } from "node:module";
+import knexFactory from "knex";
+register("./test-alias-loader.mjs", import.meta.url);
+
+test("WhatsApp MCP isolates read/send grants, approval policy and linked identities", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "slab-whatsapp-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const filename = path.join(directory, "workspace.db");
+  const migrations = knexFactory({ client: "better-sqlite3", connection: { filename }, useNullAsDefault: true, migrations: { directory: path.resolve("db/migrations"), loadExtensions: [".cjs"] } });
+  await migrations.migrate.latest(); await migrations.destroy();
+  process.env.SLAB_WORKSPACE_DB = filename;
+  process.env.SLAB_WAHA_API_KEY_FILE = path.join(directory, "waha-key");
+  await writeFile(process.env.SLAB_WAHA_API_KEY_FILE, "private-waha-key");
+  const [{ agentRepository }, { conversationRepository }, { runRepository }, { integrationRepository }, service, whatsapp, { handleWhatsAppMcpRequest }, policy, { presentApproval, approvalCanBeApproved }] = await Promise.all([
+    import("../lib/repositories/agent-repository.ts"), import("../lib/repositories/conversation-repository.ts"), import("../lib/repositories/run-repository.ts"), import("../lib/repositories/integration-repository.ts"), import("../lib/integrations/service.ts"), import("../lib/integrations/whatsapp.ts"), import("../lib/integrations/whatsapp-mcp.ts"), import("../lib/agent-tool-policy.ts"), import("../lib/approval-presentation.ts"),
+  ]);
+  const agent = agentRepository.createAgent({ name: "WhatsApp reader", slug: "whatsapp-reader", role: "Assistant", instructions: "Read WhatsApp", runtime: "codex", model: "default", enabled: true, fullAccess: false });
+  const thread = conversationRepository.createThread(agent.id, "WhatsApp");
+  const createRun = () => { const run = runRepository.createRun({ agentId: agent.id, threadId: thread.id, trigger: "manual", mode: "task", runInstructions: "Test" }); runRepository.updateRun(run.id, "running"); return run; };
+  let session = { status: "WORKING", me: { id: "34600000000@c.us", pushName: "Personal" } };
+  const requests = [];
+  let failLogout = false;
+  let holdSession;
+  let failSend = false;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(init.headers["X-Api-Key"], "private-waha-key");
+    const route = new URL(url).pathname;
+    requests.push({ route, body: init.body ? JSON.parse(init.body) : null });
+    if (route.endsWith("/logout") && failLogout) return Response.json({}, { status: 500 });
+    if (route === "/api/sessions/default") { if (holdSession) await holdSession; return Response.json(session); }
+    if (route.endsWith("/auth/qr")) return Response.json({ mimetype: "image/png", data: "aGVsbG8=" });
+    if (route.endsWith("/messages")) return Response.json([{ id: "one", body: "hello", _data: { secret: "raw-engine-data" }, media: { url: "private" } }]);
+    if (route.endsWith("/chats")) return Response.json([{ id: "34611111111@c.us", name: "Friend" }]);
+    if (route === "/api/sendText") { if (failSend) throw new Error("private upstream body"); return Response.json({ id: "sent", _data: { secret: "raw-engine-data" } }); }
+    return Response.json({});
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+  let integration = whatsapp.syncWhatsAppAccount(session);
+  const emptyRun = createRun();
+  assert.deepEqual(service.getAgentCustomIntegrationsMcp(agent.id, emptyRun.id), []);
+  integration = whatsapp.setWhatsAppAccess({ agentId: agent.id, read: true, write: "disabled", expectedVersion: integration.version });
+  assert.deepEqual(service.getAgentCustomIntegrationsMcp(agent.id, emptyRun.id), []);
+  const readRun = createRun();
+  const readServer = service.getAgentCustomIntegrationsMcp(agent.id, readRun.id)[0].server;
+  async function call(run, server, method, params, token = server.credentials.bearerToken) {
+    const request = new Request("http://slab.test/mcp", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
+    const response = await handleWhatsAppMcpRequest(request, integration.id, run.id);
+    return { status: response.status, data: await response.json().catch(() => null) };
+  }
+  assert.equal((await call(readRun, readServer, "tools/list", {}, "wrong-token")).status, 401);
+  const listing = await call(readRun, readServer, "tools/list", {});
+  assert.deepEqual(listing.data.result.tools.map((tool) => tool.name), ["whatsapp_list_chats", "whatsapp_get_messages"]);
+  const denied = await call(readRun, readServer, "tools/call", { name: "whatsapp_send_text", arguments: { account: session.me.id, chatId: "34611111111@c.us", text: "Hi" } });
+  assert.ok(denied.data.error || denied.data.result.isError);
+  assert.equal(requests.filter(({ route }) => route === "/api/sendText").length, 0);
+  const messages = await call(readRun, readServer, "tools/call", { name: "whatsapp_get_messages", arguments: { chatId: "34611111111@c.us" } });
+  assert.match(JSON.stringify(messages), /hello/); assert.doesNotMatch(JSON.stringify(messages), /raw-engine-data|private-waha-key/);
+  integration = whatsapp.setWhatsAppAccess({ agentId: agent.id, read: false, write: "approval_required", expectedVersion: integration.version });
+  assert.equal((await call(readRun, readServer, "tools/list", {})).status, 409);
+  const sendRun = createRun();
+  const sendServer = service.getAgentCustomIntegrationsMcp(agent.id, sendRun.id)[0].server;
+  const captured = policy.snapshotAgentToolPolicies({ runId: sendRun.id, agent: { ...agent, permissionMode: "yolo" }, servers: [sendServer] });
+  assert.equal(captured.servers[0].approval.tools.whatsapp_send_text, "prompt");
+  assert.deepEqual((await call(sendRun, sendServer, "tools/list", {})).data.result.tools.map((tool) => tool.name), ["whatsapp_send_text"]);
+  const args = { account: session.me.id, chatId: "34611111111@c.us", text: "  Exact text\n" };
+  const presentation = presentApproval({ server: sendServer.name, tool: "whatsapp_send_text", toolArguments: args });
+  assert.equal(presentation.details.whatsappAction.text, args.text);
+  assert.equal(approvalCanBeApproved(presentation.details), true);
+  assert.equal(approvalCanBeApproved(presentApproval({ server: sendServer.name, tool: "whatsapp_send_text" }).details), false);
+  assert.ok((await call(sendRun, sendServer, "tools/call", { name: "whatsapp_send_text", arguments: { ...args, account: "other" } })).data.result.isError);
+  assert.equal(requests.filter(({ route }) => route === "/api/sendText").length, 0);
+  const sent = await call(sendRun, sendServer, "tools/call", { name: "whatsapp_send_text", arguments: args });
+  assert.equal(sent.data.result.isError, undefined);
+  assert.deepEqual(requests.find(({ route }) => route === "/api/sendText").body, { session: "default", chatId: args.chatId, text: args.text, linkPreview: false });
+  failSend = true;
+  const uncertain = await call(sendRun, sendServer, "tools/call", { name: "whatsapp_send_text", arguments: args });
+  assert.equal(uncertain.data.result.isError, true); assert.doesNotMatch(JSON.stringify(uncertain), /private upstream/);
+  assert.equal(requests.filter(({ route }) => route === "/api/sendText").length, 2);
+  session = { status: "WORKING", me: { id: "34700000000@c.us" } };
+  assert.equal((await call(sendRun, sendServer, "tools/call", { name: "whatsapp_send_text", arguments: args })).data.result.isError, true);
+  integration = whatsapp.syncWhatsAppAccount(session);
+  assert.deepEqual(integration.permissions, {});
+  integration = whatsapp.setWhatsAppAccess({ agentId: agent.id, read: true, write: "autonomous", expectedVersion: integration.version });
+  const autoRun = createRun();
+  const autoServer = service.getAgentCustomIntegrationsMcp(agent.id, autoRun.id)[0].server;
+  assert.equal(autoServer.approval.tools.whatsapp_send_text, "approve");
+  let release;
+  holdSession = new Promise((resolve) => { release = resolve; });
+  const inFlight = call(autoRun, autoServer, "tools/call", { name: "whatsapp_list_chats", arguments: {} });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  integration = whatsapp.setWhatsAppAccess({ agentId: agent.id, read: false, write: "disabled", expectedVersion: integration.version });
+  release(); holdSession = null;
+  assert.equal((await inFlight).data.result.isError, true);
+  failLogout = true;
+  await assert.rejects(whatsapp.changeWhatsAppSession("unlink"));
+  const afterFailedUnlink = await whatsapp.getWhatsAppState();
+  assert.equal(afterFailedUnlink.integration.enabled, false);
+  assert.deepEqual(afterFailedUnlink.integration.permissions, {});
+  assert.equal(afterFailedUnlink.qr, null);
+  assert.equal(integrationRepository.getIntegration(integration.id).enabled, false);
+});

@@ -85,7 +85,7 @@ const bridgeStatusSchema = z
   .object({
     schemaVersion: z.literal(1),
     requestId: z.string().uuid(),
-    action: z.enum(["check", "apply"]).nullable(),
+    action: z.enum(["check", "apply", "install_whatsapp"]).nullable(),
     state: z.enum(["running", "succeeded", "failed"]),
     channel: z.enum(["stable", "candidate"]).nullable(),
     target: z.string().max(200).nullable(),
@@ -112,7 +112,7 @@ type BridgePaths = {
 
 type Clock = () => Date;
 
-function pathsFromEnvironment(): BridgePaths {
+export function pathsFromEnvironment(): BridgePaths {
   return {
     requests:
       process.env.SLAB_UPDATE_REQUEST_DIRECTORY ?? "/run/slab-update/requests",
@@ -154,7 +154,7 @@ async function assertRequestTransport(paths: BridgePaths) {
   );
 }
 
-async function assertStatusTransport(paths: BridgePaths) {
+export async function assertStatusTransport(paths: BridgePaths) {
   await assertDirectory(paths.statuses, paths.expectedRootUid, 0o755);
   await assertDirectory(
     path.join(paths.statuses, "requests"),
@@ -193,11 +193,10 @@ function newRequest(input: {
   };
 }
 
-async function publishRequest(
-  request: Pick<
-    SystemUpdateRequest,
-    "id" | "action" | "channel" | "target" | "requestedAt" | "expiresAt"
-  >,
+export type HostRequest = Pick<SystemUpdateRequest, "id" | "channel" | "target" | "requestedAt" | "expiresAt"> & { action: SystemUpdateAction | "install_whatsapp" };
+
+export async function publishRequest(
+  request: HostRequest,
   paths: BridgePaths,
 ) {
   await assertRequestTransport(paths);
@@ -233,8 +232,8 @@ async function publishRequest(
   }
 }
 
-async function readBridgeStatus(
-  request: SystemUpdateRequest,
+export async function readBridgeStatus(
+  request: HostRequest,
   paths: BridgePaths,
 ) {
   const filename = path.join(paths.statuses, "requests", `${request.id}.json`);
@@ -270,7 +269,7 @@ async function readBridgeStatus(
     throw new Error("Update bridge status omitted accepted request fields.");
   }
   let result: SystemUpdateCheckResult | null = null;
-  if (parsed.result !== null) {
+  if (parsed.result !== null && request.action !== "install_whatsapp") {
     result = checkResultSchema.parse(parsed.result);
     if (result.channel !== request.channel) {
       throw new Error("Update inventory channel does not match its request.");

@@ -1,5 +1,11 @@
 import type { IntegrationCatalogItem, IntegrationTool } from "@/lib/types";
 
+export const WHATSAPP_TOOLS: IntegrationTool[] = [
+  { key: "whatsapp_list_chats", name: "List chats", description: "List a bounded page of WhatsApp chats.", readOnly: true },
+  { key: "whatsapp_get_messages", name: "Read messages", description: "Read a bounded page of text messages in one WhatsApp chat.", readOnly: true },
+  { key: "whatsapp_send_text", name: "Send text", description: "Send the exact text to an explicit recipient from the connected WhatsApp account.", readOnly: false },
+];
+
 export const POSTHOG_TOOLS: IntegrationTool[] = [
   {
     key: "list_projects",
@@ -79,6 +85,7 @@ export const GOOGLE_SEARCH_CONSOLE_TOOLS: IntegrationTool[] = [
 ];
 
 export const INTEGRATION_CATALOG: IntegrationCatalogItem[] = [
+  { provider: "whatsapp", name: "WhatsApp", description: "Connect your personal WhatsApp with a QR code and assign reading and sending permissions.", available: true, tools: WHATSAPP_TOOLS },
   {
     provider: "posthog",
     name: "PostHog",

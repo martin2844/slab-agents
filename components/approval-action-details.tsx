@@ -23,6 +23,26 @@ export function ApprovalActionDetails({
   approval: Pick<Approval, "command" | "details">;
   compact?: boolean;
 }) {
+  const whatsapp = approval.details.whatsappAction as
+    { account?: string; recipient?: string; text?: string } | undefined;
+  if (whatsapp)
+    return (
+      <div className="overflow-hidden rounded-md border bg-background text-sm">
+        <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2 border-b p-3">
+          <dt className="text-muted-foreground">Account</dt>
+          <dd className="break-all font-mono text-xs">
+            {whatsapp.account || "Unavailable"}
+          </dd>
+          <dt className="text-muted-foreground">Recipient</dt>
+          <dd className="break-all font-mono text-xs">
+            {whatsapp.recipient || "Unavailable"}
+          </dd>
+        </dl>
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap p-3 font-sans text-sm">
+          {whatsapp.text || "Message unavailable; approval disabled."}
+        </pre>
+      </div>
+    );
   const action = approval.details.emailAction as EmailAction | undefined;
   if (!action) {
     return (

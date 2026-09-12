@@ -12,6 +12,7 @@ import {
   GOOGLE_ANALYTICS_TOOLS,
   GOOGLE_SEARCH_CONSOLE_TOOLS,
   POSTHOG_TOOLS,
+  WHATSAPP_TOOLS,
 } from "@/lib/integrations/catalog";
 import {
   normalizeIntegrationSlug,
@@ -158,34 +159,37 @@ export function mapIntegration(
   ];
   const isCalendar = record.provider.startsWith("calendar_");
   const tools: IntegrationTool[] =
-    record.provider === "posthog"
-      ? POSTHOG_TOOLS
-      : record.provider === "google_analytics"
-        ? GOOGLE_ANALYTICS_TOOLS
-        : record.provider === "google_search_console"
-          ? GOOGLE_SEARCH_CONSOLE_TOOLS
-      : record.provider === "custom_http"
-        ? operations
-            .filter((operation) => operation.enabled)
-            .map((operation) => ({
-              key: `${normalizedSlug}__${operation.key}`,
-              name: operation.name,
-              description: operation.description,
-              readOnly: true,
-            }))
-        : record.provider === "custom_mcp"
-          ? mcpTools.map((tool) => ({
-              key: `${normalizedSlug}__${normalizeIntegrationToolKey(tool.name)}`,
-              name: tool.name,
-              description: tool.description ?? "Custom MCP tool",
-              readOnly: tool.readOnlyHint,
-              destructive: tool.destructiveHint,
-            }))
-          : isCalendar
-            ? calendarTools.filter(
-                (tool) => record.provider !== "calendar_ics" || tool.readOnly,
-              )
-            : [];
+    record.provider === "whatsapp"
+      ? WHATSAPP_TOOLS
+      : record.provider === "posthog"
+        ? POSTHOG_TOOLS
+        : record.provider === "google_analytics"
+          ? GOOGLE_ANALYTICS_TOOLS
+          : record.provider === "google_search_console"
+            ? GOOGLE_SEARCH_CONSOLE_TOOLS
+            : record.provider === "custom_http"
+              ? operations
+                  .filter((operation) => operation.enabled)
+                  .map((operation) => ({
+                    key: `${normalizedSlug}__${operation.key}`,
+                    name: operation.name,
+                    description: operation.description,
+                    readOnly: true,
+                  }))
+              : record.provider === "custom_mcp"
+                ? mcpTools.map((tool) => ({
+                    key: `${normalizedSlug}__${normalizeIntegrationToolKey(tool.name)}`,
+                    name: tool.name,
+                    description: tool.description ?? "Custom MCP tool",
+                    readOnly: tool.readOnlyHint,
+                    destructive: tool.destructiveHint,
+                  }))
+                : isCalendar
+                  ? calendarTools.filter(
+                      (tool) =>
+                        record.provider !== "calendar_ics" || tool.readOnly,
+                    )
+                  : [];
 
   return {
     id: record.id,
@@ -196,6 +200,11 @@ export function mapIntegration(
     baseUrl: record.config.baseUrl,
     accountEmail: record.config.accountEmail ?? null,
     accountName: record.config.accountName ?? null,
+    whatsappWriteModes:
+      record.provider === "whatsapp"
+        ? (record.config.providerMetadata
+            ?.writeModes as Integration["whatsappWriteModes"])
+        : undefined,
     writePolicy: record.config.writePolicy ?? "approval_required",
     oauthConfigured: record.config.oauthConfigured ?? false,
     calendarId: record.config.calendarId ?? null,

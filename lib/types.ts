@@ -758,8 +758,10 @@ export type IntegrationProvider =
   | "google_search_console"
   | "custom_http"
   | "custom_mcp"
+  | "whatsapp"
   | CalendarProvider;
 // Keep the historic values plus explicit disabled state for configured-but-paused integrations.
+export type WhatsAppWriteMode = "disabled" | "approval_required" | "autonomous";
 export type IntegrationStatus =
   "connected" | "failed" | "not_tested" | "disabled";
 export type IntegrationAuthType = "none" | "bearer" | "api_key_header";
@@ -859,6 +861,7 @@ export type Integration = {
   baseUrl?: string;
   accountEmail?: string | null;
   accountName?: string | null;
+  whatsappWriteModes?: Record<string, WhatsAppWriteMode>;
   writePolicy?: CalendarWritePolicy;
   oauthConfigured?: boolean;
   calendarId?: string | null;

@@ -41,6 +41,25 @@ export function presentApproval(
       data.description ??
       "Runtime action",
   );
+  if (
+    String(data.server ?? "").startsWith("whatsapp_") &&
+    (data.tool === "whatsapp_send_text" ||
+      /tool ["']whatsapp_send_text["']/.test(fallback))
+  ) {
+    const args = record(data.toolArguments);
+    return {
+      command: "Send WhatsApp message",
+      details: {
+        ...data,
+        tool: "whatsapp_send_text",
+        whatsappAction: {
+          account: text(args.account),
+          recipient: text(args.chatId),
+          text: typeof args.text === "string" ? args.text : "",
+        },
+      },
+    };
+  }
   if (data.server !== "email") return { command: fallback, details: data };
   const tool = emailWriteTool(data);
   if (!tool) {
@@ -85,6 +104,15 @@ export function presentApproval(
 }
 
 export function approvalCanBeApproved(details: Record<string, unknown>) {
+  if (
+    String(details.server ?? "").startsWith("whatsapp_") &&
+    details.tool === "whatsapp_send_text"
+  ) {
+    const action = record(details.whatsappAction);
+    return [action.account, action.recipient, action.text].every(
+      (value) => typeof value === "string" && value.length > 0,
+    );
+  }
   if (details.server !== "email") return true;
   const tool = emailWriteTool(details);
   if (!tool) return true;

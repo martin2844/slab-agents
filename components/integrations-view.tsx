@@ -1,9 +1,11 @@
 "use client";
 
 import Image from "next/image";
+import { WhatsAppIntegrationEditor } from "@/components/whatsapp-integration-editor";
 import { useMemo, useState } from "react";
 import {
   Check,
+  MessageCircle,
   CircleAlert,
   FileJson2,
   KeyRound,
@@ -238,6 +240,7 @@ export function IntegrationsView({
         </div>
       </section>
 
+      {editor?.catalog.provider === "whatsapp" && <WhatsAppIntegrationEditor agents={initialData.agents} onSaved={updateIntegration} onOpenChange={(open) => !open && setEditor(null)} />}
       {editor?.catalog.provider === "posthog" && (
         <PostHogEditor
           key={editor.integration?.id ?? "new-posthog"}
@@ -339,6 +342,7 @@ function BrandMark() {
 }
 
 function ProviderMark({ provider }: { provider: Integration["provider"] }) {
+  if (provider === "whatsapp") return <div className="grid size-8 place-items-center rounded-md bg-emerald-600/10 text-emerald-600"><MessageCircle className="size-4" /></div>;
   if (provider === "posthog") return <BrandMark />;
   if (provider === "google_analytics") {
     return (
@@ -424,6 +428,7 @@ function ActiveCard({
                 ? "Google · GA4"
                 : integration.provider === "google_search_console"
                   ? "Google · Search"
+                  : integration.provider === "whatsapp" ? integration.accountEmail ?? "WhatsApp"
                   : integration.provider === "custom_mcp"
                     ? "MCP"
                     : "HTTP API"}

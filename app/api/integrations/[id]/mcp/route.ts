@@ -1,3 +1,4 @@
+import { handleWhatsAppMcpRequest } from "@/lib/integrations/whatsapp-mcp";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
 import {
   handlePostHogMcpRequest,
@@ -24,6 +25,7 @@ export async function POST(
 
   if (integration.provider !== "posthog") {
     const runId = requestUrl.searchParams.get("run") ?? "";
+    if (integration.provider === "whatsapp") return handleWhatsAppMcpRequest(request, id, runId);
     if (isGoogleDataProvider(integration.provider)) {
       return handleGoogleDataMcpRequest(request, id, runId);
     }
