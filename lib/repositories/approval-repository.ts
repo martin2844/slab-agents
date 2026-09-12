@@ -93,6 +93,18 @@ export const approvalRepository = {
         .all(runId) as Row[]
     ).map(mapApproval);
   },
+  listPendingForIssue(issueKey: string) {
+    return (
+      db
+        .prepare(
+          `SELECT approvals.* FROM approvals
+           JOIN runs ON runs.id = approvals.run_id
+           WHERE runs.issue_key = ? AND approvals.status = 'pending'
+           ORDER BY approvals.created_at DESC, approvals.rowid DESC`,
+        )
+        .all(issueKey) as Row[]
+    ).map(mapApproval);
+  },
   claim(id: string) {
     const result = db
       .prepare(

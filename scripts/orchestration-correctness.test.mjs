@@ -173,6 +173,53 @@ test("approval completion never overwrites terminal state or bypasses another ap
   assert.ok(runRepository.getRun(run.id)?.completedAt);
 });
 
+test("issue approvals include all linked runs and exclude other issues and resolved actions", () => {
+  const [{ repository }, { createRunExecution }, , , { approvalRepository }] =
+    modules;
+  const agent = createAgent(repository, "issue-approvals");
+  const createApproval = (issueKey, label) => {
+    const thread = conversationRepository.createThread(agent.id, label);
+    const run = createRunExecution({
+      agentId: agent.id,
+      threadId: thread.id,
+      trigger: issueKey ? "assignment" : "manual",
+      mode: issueKey ? "assignment" : "task",
+      issueKey,
+      prompt: label,
+    });
+    runRepository.updateRun(run.id, "waiting_approval");
+    return approvalRepository.create(run.id, label, label, { message: label });
+  };
+  const first = createApproval("APPROVAL-1", "First agent action");
+  const second = createApproval("APPROVAL-1", "Second agent action");
+  const approved = createApproval("APPROVAL-1", "Already approved");
+  approvalRepository.claim(approved.id);
+  approvalRepository.resolve(approved.id, "approved");
+  const denied = createApproval("APPROVAL-1", "Already denied");
+  approvalRepository.claim(denied.id);
+  approvalRepository.resolve(denied.id, "denied");
+  const resolving = createApproval("APPROVAL-1", "Being resolved elsewhere");
+  approvalRepository.claim(resolving.id);
+  createApproval("APPROVAL-2", "Other issue");
+  createApproval(null, "Unlinked action");
+
+  assert.deepEqual(approvalRepository.listPendingForIssue("APPROVAL-1"), [
+    second,
+    first,
+  ]);
+  assert.deepEqual(approvalRepository.listPendingForIssue("UNKNOWN-1"), []);
+  assert.deepEqual(
+    approvalRepository.listPendingForIssue("APPROVAL-1' OR 1=1 --"),
+    [],
+  );
+
+  approvalRepository.claim(first.id);
+  approvalRepository.resolve(first.id, "approved");
+  assert.deepEqual(approvalRepository.listPendingForIssue("APPROVAL-1"), [
+    second,
+  ]);
+});
+
 test("the server refuses an Email send approval without a verified sender", async () => {
   const [
     { repository },

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { WorkClient } from "@/lib/mcp/work-client";
+import { approvalRepository } from "@/lib/repositories/approval-repository";
 import { tickWorkCoordination } from "@/lib/work-coordination";
 const updateSchema = z.object({
   expected_version: z.number().int().positive(),
@@ -25,7 +26,8 @@ export async function GET(
       WorkClient.listComments(key),
       WorkClient.listLinks(key),
     ]);
-    return Response.json({ data: { issue, comments, links } });
+    const approvals = approvalRepository.listPendingForIssue(issue.key);
+    return Response.json({ data: { issue, comments, links, approvals } });
   } catch (error) {
     return apiError(error);
   }

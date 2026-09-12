@@ -13,7 +13,9 @@ import {
   PlugZap,
   Plus,
   RefreshCw,
+  ShieldAlert,
   User,
+  X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -39,11 +41,15 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/page-header";
+import { ApprovalActionDetails } from "@/components/approval-action-details";
+import { useOperationalPolling } from "@/components/use-operational-polling";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import { approvalCanBeApproved } from "@/lib/approval-presentation";
 import { api, ApiClientError } from "@/lib/client-api";
 import { formatDateTime } from "@/lib/utils";
 import type {
   Agent,
+  Approval,
   Comment,
   Issue,
   IssuePriority,
@@ -70,6 +76,7 @@ type Detail = {
   issue: Issue;
   comments: Comment[];
   links: Record<string, unknown>;
+  approvals: Approval[];
 };
 type IssueDraft = {
   title: string;
@@ -253,7 +260,11 @@ function IssueDialog({
     [draft, setDraft] = useState<IssueDraft | null>(null),
     [editing, setEditing] = useState(false),
     [error, setError] = useState(""),
-    [saving, setSaving] = useState(false);
+    [saving, setSaving] = useState(false),
+    [resolvingId, setResolvingId] = useState<string | null>(null),
+    detailGeneration = useRef(0),
+    issueActive = useRef(false),
+    resolvingApproval = useRef(false);
   useEffect(() => {
     if (!issueKey) {
       setDetail(null);
@@ -262,6 +273,7 @@ function IssueDialog({
       return;
     }
     let active = true;
+    issueActive.current = true;
     setError("");
     api<Detail>(`/api/work/issues/${issueKey}`)
       .then((next) => {
@@ -273,11 +285,67 @@ function IssueDialog({
       .catch((e) => active && setError(e.message));
     return () => {
       active = false;
+      issueActive.current = false;
+      detailGeneration.current += 1;
     };
   }, [issueKey]);
 
+  async function refreshDetail() {
+    if (!issueKey || !issueActive.current) return;
+    const generation = ++detailGeneration.current;
+    const next = await api<Detail>(`/api/work/issues/${issueKey}`);
+    if (generation !== detailGeneration.current) return;
+    setDetail(next);
+    setError("");
+    onUpdated(next.issue);
+  }
+
+  useOperationalPolling(async () => {
+    if (!detail || editing || saving || resolvingApproval.current) return;
+    await refreshDetail();
+  });
+
+  async function decideApproval(id: string, decision: "approve" | "deny") {
+    if (resolvingApproval.current) return;
+    resolvingApproval.current = true;
+    setResolvingId(id);
+    detailGeneration.current += 1;
+    try {
+      const result = await api<Approval & { dismissed?: boolean }>(
+        `/api/approvals/${id}`,
+        { method: "POST", body: JSON.stringify({ decision }) },
+      );
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              approvals: current.approvals.filter(
+                (approval) => approval.id !== id,
+              ),
+            }
+          : current,
+      );
+      if (result.dismissed) toast.info("Stale approval dismissed");
+      else
+        toast.success(
+          decision === "approve" ? "Action approved" : "Action denied",
+        );
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "Could not resolve approval",
+      );
+    } finally {
+      await refreshDetail().catch(() => {
+        toast.error("Could not refresh issue. It will retry automatically.");
+      });
+      resolvingApproval.current = false;
+      setResolvingId(null);
+    }
+  }
+
   function startEditing() {
-    if (!detail) return;
+    if (!detail || resolvingApproval.current) return;
+    detailGeneration.current += 1;
     setDraft(draftFromIssue(detail.issue));
     setEditing(true);
   }
@@ -341,7 +409,12 @@ function IssueDialog({
           body: JSON.stringify({ body: fd.get("body") }),
         },
       );
-      setDetail({ ...detail, comments: [...detail.comments, comment] });
+      detailGeneration.current += 1;
+      setDetail((current) =>
+        current && !current.comments.some((item) => item.id === comment.id)
+          ? { ...current, comments: [...current.comments, comment] }
+          : current,
+      );
       form.reset();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not add comment");
@@ -375,6 +448,7 @@ function IssueDialog({
                 variant="outline"
                 size="sm"
                 className="shrink-0"
+                disabled={Boolean(resolvingId)}
                 onClick={startEditing}
               >
                 <Pencil />
@@ -587,6 +661,46 @@ function IssueDialog({
                 </div>
               ))}
             </section>
+            {detail.approvals.length > 0 && (
+              <section className="rounded-lg border border-amber-700/25 bg-amber-500/[0.055] p-4">
+                <h3 className="flex items-center gap-2 font-semibold">
+                  <ShieldAlert className="size-4 text-amber-800" />
+                  Waiting for your approval
+                </h3>
+                <div className="mt-4 space-y-4">
+                  {detail.approvals.map((approval) => (
+                    <div key={approval.id} className="min-w-0 space-y-3">
+                      <ApprovalActionDetails approval={approval} />
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          disabled={
+                            Boolean(resolvingId) ||
+                            !approvalCanBeApproved(approval.details)
+                          }
+                          onClick={() => decideApproval(approval.id, "approve")}
+                        >
+                          {resolvingId === approval.id ? (
+                            <LoaderCircle className="animate-spin" />
+                          ) : (
+                            <Check />
+                          )}
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={Boolean(resolvingId)}
+                          onClick={() => decideApproval(approval.id, "deny")}
+                        >
+                          <X /> Deny
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
             <section>
               <div className="mb-3 flex items-center justify-between gap-4">
                 <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -976,6 +1090,7 @@ export function WorkBoard({ initialData }: { initialData: WorkPageData }) {
         </div>
       )}
       <IssueDialog
+        key={selected}
         issueKey={selected}
         agents={initialData.agents}
         onClose={() => setSelected(null)}
