@@ -253,14 +253,33 @@ export class RunQueueRepository {
         };
       }
 
+      // WhatsApp conversations own separate runtime threads. A pending reply
+      // approval must only hold up that conversation, not the agent's inbox.
+      // Ordinary work keeps agent-wide serialization, and the same thread is
+      // always exclusive even when a human starts a manual turn in that chat.
+      const scope = {
+        agentId: String(run.agent_id),
+        threadId: run.thread_id ?? null,
+        independentWhatsApp:
+          run.trigger === "whatsapp" && run.mode === "chat" && run.thread_id
+            ? 1
+            : 0,
+      };
+      const conflictingScope = `agent_id=@agentId AND (
+        thread_id=@threadId OR
+        (@independentWhatsApp=0 AND (
+          COALESCE(trigger,'')<>'whatsapp' OR COALESCE(mode,'')<>'chat'
+          OR thread_id IS NULL OR thread_id=''
+        ))
+      )`;
       const active = this.database
         .prepare(
           `SELECT id FROM runs
-           WHERE agent_id=? AND id<>?
-             AND lease_owner IS NOT NULL AND lease_expires_at > ?
+           WHERE ${conflictingScope} AND id<>@runId
+             AND lease_owner IS NOT NULL AND lease_expires_at > @now
            ORDER BY rowid LIMIT 1`,
         )
-        .get(String(run.agent_id), runId, now) as Row | undefined;
+        .get({ ...scope, runId, now }) as Row | undefined;
       if (active) {
         return {
           claimed: false,
@@ -272,10 +291,11 @@ export class RunQueueRepository {
       const earlier = this.database
         .prepare(
           `SELECT id FROM runs
-           WHERE agent_id=? AND status='queued' AND rowid < ?
+           WHERE ${conflictingScope} AND status='queued' AND rowid < @queueOrder
            ORDER BY rowid LIMIT 1`,
         )
-        .get(String(run.agent_id), Number(run.queue_order)) as Row | undefined;
+        .get({ ...scope, queueOrder: Number(run.queue_order) }) as
+        Row | undefined;
       if (earlier) {
         return {
           claimed: false,

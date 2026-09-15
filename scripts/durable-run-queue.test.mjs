@@ -15,6 +15,9 @@ function fixture() {
     CREATE TABLE runs (
       id TEXT PRIMARY KEY,
       agent_id TEXT NOT NULL,
+      thread_id TEXT,
+      trigger TEXT NOT NULL DEFAULT 'manual',
+      mode TEXT NOT NULL DEFAULT 'chat',
       status TEXT NOT NULL,
       runtime TEXT NOT NULL DEFAULT 'codex',
       started_at TEXT,
@@ -31,14 +34,17 @@ function fixture() {
   `);
   const insert = database.prepare(
     `INSERT INTO runs
-      (id,agent_id,status,created_at,queued_at,lease_owner,lease_expires_at,attempt_count,runner_run_id,runner_retry_at,error)
-     VALUES (@id,@agentId,@status,@createdAt,@queuedAt,@leaseOwner,@leaseExpiresAt,@attemptCount,@runnerRunId,@runnerRetryAt,@error)`,
+      (id,agent_id,thread_id,trigger,mode,status,created_at,queued_at,lease_owner,lease_expires_at,attempt_count,runner_run_id,runner_retry_at,error)
+     VALUES (@id,@agentId,@threadId,@trigger,@mode,@status,@createdAt,@queuedAt,@leaseOwner,@leaseExpiresAt,@attemptCount,@runnerRunId,@runnerRetryAt,@error)`,
   );
   const addRun = (input = {}) => {
     const createdAt = input.createdAt ?? "2026-08-23T12:00:00.000Z";
     insert.run({
       id: input.id ?? crypto.randomUUID(),
       agentId: input.agentId ?? "sales",
+      threadId: input.threadId ?? null,
+      trigger: input.trigger ?? "manual",
+      mode: input.mode ?? "chat",
       status: input.status ?? "queued",
       createdAt,
       queuedAt: input.queuedAt ?? createdAt,
@@ -265,4 +271,131 @@ test("an expired owner is fenced before a recovered owner continues", async (t) 
   assert.equal(recovered.isCurrent(), true);
   first.release();
   recovered.release();
+});
+
+test("WhatsApp approvals and queued follow-ups only block their own conversation without browser activity", async (t) => {
+  const { database, addRun } = fixture();
+  const pending = [];
+  const leases = [];
+  t.after(async () => {
+    database.prepare("UPDATE runs SET status='cancelled'").run();
+    for (const promise of pending) {
+      const lease = await promise;
+      lease?.release();
+    }
+    for (const lease of leases) lease.release();
+    database.close();
+  });
+  const queueA = new RunQueueRepository(database, {
+    ownerId: "worker-a",
+    pollMs: 5,
+  });
+  const queueB = new RunQueueRepository(database, {
+    ownerId: "worker-b",
+    pollMs: 5,
+  });
+  addRun({ id: "approval", trigger: "whatsapp", threadId: "chat-a" });
+  const first = await queueA.acquire("approval").ready;
+  leases.push(first);
+  assert.equal(first.begin(), "started");
+  database
+    .prepare("UPDATE runs SET status='waiting_approval' WHERE id='approval'")
+    .run();
+  addRun({ id: "followup-a", trigger: "whatsapp", threadId: "chat-a" });
+  addRun({ id: "second-followup-a", trigger: "whatsapp", threadId: "chat-a" });
+  const followup = queueB.acquire("followup-a");
+  pending.push(followup.ready);
+  assert.equal(followup.blockedByRunId, "approval");
+  for (const [id, threadId] of [
+    ["reply-b", "chat-b"],
+    ["reply-c", "chat-c"],
+  ]) {
+    addRun({ id, trigger: "whatsapp", threadId });
+    const admission = queueB.acquire(id);
+    pending.push(admission.ready);
+    assert.equal(admission.queued, false);
+    const lease = await admission.ready;
+    leases.push(lease);
+    assert.equal(lease.begin(), "started");
+    database.prepare("UPDATE runs SET status='completed' WHERE id=?").run(id);
+    lease.release();
+  }
+  assert.equal(
+    database.prepare("SELECT status FROM runs WHERE id='approval'").get()
+      .status,
+    "waiting_approval",
+  );
+  database
+    .prepare("UPDATE runs SET status='cancelled' WHERE id='approval'")
+    .run();
+  first.release();
+  // Reverse admission order must still respect FIFO inside chat A.
+  const second = queueB.acquire("second-followup-a");
+  pending.push(second.ready);
+  assert.equal(second.queued, true);
+  assert.equal(second.blockedByRunId, "followup-a");
+  const followupLease = await followup.ready;
+  assert.ok(followupLease);
+  leases.push(followupLease);
+  assert.equal(followupLease.begin(), "started");
+  database
+    .prepare("UPDATE runs SET status='completed' WHERE id='followup-a'")
+    .run();
+  followupLease.release();
+  const last = await second.ready;
+  leases.push(last);
+  assert.equal(last.begin(), "started");
+});
+
+test("WhatsApp and ordinary work have independent queues but manual turns in the same chat remain exclusive", async (t) => {
+  const { database, addRun } = fixture();
+  const pending = [];
+  t.after(async () => {
+    database.prepare("UPDATE runs SET status='cancelled'").run();
+    for (const promise of pending) (await promise)?.release();
+    database.close();
+  });
+  const a = new RunQueueRepository(database, {
+    ownerId: "worker-a",
+    pollMs: 5,
+  });
+  const b = new RunQueueRepository(database, {
+    ownerId: "worker-b",
+    pollMs: 5,
+  });
+  addRun({ id: "ordinary", threadId: "work-chat" });
+  addRun({ id: "ordinary-next", threadId: "other-work-chat" });
+  const ordinary = a.acquire("ordinary");
+  pending.push(ordinary.ready);
+  assert.equal((await ordinary.ready).begin(), "started");
+  addRun({ id: "whatsapp", trigger: "whatsapp", threadId: "wa-chat" });
+  const whatsapp = b.acquire("whatsapp");
+  pending.push(whatsapp.ready);
+  assert.equal(whatsapp.queued, false);
+  assert.equal((await whatsapp.ready).begin(), "started");
+  const next = b.acquire("ordinary-next");
+  pending.push(next.ready);
+  assert.equal(next.blockedByRunId, "ordinary");
+  database
+    .prepare("UPDATE runs SET status='completed' WHERE id='ordinary'")
+    .run();
+  (await ordinary.ready).release();
+  assert.equal((await next.ready).begin(), "started");
+  database
+    .prepare("UPDATE runs SET status='completed' WHERE id='ordinary-next'")
+    .run();
+  (await next.ready).release();
+  addRun({ id: "manual-wa", threadId: "wa-chat" });
+  const manual = a.acquire("manual-wa");
+  pending.push(manual.ready);
+  assert.equal(manual.blockedByRunId, "whatsapp");
+  database
+    .prepare("UPDATE runs SET status='completed' WHERE id='whatsapp'")
+    .run();
+  (await whatsapp.ready).release();
+  assert.equal((await manual.ready).begin(), "started");
+  addRun({ id: "wa-after-manual", trigger: "whatsapp", threadId: "wa-chat" });
+  const blocked = b.acquire("wa-after-manual");
+  pending.push(blocked.ready);
+  assert.equal(blocked.blockedByRunId, "manual-wa");
 });
