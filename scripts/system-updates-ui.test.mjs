@@ -69,15 +69,15 @@ test("automatic updates are clearly stable-only and policy changes are guarded",
 });
 
 test("the browser is limited to the constrained update API", async () => {
-  const [view, readme] = await Promise.all([
+  const [view, developmentGuide] = await Promise.all([
     read("components/system-updates-view.tsx"),
-    read("README.md"),
+    read("docs/development.md"),
   ]);
 
   assert.match(view, /api<SystemUpdateRequest>\("\/api\/system\/updates"/);
   assert.doesNotMatch(view, /docker\.sock|child_process|exec\(|spawn\(/i);
-  assert.match(readme, /never receives the Docker socket or a host shell/);
-  assert.match(readme, /small, fixed JSON request/);
+  assert.match(developmentGuide, /never receives the Docker socket or a host shell/);
+  assert.match(developmentGuide, /small, fixed JSON request/);
 });
 
 test("consumed checks, automatic decisions, and risky applies are explicit", async () => {

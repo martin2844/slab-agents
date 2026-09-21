@@ -1,14 +1,36 @@
-# Slab Agents
+<p align="center">
+  <img src="docs/images/slab-mark.svg" width="72" height="72" alt="Slab" />
+</p>
 
-**Give AI agents work to do, the context they need, and clear limits on what they can change.**
+<h1 align="center">Slab Agents</h1>
 
-Slab Agents is a workspace you host on your own server. Create agents for roles like customer support, sales, or operations. Chat with them, assign work, or let an automation start a task. See what they did, review actions that need your approval, and keep your documents in one place.
+<p align="center">
+  <strong>A workspace for running your company with AI agents.</strong><br />
+  Assign work. Share context. Decide what needs your approval.
+</p>
 
-[Install Slab](#install-slab) · [Your first agent](#your-first-agent) · [Screenshots](#a-look-inside) · [Documentation](#documentation)
+<p align="center">
+  <a href="https://github.com/martin2844/slab-agents/actions/workflows/ci.yml"><img src="https://github.com/martin2844/slab-agents/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" /></a>
+  <a href="https://github.com/martin2844/slab-stack/releases/latest"><img src="https://img.shields.io/github/v/release/martin2844/slab-stack?label=stack%20release&amp;color=032d30" alt="Latest Slab Stack release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-032d30" alt="MIT license" /></a>
+</p>
+
+<p align="center">
+  <a href="https://slab.ar">Website</a> ·
+  <a href="#install-slab">Install</a> ·
+  <a href="#documentation">Documentation</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a>
+</p>
+
+Slab Agents brings your agents, tasks, company documents, and automations into one workspace. Give each agent a role and access to the tools it needs, then follow its work from the first request to the final result. Open source, hosted on your server, with your choice of supported AI runtime.
+
+[![Slab overview showing working agents, pending approvals, a task pipeline, and upcoming automations](docs/images/overview.png)](docs/images/overview.png)
+
+<p align="center"><sub>Real interface, fictional demo workspace. Click any screenshot to see it at full size.</sub></p>
 
 ## Install Slab
 
-Run this on the Linux server where you want Slab to live:
+Run this on your Linux server:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -fsSL \
@@ -16,11 +38,14 @@ curl --proto '=https' --tlsv1.2 -fsSL \
   | sudo sh
 ```
 
-The guided installer sets up the Slab services with Docker, helps you choose how to access the workspace, and prints the URL to open when it finishes. It shows you the installation plan before making changes. You do not need to clone these repositories or install Node.js to use it.
+The guided installer sets up the services with Docker, lets you choose how to access Slab, and prints your workspace URL. You review the installation plan before it makes changes. No repository checkout or Node.js installation required.
 
-**Before you start:** use a supported Linux server with administrator access. Ubuntu 24.04 is a supported choice; plan for at least 4 GB of RAM and 25 GB of free disk space. You will also need access to an AI runtime supported by your release. Your server and AI usage are paid separately.
+**You'll need:** a supported Linux server with administrator access, at least **4 GB RAM** and **25 GB free disk**, plus access to a supported AI runtime. Ubuntu 24.04 is a supported host. Server and AI costs are paid separately.
 
-Prefer to read the script first?
+[Installation and first steps](docs/getting-started.md) · [Supported hosts](https://github.com/martin2844/slab-stack/blob/v0.1.2/docs/compatibility.md) · [Release notes](https://github.com/martin2844/slab-stack/releases)
+
+<details>
+<summary>Inspect the installer before running it</summary>
 
 ```sh
 curl --proto '=https' --tlsv1.2 -fsSL \
@@ -30,87 +55,87 @@ less install.sh
 sudo sh install.sh
 ```
 
-See the [installation guide](docs/getting-started.md) for the next steps and [Slab Stack](https://github.com/martin2844/slab-stack#readme) for supported servers, upgrades, backups, and troubleshooting.
+</details>
 
-> The installer downloads the latest stable release. Screenshots and features described here reflect the current development version; newer features may not be included in stable yet. Check the [release notes](https://github.com/martin2844/slab-stack/releases) for the version you install.
+> The installer uses the latest stable stack release. This README follows development; available features depend on the version you install. Unreleased previews are labeled below.
 
-## What can you do with it?
+## From a task to a workflow
 
-- **Give each agent a job.** Choose its instructions, AI model, documents, tools, and permissions.
-- **Keep work organized.** Assign tasks, follow progress, and see what is blocked or waiting for you.
-- **Automate repeat work.** Start a morning review on a schedule, process incoming email, or handle WhatsApp conversations.
-- **Share useful context.** Give agents company documents and selected external knowledge sources.
-- **Review changes.** Inspect tool activity, approve actions, compare document edits, and revert published changes when they do not conflict with newer work.
-- **Connect your tools.** Add email, calendars, analytics, WhatsApp, and custom integrations, then choose which agents can use them.
+Start small: connect a runtime in **Settings → Runtime**, create an agent, and give it one useful document and one clear task.
 
-You decide how much an agent can do on its own. Connecting an account does not automatically give every agent access to it.
+> “Read our support guide. Suggest clearer answers for refund requests and point out any missing information.”
 
-## Your first agent
+Open the conversation to see the result, tool activity, and anything waiting for your approval. Once the task works the way you want, make it an automation.
 
-1. **Connect an AI runtime** in **Settings → Runtime** and check that it is ready.
-2. **Create an agent** in **Agents**, or start with a **Blueprint**: a template that includes agents, instructions, and workflows.
-3. **Give it context and access.** Add a useful document, assign the tools it needs, and start with **Guarded** permissions.
-4. **Send one clear task.** For example: “Review our support guide and suggest answers to the five most common questions.”
-5. **Review the result.** Open the conversation or run to see the response, tool activity, and any changes waiting for approval.
+- **Agents with a defined job.** Set instructions, models, documents, and tool access for support, sales, research, or operations. Blueprints provide starter agents and workflows.
+- **Shared work and knowledge.** Assign tasks, track progress and blockers, and give agents company docs or selected external sources.
+- **Work that starts itself.** Schedule recurring tasks or respond to incoming email. WhatsApp automation is available in development builds with the integration installed.
+- **Connected tools.** Use email, calendars, analytics, WhatsApp, and custom integrations. Access is assigned per agent; connecting an account does not give every agent permission to use it.
 
-Once that works, turn the repeated task into an automation.
+## You decide what needs review
 
-### A few terms you will see
+Start with **Guarded** permissions, use **Full** for more autonomy, or choose **Custom** to set each tool to **Allow**, **Ask**, or **No access**. Integrations may still require approval for sensitive actions. Permission changes apply to new runs.
 
-| In Slab | What it means |
-| --- | --- |
-| **Agent** | An AI assistant with a role, instructions, and its own access to tools. |
-| **Run** | One attempt by an agent to complete a task or respond to a conversation turn. |
-| **Automation** | A saved workflow started by a schedule or an incoming message. |
-| **Work** | Your shared tasks and projects. |
-| **Docs** | Documents you and your agents can use and edit. |
-| **Sources** | External knowledge you make available to selected agents. |
-| **Integration** | A connection to a service, such as email or a calendar. |
-| **Runtime** | The AI execution service an agent uses, such as Codex. |
+<details>
+<summary>See individual tool permissions</summary>
 
-## A look inside
+[![Custom document tool permissions with Allow, Ask, and No access choices](docs/images/permissions.png)](docs/images/permissions.png)
 
-These are screenshots of the real interface using fictional demo data.
+</details>
 
-### Your agents and their work
+<details>
+<summary>Development preview: document proposals and version history</summary>
 
-See each agent’s role, current activity, and assigned tools.
+An agent can prepare edits across several documents and leave one proposal for review. Compare the diff, approve the changes together, or reject them. With full editing permission, a successful run publishes its changes as one commit. Published changes can be reverted when they do not conflict with newer edits.
 
-![Agents list with three assistants for operations, support, and research](docs/images/agents.png)
+This preview shows ongoing development and is not included in the current stable release. See [permissions and document changes](docs/permissions-and-docs.md) for the workflow.
 
-### Review document changes together
+[![Document proposal with a before-and-after diff and approval controls](docs/images/docs-review.png)](docs/images/docs-review.png)
 
-An agent can prepare edits across several documents. When review is required, it finishes its work and leaves one proposal for you to approve and merge. With full editing permission, a successful run publishes the changes together as one commit.
-
-![Document proposal showing a before-and-after diff and Approve and merge controls](docs/images/docs-review.png)
-
-### Choose what happens automatically
-
-Use **Guarded** for work that needs your review, **Full** for more autonomy, or **Custom** to choose **Allow**, **Ask**, or **No access** for each tool. An integration can still require approval for sensitive actions.
-
-![Custom tool permissions showing Allow, Ask, and No access for document tools](docs/images/permissions.png)
-
-## A few things to know
-
-- Keep your server running for automations to run. You do not need to keep the browser or a conversation open.
-- Slab is a single-user workspace. It does not provide organization roles or a separate account for each teammate.
-- Self-hosting keeps the workspace on your server. The AI provider and connected services still process the information you send to them.
-- WhatsApp uses WAHA, an unofficial WhatsApp Web connection. It is not the official WhatsApp Business API and may stop working or put the connected account at risk. [Read the WhatsApp setup guide](docs/whatsapp.md) before connecting an account.
-- Permission changes apply to new runs. A run already in progress keeps the permissions it started with.
+</details>
 
 ## Documentation
 
-- [Install Slab and create your first agent](docs/getting-started.md)
-- [Permissions, approvals, and document changes](docs/permissions-and-docs.md)
-- [Email automations](docs/email-automations-and-tool-control-plane.md)
-- [WhatsApp setup](docs/whatsapp.md) and [automatic replies](docs/whatsapp-automations.md)
-- [Calendars](docs/calendar-integrations.md), [Google Analytics and Search Console](docs/google-data-integrations.md), and [custom integrations](docs/custom-integrations.md)
-- [Knowledge sources](docs/sources.md), [memory](docs/memory.md), and [Blueprints](docs/operator-packs.md)
-- [Notifications](docs/operator-notifications.md)
-- [Development, configuration, and architecture](docs/development.md)
+| I want to… | Start here |
+| --- | --- |
+| Install Slab and try my first agent | [Getting started](docs/getting-started.md) |
+| Understand permissions and approvals | [Permissions and document changes](docs/permissions-and-docs.md) |
+| Automate customer conversations | [Email](docs/email-automations-and-tool-control-plane.md) · [WhatsApp setup](docs/whatsapp.md) · [WhatsApp automations (development)](docs/whatsapp-automations.md) |
+| Connect business tools | [Calendars](docs/calendar-integrations.md) · [Google Analytics and Search Console](docs/google-data-integrations.md) · [Custom integrations](docs/custom-integrations.md) |
+| Give agents useful context | [Knowledge sources](docs/sources.md) · [Memory](docs/memory.md) · [Blueprints](docs/operator-packs.md) |
+| Follow progress and maintain my server | [Notifications](docs/operator-notifications.md) · [Updates, backups, and recovery](https://github.com/martin2844/slab-stack#readme) |
+| Work on the code | [Contributing](CONTRIBUTING.md) · [Architecture and configuration](docs/development.md) |
 
-For local development, see the [development guide](docs/development.md#run-locally). The installer above is the starting point for hosting Slab on a server.
+<details>
+<summary>Deployment notes</summary>
+
+- Slab is a **single-user workspace**. It does not provide organization roles or separate accounts for teammates.
+- Keep your server running for automations. Your browser does not need to stay open.
+- Self-hosting keeps the workspace on your server. AI providers and connected services still process the information you send to them.
+- WhatsApp uses **WAHA**, an unofficial WhatsApp Web connection. It is not the official WhatsApp Business API and may stop working or put the account at risk. Read the [setup guide](docs/whatsapp.md) before connecting an account.
+
+</details>
+
+## Part of Slab
+
+The installer brings these services together. This repository contains the web workspace and orchestration layer.
+
+| Repository | Responsibility |
+| --- | --- |
+| **slab-agents** — you are here | Agents, conversations, permissions, automations, and the web interface |
+| [slab](https://github.com/martin2844/slab) | Work: projects, tasks, and their MCP tools |
+| [slab-docs](https://github.com/martin2844/slab-docs) | Company documents and their MCP tools |
+| [slab-runner](https://github.com/martin2844/slab-runner) | Agent execution and AI runtime adapters |
+| [slab-stack](https://github.com/martin2844/slab-stack) | Docker deployment, guided installation, and stack releases |
+
+Built with **Next.js, React, TypeScript, and SQLite**, with **MCP** connections to Work, Docs, and integrations. The browser talks to the web app; service credentials stay on the server.
+
+## Contributing
+
+Bug reports, clearer documentation, and focused pull requests are welcome. Start with the [contribution guide](CONTRIBUTING.md) for local setup, validation, and what to include in a PR.
+
+[Report a bug](https://github.com/martin2844/slab-agents/issues/new?template=bug_report.md) · [Suggest an improvement](https://github.com/martin2844/slab-agents/issues/new?template=feature_request.md) · [Report a security issue](SECURITY.md)
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Copyright © Slab contributors.
