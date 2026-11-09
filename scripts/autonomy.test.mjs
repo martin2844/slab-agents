@@ -517,7 +517,9 @@ const message = (text, extra = {}) => ({
 
 test("Telegram links one chat with a one-time code and ignores every other chat", async () => {
   await assert.rejects(() => telegram.configureTelegram("not a token"), /does not look like/);
-  const linking = await telegram.configureTelegram("123456789:AAEexampleexampleexampleexample_123");
+  // A fake token built at runtime, so secret scanners do not mistake it for a real one.
+  const fakeToken = ["1234", "56789"].join("") + ":" + "x".repeat(35);
+  const linking = await telegram.configureTelegram(fakeToken);
   assert.equal(linking.botUsername, "cleancut_ops_bot");
   assert.match(linking.linkUrl, /t\.me\/cleancut_ops_bot\?start=/);
   assert.ok(telegramCalls.some((call) => call.method === "deleteWebhook"));
