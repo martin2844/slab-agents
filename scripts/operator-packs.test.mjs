@@ -363,7 +363,7 @@ test("official catalog and local lifecycle install, preserve, replace, and disab
 
     const manifest = ${JSON.stringify(baseManifest)};
     assert.deepEqual(OFFICIAL_OPERATOR_PACKS.map((pack) => pack.id), [
-      "founder-ops", "sales-ops", "engineering-ops",
+      "founder-ops", "sales-ops", "engineering-ops", "autonomous-company",
     ]);
     assert.match(OFFICIAL_OPERATOR_PACKS[1].workConventions.join(" "), /current deliverable/i);
     importOperatorPack(manifest);

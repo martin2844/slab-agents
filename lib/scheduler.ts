@@ -10,6 +10,8 @@ import { tickEmailAutomations } from "@/lib/email-automation-dispatcher";
 import { tickSystemUpdates } from "@/lib/system-update-service";
 import { tickKnowledgeSources } from "@/lib/sources/scheduler";
 import { tickOperatorNotifications } from "@/lib/operator-notification-service";
+import { allows } from "@/lib/autonomy/service";
+import { tickAutonomy } from "@/lib/autonomy/loops";
 
 const state = globalThis as unknown as {
   slabScheduler?: NodeJS.Timeout;
@@ -26,8 +28,15 @@ export async function tickScheduler() {
     void reconcileDocsRunAccess().catch(() =>
       console.error("[scheduler] Docs access reconciliation failed."),
     );
-    void tickEmailAutomations().catch((error) => {
-      console.error("[scheduler] Email automation tick:", error);
+    // Autonomy level 0 (or triggers off) stops everything that starts on its own.
+    const triggers = allows("triggers");
+    if (triggers) {
+      void tickEmailAutomations().catch((error) => {
+        console.error("[scheduler] Email automation tick:", error);
+      });
+    }
+    void tickAutonomy().catch((error) => {
+      console.error("[scheduler] Autonomy tick:", error);
     });
     void tickSystemUpdates().catch((error) => {
       console.error("[scheduler] System update tick:", error);
@@ -38,6 +47,7 @@ export async function tickScheduler() {
     void tickOperatorNotifications().catch((error) => {
       console.error("[scheduler] Operator notification tick:", error);
     });
+    if (!triggers) return;
     const current = new Date();
     for (const occurrence of automationRepository.listPendingAutomationOccurrences()) {
       try {
@@ -75,6 +85,7 @@ export function startScheduler() {
   state.slabWhatsAppTick = tickWhatsAppAutomations;
   if (!state.slabWhatsAppTimer) {
     state.slabWhatsAppTimer = setInterval(() => {
+      if (!allows("triggers")) return;
       void state
         .slabWhatsAppTick?.()
         .catch(() =>

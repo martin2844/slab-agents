@@ -753,3 +753,63 @@ test("a coding run changes several repositories and opens one PR per changed rep
     scriptOverride = null;
   }
 });
+
+test("at autonomy level 3 a coding run reaches a published draft PR without human approvals", async () => {
+  const { updateAutonomyPolicy, listAutonomyEvents } = await import("../lib/autonomy/service.ts");
+  const web = codingRepository.listRepositories().find((item) => item.name === "web");
+  scriptOverride = (workspaceId, stage) => {
+    const done = (name, extra = "") => write(workspaceId, name, `---\nstatus: done\n${extra}---\n# ${name}\n`);
+    switch (stage) {
+      case "pm": return done("spec.md"), "DONE";
+      case "tech_spec": return done("plan.md"), "DONE";
+      case "plan_review": return done("review.md", "verdict: pass\n"), "DONE";
+      case "engineer": return done("engineer.md", "checks: pass\n"), "DONE";
+      case "code_review":
+        write(workspaceId, "code-review.md", "---\nstatus: done\nready: true\n---\n# Review\n\n## PR title\n[CC-30] Autonomous change\n");
+        return "DONE";
+      case "final_pass":
+        write(workspaceId, "pr-body.md", "## What\nAutonomous.");
+        done("final.md");
+        return "DONE";
+      default:
+        throw new Error(`Unexpected stage ${stage}`);
+    }
+  };
+  updateAutonomyPolicy({ level: 3 });
+  try {
+    const run = await service.startCodingRun({ issueKey: "CC-30", repositoryIds: [web.id] });
+    await until(() => codingRepository.getRun(run.id).status === "done", "run done without approvals", 300);
+    const done = codingRepository.getRun(run.id);
+    assert.equal(done.repositories[0].prNumber, 7);
+    assert.equal(current(run.id, "pm").verdict, "auto_approved");
+    const kinds = listAutonomyEvents().map((event) => event.kind);
+    assert.ok(kinds.includes("coding_spec_auto_approved"));
+    assert.ok(kinds.includes("coding_publish_auto_approved"));
+  } finally {
+    updateAutonomyPolicy({ level: 1 });
+    scriptOverride = null;
+  }
+});
+
+test("at autonomy level 3 a code review that is not ready still waits for the human", async () => {
+  const { updateAutonomyPolicy } = await import("../lib/autonomy/service.ts");
+  const web = codingRepository.listRepositories().find((item) => item.name === "web");
+  scriptOverride = (workspaceId, stage) => {
+    const done = (name, extra = "") => write(workspaceId, name, `---\nstatus: done\n${extra}---\n# ${name}\n`);
+    if (stage === "code_review") return done("code-review.md", "ready: false\n"), "DONE";
+    if (stage === "plan_review") return done("review.md", "verdict: pass\n"), "DONE";
+    if (stage === "engineer") return done("engineer.md", "checks: pass\n"), "DONE";
+    return done(stage === "pm" ? "spec.md" : "plan.md"), "DONE";
+  };
+  updateAutonomyPolicy({ level: 3 });
+  try {
+    const run = await service.startCodingRun({ issueKey: "CC-31", repositoryIds: [web.id] });
+    await until(() => current(run.id, "code_review")?.status === "waiting_approval", "review waits", 300);
+    assert.equal(current(run.id, "code_review").verdict, "not_ready");
+    assert.equal(current(run.id, "publish"), null);
+    await service.cancelCodingRun(run.id);
+  } finally {
+    updateAutonomyPolicy({ level: 1 });
+    scriptOverride = null;
+  }
+});

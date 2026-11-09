@@ -1,4 +1,5 @@
 import "server-only";
+import { allows } from "@/lib/autonomy/service";
 import { closeRunDocsAccess } from "@/lib/docs-run-changes";
 import { whatsappAutomationRepository } from "@/lib/repositories/whatsapp-automation-repository";
 
@@ -937,7 +938,11 @@ export async function* executeRun(
           }
           if (outcome.action === "completed") {
             completed = true;
-            if (run.mode === "chat" && memoryRecall.provider === "honcho") {
+            // Chats always; other runs (not coding stages) when autonomy turns on memory from every run.
+            const remember =
+              run.mode === "chat" ||
+              (run.mode !== "code_stage" && allows("memory_all_runs", agent.id));
+            if (remember && memoryRecall.provider === "honcho") {
               scheduleMemoryRecording(
                 {
                   runId: run.id,

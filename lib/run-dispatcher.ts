@@ -1,4 +1,6 @@
 import "server-only";
+import { allows, autonomyLimits, activeRunCount } from "@/lib/autonomy/service";
+import { autonomyRepository } from "@/lib/repositories/autonomy-repository";
 
 import { runRepository } from "@/lib/repositories/run-repository";
 import { withImmediateTransaction } from "@/lib/db/transaction";
@@ -87,7 +89,32 @@ export async function tickRunDispatcher() {
   try {
     recoverRunDispatch();
     if (durableRunQueue.maintenanceEnabled()) return;
-    for (const runId of durableRunQueue.listQueuedRunIds()) {
+    let queued = durableRunQueue.listQueuedRunIds();
+    // Paused (level 0): runs that autonomy started on its own wait for the resume.
+    if (!allows("triggers")) {
+      const held = autonomyRepository.selfStartedRunIds(queued);
+      queued = queued.filter((runId) => !held.has(runId));
+    }
+    // Autonomy guard: at most maxConcurrentRuns runs at a time (off at level 1). Runs
+    // waiting behind another run of the same agent cannot start, so they take no slot.
+    if (allows("guards")) {
+      let free = Math.max(0, autonomyLimits().maxConcurrentRuns - activeRunCount());
+      const busy = autonomyRepository.busyAgentIds();
+      const picked: string[] = [];
+      for (const runId of queued) {
+        if (free <= 0) break;
+        const run = runRepository.getRun(runId);
+        if (!run) continue;
+        // WhatsApp chats and coding stages run in parallel with the agent's other runs.
+        const independent = run.trigger === "whatsapp" || run.trigger === "coding";
+        if (!independent && busy.has(run.agentId)) continue;
+        if (!independent) busy.add(run.agentId);
+        picked.push(runId);
+        free -= 1;
+      }
+      queued = picked;
+    }
+    for (const runId of queued) {
       void executeRunInBackground(runId);
     }
   } finally {

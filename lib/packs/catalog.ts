@@ -405,10 +405,164 @@ const engineeringOps = {
   upgradeNotes: [],
 } satisfies OperatorPackManifest;
 
+
+const autonomousCompany = {
+  schemaVersion: 1,
+  id: "autonomous-company",
+  version: "1.0.0",
+  name: "Autonomous Company",
+  author: "Slab",
+  description:
+    "A small team that runs the business with autonomy levels: a CEO that plans and delegates, Support that answers customers, and Growth that finds and contacts leads. Coding runs add the Code PM and the Engineer.",
+  outcome:
+    "The team plans, answers support, does careful outreach, and ships pull requests, and only asks the human on Telegram when it needs a decision.",
+  compatibility: { minimumSlabVersion: "0.1.0" },
+  agents: [
+    {
+      key: "ceo",
+      name: "CEO",
+      slug: "ceo",
+      role: "Lead agent: plans, prioritizes, delegates, and reports to the human",
+      instructions: [
+        "You lead an autonomous team that runs the business. The human is the owner: you report to them and ask them only for decisions that need them.",
+        "Use Work as the source of truth for commitments and Docs for durable context, decisions, and your planning log.",
+        "In each planning loop: review what changed, pick the few actions that matter most, create or update Work items, and assign them to the right agent (Support, Growth, Engineer).",
+        "Assign product and code changes to the Engineer as Work items with clear acceptance criteria; a coding run opens a draft pull request.",
+        "Use notify_human for results the human must act on (pull requests to review and build, money decisions). Use ask_human only for real decisions, grouped, with options.",
+        "Schedule follow-ups instead of waiting. Never change permissions, integrations, budgets, or the autonomy level.",
+        "Separate evidence from inference. It is valid to change nothing when the plan is still right.",
+      ].join("\n"),
+      model: "default",
+      enabled: true,
+      fullAccess: false,
+      quickActions: [
+        {
+          key: "planning-loop",
+          label: "Run a planning loop now",
+          prompt:
+            "Run the planning loop now: review Work, support, growth, and pull requests; decide the few actions that matter; assign them; schedule follow-ups; and log the loop.",
+        },
+      ],
+    },
+    {
+      key: "support",
+      name: "Support",
+      slug: "support",
+      role: "Answers customer email and messages, and turns problems into Work",
+      instructions: [
+        "You answer customers of the product. Be accurate, short, and kind. Answer in the customer's language.",
+        "Read the product Docs (help articles, known issues) before you answer. Never invent features, prices, or dates.",
+        "Bugs and feature requests: create or update a Work item with the evidence (steps, account, screenshots described) and tell the customer what happens next.",
+        "Refunds, discounts, legal or security issues, and angry customers: ask the human with ask_human before you promise anything.",
+        "When a customer asks you to stop writing, record the opt-out with email_suppress.",
+      ].join("\n"),
+      model: "default",
+      enabled: true,
+      fullAccess: false,
+      quickActions: [],
+    },
+    {
+      key: "growth",
+      name: "Growth",
+      slug: "growth",
+      role: "Finds qualified leads and contacts them carefully",
+      instructions: [
+        "You grow the business with careful, personal outreach. Quality over volume.",
+        "Track every lead as a Work item in the leads project: who, why they fit, source, status (new, contacted, replied, won, lost), and the next step.",
+        "Write short, specific first messages that say why you contact this person. No mass templates, no fake familiarity, no false claims.",
+        "Respect opt-outs: when someone says no or asks you to stop, record it with email_suppress and close the lead.",
+        "Stay within the daily send limit. Schedule follow-ups (at most two) instead of sending many messages.",
+        "Report weekly results to the CEO as a Work comment: leads found, contacted, replies, and what you learned.",
+      ].join("\n"),
+      model: "default",
+      enabled: true,
+      fullAccess: false,
+      quickActions: [],
+    },
+  ],
+  automations: [
+    {
+      key: "weekly-growth",
+      agentKey: "growth",
+      name: "Weekly outreach round",
+      mode: "task",
+      cronExpression: "0 10 * * 2",
+      prompt:
+        "Run this week's outreach round: review open leads and follow-ups due, find a few new qualified leads, contact them within the daily limit, update every lead in Work, and report to the CEO.",
+      enabled: false,
+    },
+  ],
+  capabilities: [
+    { category: "work", required: true, description: "Commitments, leads, bugs, and the planning log." },
+    { category: "docs", required: true, description: "Product knowledge, help articles, and decisions." },
+    { category: "email", required: false, description: "Support inbox and a separate outreach mailbox." },
+    { category: "github", required: false, description: "Repositories for coding runs." },
+    { category: "product_analytics", required: false, description: "Signups, activation, and usage." },
+  ],
+  permissions: [
+    {
+      capability: "email",
+      action: "Send new emails (outreach)",
+      policy: "approval_required",
+      reason: "Start supervised; move to autonomous at autonomy level 3 with a daily cap and opt-outs.",
+    },
+  ],
+  workConventions: [
+    "Leads live in their own Work project, one item per lead.",
+    "Product changes are Work items assigned to the Engineer, with acceptance criteria.",
+    "The CEO logs each planning loop.",
+  ],
+  docs: [
+    {
+      key: "autonomy-handbook",
+      title: "Autonomous Company · Handbook",
+      body: [
+        "# Handbook",
+        "",
+        "- The human owns the company. The team asks them on Telegram only for decisions that need them.",
+        "- Red lines (always the human): merging and releases, money, mass deletes, integrations, credentials, permissions, budgets, the autonomy level.",
+        "- Pull requests: the Engineer opens drafts; the human reviews, merges, and runs the desktop builds.",
+        "- Outreach: personal, honest, within limits, and every opt-out is recorded.",
+        "- Support: never promise refunds or dates without the human.",
+      ].join("\n"),
+      tags: ["operator-pack", "autonomous-company"],
+    },
+  ],
+  acceptanceScenarios: [
+    {
+      id: "plan-and-delegate",
+      title: "Plan from a synthetic signal",
+      description: "Reads a synthetic signal and records one bounded decision in Work.",
+      agentKey: "ceo",
+      execution: "review",
+      fixture: {
+        docTitle: "Synthetic weekly signal",
+        docBody:
+          "Fictional data: signups dropped 20% this week after the pricing page changed. Support received three emails saying the free plan is gone. The free plan still exists.",
+        issueTitle: "Synthetic: decide the response to the signup drop",
+        issueDescription:
+          "Review the synthetic signal, decide the single most material next action, record it here, and complete this item.",
+        priority: "high",
+      },
+      prompt:
+        "Run the Autonomous Company acceptance review. Read the synthetic Work item and Doc, record one evidence-based decision as a Work comment, avoid unrelated Work creation, and mark the item done.",
+      rubric: {
+        requiresWorkRead: true,
+        requiresDocsRead: true,
+        requiresWorkWrite: true,
+        expectedIssueStatus: "done",
+        maxCreatedWorkItems: 0,
+      },
+    },
+  ],
+  upgradeNotes: [],
+} satisfies OperatorPackManifest;
+
 export const OFFICIAL_OPERATOR_PACKS = [
   founderOps,
   salesOps,
   engineeringOps,
+  autonomousCompany,
 ].map((manifest) => parseOperatorPackManifest(manifest));
 
 export function getOfficialOperatorPack(id: string) {

@@ -1,4 +1,5 @@
 import "server-only";
+import { allows, capability, logAutonomyEvent } from "@/lib/autonomy/service";
 
 import { agentRepository } from "@/lib/repositories/agent-repository";
 import { conversationRepository } from "@/lib/repositories/conversation-repository";
@@ -166,6 +167,9 @@ export async function triggerAgent(
   },
   execute: (runId: string) => Promise<void> = executeRunInBackground,
 ) {
+  // Autonomy (coding runs "on assignment"): assigning a Work item to the Engineer
+  // of coding runs starts a coding run instead of a plain agent run.
+  if (input.type === "assignment" && (await startCodingRunOnAssignment(input.issue, input.agent))) return;
   try {
     const run = withImmediateTransaction(() => {
       const eventId = workCoordinationRepository.claimEvent({
@@ -210,6 +214,43 @@ export async function triggerAgent(
     console.error(`[work-coordination] ${input.issue.key}:`, error);
     throw error;
   }
+}
+
+async function startCodingRunOnAssignment(issue: Issue, agent: Agent) {
+  if (capability("coding_start", agent.id) !== "on_assign") return false;
+  const { agentForStage } = await import("@/lib/coding/agents");
+  if (agentForStage("engineer")?.id !== agent.id) return false;
+  const { codingRepository } = await import("@/lib/repositories/coding-repository");
+  const project = issue.key.split("-")[0]!.toUpperCase();
+  const repositoryIds = codingRepository
+    .listRepositories()
+    .filter((repository) => repository.enabled && repository.workProjectKey === project)
+    .map(({ id }) => id);
+  if (!repositoryIds.length) return false;
+  const { startCodingRun } = await import("@/lib/coding/service");
+  try {
+    const run = await startCodingRun({ issueKey: issue.key, repositoryIds });
+    logAutonomyEvent({
+      kind: "coding_run_started",
+      actor: "system",
+      summary: `Coding run #${run.number} started for ${issue.key} on assignment to ${agent.name}.`,
+      payload: { codeRunId: run.id },
+    });
+  } catch (error) {
+    // An open coding run for the item already covers it. Other failures go to the human.
+    if (!(error instanceof Error && /already open/.test(error.message))) {
+      console.error(`[work-coordination] coding run for ${issue.key}:`, error);
+      const { createHumanRequest } = await import("@/lib/autonomy/human-requests");
+      createHumanRequest({
+        kind: "update",
+        runId: null,
+        agentId: agent.id,
+        urgency: "high",
+        question: `Could not start a coding run for ${issue.key}: ${error instanceof Error ? error.message : String(error)}. Fix it, then assign the item again to retry.`,
+      });
+    }
+  }
+  return true;
 }
 
 type InspectIssueDependencies = {
@@ -332,6 +373,8 @@ export function tickWorkCoordination() {
   }
   const tick = (async () => {
     try {
+      // Autonomy level 0 (or triggers off): Work events wait until triggers are on again.
+      if (!allows("triggers")) return;
       const agents = agentRepository.listAgents();
       if (!agents.some((agent) => agent.enabled)) return;
       const projects = await WorkClient.listProjects();

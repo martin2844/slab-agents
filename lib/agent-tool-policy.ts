@@ -2,6 +2,8 @@ import "server-only";
 
 import { agentToolPolicyRepository } from "@/lib/repositories/agent-tool-policy-repository";
 import { effectiveAgentPermissionMode } from "@/lib/agent-permissions";
+import { applyAutonomyToolPolicies } from "@/lib/autonomy/tool-policy";
+import { runRepository } from "@/lib/repositories/run-repository";
 import type {
   Agent,
   AgentToolCatalogServer,
@@ -230,6 +232,13 @@ export function snapshotAgentToolPolicies(input: {
       policies[serverName] = combinePolicies(policies[serverName], override);
     }
   }
+  // Autonomy (outbound messages, automatic approvals). No change at level 1.
+  const adjusted = applyAutonomyToolPolicies(policies, {
+    agentId: input.agent.id,
+    trigger: runRepository.getRun(input.runId)?.trigger ?? null,
+    catalog: input.catalog ?? [],
+  });
+  for (const [serverName, policy] of Object.entries(adjusted)) policies[serverName] = policy;
   const captured = agentToolPolicyRepository.getOrCreateRunSnapshot({
     runId: input.runId,
     agentId: input.agent.id,

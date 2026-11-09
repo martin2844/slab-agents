@@ -19,7 +19,8 @@ const publicPaths = new Set([
 const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function internalMcpPath(pathname: string) {
-  return /^\/api\/integrations\/[^/]+\/mcp$/.test(pathname);
+  // Run-scoped MCP endpoints authenticate with a per-run bearer token instead of a session.
+  return /^\/api\/integrations\/[^/]+\/mcp$/.test(pathname) || pathname === "/api/autonomy/mcp";
 }
 
 export async function proxy(request: NextRequest) {

@@ -9,7 +9,9 @@ export type RunTrigger =
   | "review_requested"
   | "blocked"
   | "mention"
-  | "coding";
+  | "coding"
+  /** Started by autonomy: delegation, follow-ups, answers from the human, planning. */
+  | "autonomy";
 
 export type RunMode =
   | "chat"
@@ -128,6 +130,9 @@ function assertTriggerMode(trigger: RunTrigger, mode: RunMode) {
     mode !== "work_item"
   ) {
     throw new Error(`${trigger} requires work_item execution mode.`);
+  }
+  if (trigger === "autonomy" && (mode === "chat" || mode === "code_stage")) {
+    throw new Error("Autonomy runs use task, review, assignment, or work_item mode.");
   }
   if ((trigger === "coding") !== (mode === "code_stage")) {
     throw new Error("Coding stage runs require the coding trigger.");

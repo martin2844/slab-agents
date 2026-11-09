@@ -266,6 +266,24 @@ function emailTools(access: AgentEmailAccess | null): AgentToolCatalogTool[] {
             readOnly: true,
             mode: "approve" as const,
           },
+          {
+            name: "email_get_attachment",
+            label: "Read attachment",
+            description: "Read one attachment of a message (text, or base64 for small files).",
+            readOnly: true,
+            mode: "approve" as const,
+          },
+        ]
+      : []),
+    ...(access.sendEnabled && access.sendPolicy !== "disabled"
+      ? [
+          {
+            name: "email_suppress",
+            label: "Record opt-out",
+            description: "Add an address or domain to the do-not-contact list. New emails to it are refused.",
+            readOnly: false,
+            mode: "approve" as const,
+          },
         ]
       : []),
     ...(access.draftEnabled

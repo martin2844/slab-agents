@@ -69,6 +69,12 @@ import { codexLoginIdPattern } from "@/lib/codex-auth-contract";
 import { issueDocsRunAccess } from "@/lib/docs-access";
 import { registerDocsRunAccess } from "@/lib/docs-run-changes";
 import { codeRunnerHeaders, codeRunnerUrl } from "@/lib/coding/code-runner";
+import { allows, autonomyLimits } from "@/lib/autonomy/service";
+import {
+  AUTONOMY_AGENT_INSTRUCTIONS,
+  CONTROL_SERVER_NAME,
+  issueControlServer,
+} from "@/lib/autonomy/control-mcp";
 import { codingRepository } from "@/lib/repositories/coding-repository";
 import {
   emailReplyConstraintHeaders,
@@ -567,6 +573,15 @@ export async function startRunnerRun(
           : {}),
       }
     : null;
+  // Autonomy tools (ask the human, follow-ups, delegation, self-management): only when
+  // the autonomy level turns one of them on for this agent. Never in coding stages.
+  // Email- and WhatsApp-triggered runs read messages from outside the company: they
+  // never get control tools, so injected text cannot delegate, schedule, or self-manage.
+  const controlServer =
+    target === "code" || ["email", "whatsapp"].includes(input.execution.trigger)
+      ? null
+      : issueControlServer(input.controlPlaneRunId ?? input.runId, input.agent.id);
+  if (controlServer) exposedToolsByServer.set(CONTROL_SERVER_NAME, controlServer.tools);
   const liveMcpServers: PolicyAwareMcpServer[] = [
     {
       name: "work" as const,
@@ -587,6 +602,7 @@ export async function startRunnerRun(
           ...calendarMcpServers,
           ...googleDataMcpServers,
           ...customMcpServers,
+          ...(controlServer ? [controlServer.server] : []),
         ]),
   ];
   const policyRunId = input.controlPlaneRunId ?? input.runId;
@@ -685,6 +701,7 @@ export async function startRunnerRun(
     input.execution.policy,
     ...(input.memory?.context ? [input.memory.context] : []),
     ...(integrationInstructions ? [integrationInstructions] : []),
+    ...(controlServer ? [AUTONOMY_AGENT_INSTRUCTIONS] : []),
   ];
   const combinedInstructions = instructionParts.join("\n\n");
   const shouldRehydrateConversation =
@@ -810,7 +827,9 @@ export async function startRunnerRun(
             workspace: { id: codeRun.workspaceId },
             limits: { wallClockSeconds: 3600 },
           }
-        : {}),
+        : allows("guards", input.agent.id)
+          ? { limits: { wallClockSeconds: autonomyLimits().runTimeLimitMinutes * 60 } }
+          : {}),
     }),
     afterEventId: input.runnerEventCursor,
     fetcher: dependencies.fetcher,

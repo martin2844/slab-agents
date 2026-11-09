@@ -35,6 +35,7 @@ import {
 } from "@/lib/coding/stages";
 import type { CodeRepository, CodeRun, CodeRunRepository, CodeRunStage } from "@/lib/coding/types";
 import { CODING_PROMPTS } from "@/lib/coding/prompts";
+import { capability, logAutonomyEvent } from "@/lib/autonomy/service";
 import { agentForStage } from "@/lib/coding/agents";
 import {
   syncPullRequestMerged,
@@ -463,6 +464,18 @@ function failOrRetry(run: CodeRun, stage: CodeRunStage, reason: string) {
   });
 }
 
+/** Autonomy "coding approvals: automatic": approve the spec or publish without the human. */
+function autoGate(run: CodeRun, stage: CodeRunStage, gate: "spec" | "publish") {
+  if (capability("coding_gates", stage.agentId) !== "auto") return false;
+  logAutonomyEvent({
+    kind: gate === "spec" ? "coding_spec_auto_approved" : "coding_publish_auto_approved",
+    actor: "system",
+    summary: `Coding #${run.number} (${run.issueKey}): ${gate === "spec" ? "spec approved" : "draft PR published"} automatically.`,
+    payload: { codeRunId: run.id, stageId: stage.id },
+  });
+  return true;
+}
+
 function completeStage(stage: CodeRunStage, patch: Partial<CodeRunStage> = {}) {
   return codingRepository.updateStage(stage.id, {
     ...patch,
@@ -573,6 +586,10 @@ async function evaluateStage(run: CodeRun, stage: CodeRunStage) {
   const summary = outcome.summary;
   switch (stage.stage) {
     case "pm":
+      if (autoGate(run, fresh, "spec")) {
+        completeStage(fresh, { summary, questions: [], verdict: "auto_approved" });
+        return;
+      }
       waitFor(fresh, "waiting_approval", { summary, questions: [], verdict: null });
       return;
     case "tech_spec":
@@ -631,13 +648,20 @@ async function evaluateStage(run: CodeRun, stage: CodeRunStage) {
       completeStage(fresh, { summary, verdict: checks || null, questions: [] });
       return;
     }
-    case "code_review":
+    case "code_review": {
+      const ready = (values.ready ?? "").toLowerCase() === "true";
+      // Automatic gates publish only a branch the reviewer marked ready.
+      if (ready && autoGate(run, fresh, "publish")) {
+        completeStage(fresh, { summary, verdict: "ready", questions: [] });
+        return;
+      }
       waitFor(fresh, "waiting_approval", {
         summary,
-        verdict: (values.ready ?? "").toLowerCase() === "true" ? "ready" : "not_ready",
+        verdict: ready ? "ready" : "not_ready",
         questions: [],
       });
       return;
+    }
     case "final_pass": {
       const body = contents.get("pr-body.md");
       if (!body?.trim()) {

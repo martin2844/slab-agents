@@ -1,0 +1,30 @@
+# Example GitHub Actions workflow: builds the desktop app for macOS, Windows, and
+# Linux on GitHub-hosted runners when you run it by hand or push a tag.
+# Copy it to .github/workflows/ in your repository and adapt the build commands.
+# Slab agents never edit workflows; this file is yours.
+name: Desktop builds
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:desktop # replace with your build command
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: dist/ # replace with your output folder

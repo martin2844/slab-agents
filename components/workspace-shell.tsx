@@ -10,6 +10,7 @@ import {
   Code2,
   Database,
   FileText,
+  Gauge,
   BookOpenText,
   LayoutDashboard,
   Menu,
@@ -56,6 +57,7 @@ const nav = [
     items: [
       { href: "/packs", label: "Blueprints", icon: PackageOpen },
       { href: "/automations", label: "Automations", icon: CalendarClock },
+      { href: "/autonomy", label: "Autonomy", icon: Gauge },
       { href: "/integrations", label: "Integrations", icon: Plug },
       { href: "/settings", label: "Settings", icon: Settings },
     ],
