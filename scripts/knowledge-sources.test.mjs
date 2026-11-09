@@ -207,9 +207,14 @@ test("knowledge sources migrate, version writes are guarded, and secrets stay en
     /^https:\/\/github\.com\/organizations\/acme\/settings\/apps\/new\?state=/,
   );
   assert.deepEqual(registration.manifest.default_permissions, {
-    contents: "read",
+    contents: "write",
     metadata: "read",
+    pull_requests: "write",
+    issues: "write",
+    checks: "read",
+    statuses: "read",
   });
+  assert.equal("workflows" in registration.manifest.default_permissions, false);
   assert.equal("privateKey" in registration.app, false);
   globalThis.fetch = async () =>
     Response.json({

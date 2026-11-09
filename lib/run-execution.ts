@@ -8,9 +8,16 @@ export type RunTrigger =
   | "resumed"
   | "review_requested"
   | "blocked"
-  | "mention";
+  | "mention"
+  | "coding";
 
-export type RunMode = "chat" | "task" | "review" | "assignment" | "work_item";
+export type RunMode =
+  | "chat"
+  | "task"
+  | "review"
+  | "assignment"
+  | "work_item"
+  | "code_stage";
 
 export type AutomationMode = Extract<RunMode, "review" | "task">;
 
@@ -31,7 +38,9 @@ export function planRuntimeThread(
   mode: RunMode,
   persistedRuntimeThreadId: string | null,
 ): RuntimeThreadPlan {
-  const reusable = mode === "chat";
+  // Coding stages keep one runtime thread per stage, so answers to questions
+  // and retries continue the same conversation.
+  const reusable = mode === "chat" || mode === "code_stage";
   const runtimeThreadId = reusable ? persistedRuntimeThreadId : null;
   return {
     runtimeThreadId,
@@ -59,10 +68,18 @@ const WORK_DELIVERABLE_POLICY = [
   "Use blocked only when the currently requested deliverable cannot be produced with the available information or capabilities.",
 ].join("\n");
 
+const CODE_STAGE_POLICY = [
+  "This run is one stage of a Slab coding run on the associated Work item.",
+  "Follow the stage contract in the task input exactly: inputs, output file, and git rules.",
+  "Work in the repository checkout and the handoff folder only.",
+  "Never push, never open pull requests, and never change the Work item status; Slab does this.",
+].join("\n");
+
 const MODE_POLICIES: Record<
   Exclude<RunMode, "review" | "assignment">,
   string
 > = {
+  code_stage: CODE_STAGE_POLICY,
   chat: [
     "Respond to the user's current conversation.",
     "The conversation is the primary context for this run.",
@@ -112,6 +129,9 @@ function assertTriggerMode(trigger: RunTrigger, mode: RunMode) {
   ) {
     throw new Error(`${trigger} requires work_item execution mode.`);
   }
+  if ((trigger === "coding") !== (mode === "code_stage")) {
+    throw new Error("Coding stage runs require the coding trigger.");
+  }
   if (
     (trigger === "manual" || trigger === "automation" || trigger === "email") &&
     !["review", "task"].includes(mode)
@@ -127,7 +147,10 @@ export function defineRunExecution(input: {
   eventInstructions?: string | null;
 }): RunExecution {
   const issueKey = input.issueKey?.trim() || null;
-  const issueScoped = input.mode === "assignment" || input.mode === "work_item";
+  const issueScoped =
+    input.mode === "assignment" ||
+    input.mode === "work_item" ||
+    input.mode === "code_stage";
 
   assertTriggerMode(input.trigger, input.mode);
   if (issueScoped && !issueKey) {

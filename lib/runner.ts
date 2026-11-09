@@ -68,6 +68,8 @@ import type {
 import { codexLoginIdPattern } from "@/lib/codex-auth-contract";
 import { issueDocsRunAccess } from "@/lib/docs-access";
 import { registerDocsRunAccess } from "@/lib/docs-run-changes";
+import { codeRunnerHeaders, codeRunnerUrl } from "@/lib/coding/code-runner";
+import { codingRepository } from "@/lib/repositories/coding-repository";
 import {
   emailReplyConstraintHeaders,
   type EmailReplyToolConstraint,
@@ -82,10 +84,34 @@ type RunnerRuntimeDependencies = {
 
 const runnerUrl = () => getSetting("runner_url").replace(/\/$/, "");
 
+/** "agent" is the default Slab Runner; "code" is slab-runner-code (coding stage runs). */
+export type RunnerTarget = "agent" | "code";
+
+function targetUrl(target: RunnerTarget) {
+  return target === "code" ? codeRunnerUrl() : runnerUrl();
+}
+
+function targetHeaders(
+  target: RunnerTarget,
+  headers: Record<string, string> = {},
+) {
+  return target === "code" ? codeRunnerHeaders(headers) : runnerHeaders(headers);
+}
+
+/** Coding stage runs execute on the code runner; every other run on the default Runner. */
+export function runnerTargetForRun(runId: string): RunnerTarget {
+  try {
+    return codingRepository.stageForRun(runId) ? "code" : "agent";
+  } catch {
+    return "agent";
+  }
+}
+
 async function assertRunnerBudgetSupport(
   runtimeId: string,
   budget: RuntimeBudget | null | undefined,
   fetcher: typeof fetch,
+  target: RunnerTarget = "agent",
 ) {
   if (!budget || (budget.maxTokens === null && budget.maxCostUsd === null)) {
     return;
@@ -113,7 +139,7 @@ async function assertRunnerBudgetSupport(
 
   let runtimes: RunnerRuntimeSummary[];
   try {
-    runtimes = await listRunnerRuntimes(fetcher);
+    runtimes = await listRunnerRuntimes(fetcher, target);
   } catch (error) {
     const detail =
       error instanceof Error ? error.message : "Runtime catalog unavailable.";
@@ -313,12 +339,14 @@ async function codexAuthRequest<T>(
   options: {
     method?: "GET" | "POST" | "DELETE";
     fetcher?: typeof fetch;
+    target?: RunnerTarget;
     parse: (value: unknown) => T;
   },
 ): Promise<T> {
-  const response = await (options.fetcher ?? fetch)(`${runnerUrl()}${path}`, {
+  const target = options.target ?? "agent";
+  const response = await (options.fetcher ?? fetch)(`${targetUrl(target)}${path}`, {
     method: options.method ?? "GET",
-    headers: runnerHeaders({ Accept: "application/json" }),
+    headers: targetHeaders(target, { Accept: "application/json" }),
     signal: AbortSignal.timeout(options.method === "GET" ? 5_000 : 15_000),
     cache: "no-store",
   });
@@ -333,17 +361,25 @@ async function codexAuthRequest<T>(
   return options.parse(payload.data);
 }
 
-export function getCodexAuthStatus(fetcher: typeof fetch = fetch) {
+export function getCodexAuthStatus(
+  fetcher: typeof fetch = fetch,
+  target: RunnerTarget = "agent",
+) {
   return codexAuthRequest("/auth/codex", {
     fetcher,
+    target,
     parse: parseCodexAuthStatus,
   });
 }
 
-export function startCodexDeviceLogin(fetcher: typeof fetch = fetch) {
+export function startCodexDeviceLogin(
+  fetcher: typeof fetch = fetch,
+  target: RunnerTarget = "agent",
+) {
   return codexAuthRequest("/auth/codex/device-login", {
     method: "POST",
     fetcher,
+    target,
     parse: parseCodexDeviceLogin,
   });
 }
@@ -351,6 +387,7 @@ export function startCodexDeviceLogin(fetcher: typeof fetch = fetch) {
 export function cancelCodexDeviceLogin(
   loginId: string,
   fetcher: typeof fetch = fetch,
+  target: RunnerTarget = "agent",
 ) {
   if (!codexLoginIdPattern.test(loginId)) {
     throw new RunnerRequestError("Invalid Codex authentication login ID.", 400);
@@ -360,15 +397,20 @@ export function cancelCodexDeviceLogin(
     {
       method: "DELETE",
       fetcher,
+      target,
       parse: parseCodexDeviceLogin,
     },
   );
 }
 
-export function logoutCodex(fetcher: typeof fetch = fetch) {
+export function logoutCodex(
+  fetcher: typeof fetch = fetch,
+  target: RunnerTarget = "agent",
+) {
   return codexAuthRequest("/auth/codex/logout", {
     method: "POST",
     fetcher,
+    target,
     parse: parseCodexAuthStatus,
   });
 }
@@ -391,8 +433,21 @@ export async function startRunnerRun(
   },
   dependencies: RunnerRuntimeDependencies = {},
 ) {
-  const baseUrl = runnerUrl();
-  const transportHeaders = runnerHeaders({
+  const target: RunnerTarget =
+    input.execution.mode === "code_stage" ? "code" : "agent";
+  const codeStage =
+    target === "code"
+      ? codingRepository.stageForRun(input.controlPlaneRunId ?? input.runId)
+      : null;
+  const codeRun = codeStage ? codingRepository.getRun(codeStage.codeRunId) : null;
+  if (target === "code" && !codeRun) {
+    throw new RunnerRequestError(
+      "This coding stage run is not linked to a coding run.",
+      409,
+    );
+  }
+  const baseUrl = targetUrl(target);
+  const transportHeaders = targetHeaders(target, {
     "Content-Type": "application/json",
     Accept: "application/json",
   });
@@ -424,6 +479,7 @@ export async function startRunnerRun(
     input.agent.runtime,
     input.budget,
     dependencies.fetcher ?? fetch,
+    target,
   );
 
   const contextMessages =
@@ -521,11 +577,17 @@ export async function startRunnerRun(
       name: "docs" as const,
       url: docsMcpUrl,
     },
-    ...(posthogMcp ? [posthogMcp] : []),
-    ...(emailServer ? [emailServer] : []),
-    ...calendarMcpServers,
-    ...googleDataMcpServers,
-    ...customMcpServers,
+    // Coding stages run without a sandbox on untrusted repository and PR content:
+    // they only get Work and Docs, never email, calendar, Google or custom integrations.
+    ...(target === "code"
+      ? []
+      : [
+          ...(posthogMcp ? [posthogMcp] : []),
+          ...(emailServer ? [emailServer] : []),
+          ...calendarMcpServers,
+          ...googleDataMcpServers,
+          ...customMcpServers,
+        ]),
   ];
   const policyRunId = input.controlPlaneRunId ?? input.runId;
   const { servers: mcpServers, snapshot: toolPolicySnapshot } =
@@ -743,6 +805,12 @@ export async function startRunnerRun(
       context,
       mcpServers,
       cwd: null,
+      ...(codeRun
+        ? {
+            workspace: { id: codeRun.workspaceId },
+            limits: { wallClockSeconds: 3600 },
+          }
+        : {}),
     }),
     afterEventId: input.runnerEventCursor,
     fetcher: dependencies.fetcher,
@@ -794,11 +862,12 @@ export async function startRunnerRun(
 }
 
 export async function cancelRunnerRun(runId: string) {
+  const target = runnerTargetForRun(runId);
   const response = await fetch(
-    `${runnerUrl()}/runs/${encodeURIComponent(runId)}`,
+    `${targetUrl(target)}/runs/${encodeURIComponent(runId)}`,
     {
       method: "DELETE",
-      headers: runnerHeaders(),
+      headers: targetHeaders(target),
       signal: AbortSignal.timeout(10_000),
     },
   );
@@ -812,11 +881,12 @@ export async function resolveRunnerApproval(
   approvalId: string,
   decision: "approve" | "deny",
 ) {
+  const target = runnerTargetForRun(runId);
   const response = await fetch(
-    `${runnerUrl()}/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(approvalId)}`,
+    `${targetUrl(target)}/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(approvalId)}`,
     {
       method: "POST",
-      headers: runnerHeaders({ "Content-Type": "application/json" }),
+      headers: targetHeaders(target, { "Content-Type": "application/json" }),
       body: JSON.stringify({ decision }),
     },
   );
@@ -836,9 +906,10 @@ export async function testRunner() {
 
 export async function listRunnerRuntimes(
   fetcher: typeof fetch = fetch,
+  target: RunnerTarget = "agent",
 ): Promise<RunnerRuntimeSummary[]> {
-  const response = await fetcher(`${runnerUrl()}/runtimes`, {
-    headers: runnerHeaders(),
+  const response = await fetcher(`${targetUrl(target)}/runtimes`, {
+    headers: targetHeaders(target),
     signal: AbortSignal.timeout(5_000),
     cache: "no-store",
   });

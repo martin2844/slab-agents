@@ -22,6 +22,7 @@ import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StartCodingRunDialog } from "@/components/coding/start-coding-run-dialog";
 import {
   Dialog,
   DialogContent,
@@ -443,17 +444,23 @@ function IssueDialog({
               {detail?.issue.title ?? "Loading issue…"}
             </DialogTitle>
             {detail && !editing && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                disabled={Boolean(resolvingId)}
-                onClick={startEditing}
-              >
-                <Pencil />
-                Edit
-              </Button>
+              <div className="flex shrink-0 items-center gap-2">
+                <StartCodingRunDialog
+                  issueKey={detail.issue.key}
+                  projectKey={detail.issue.project_key ?? null}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  disabled={Boolean(resolvingId)}
+                  onClick={startEditing}
+                >
+                  <Pencil />
+                  Edit
+                </Button>
+              </div>
             )}
           </div>
         </DialogHeader>

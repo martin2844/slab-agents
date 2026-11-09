@@ -7,6 +7,7 @@ import {
   Activity,
   Bot,
   CalendarClock,
+  Code2,
   Database,
   FileText,
   BookOpenText,
@@ -38,6 +39,7 @@ const nav = [
     items: [
       { href: "/", label: "Overview", icon: LayoutDashboard },
       { href: "/work", label: "Work", icon: PanelsTopLeft },
+      { href: "/coding", label: "Coding", icon: Code2 },
       { href: "/agents", label: "Agents", icon: Bot },
       { href: "/runs", label: "Runs", icon: Activity },
     ],
@@ -104,15 +106,46 @@ function useWhatsAppNav(pathname: string) {
   return state;
 }
 
+/** Number of coding runs that wait for the operator. */
+function useCodingAttention(pathname: string) {
+  const [attention, setAttention] = useState(0);
+  useEffect(() => {
+    if (pathname === "/login") return;
+    let cancelled = false;
+    const load = () =>
+      fetch("/api/coding/nav", { cache: "no-store" })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((payload) => {
+          if (!cancelled && payload?.data) setAttention(Number(payload.data.attention) || 0);
+        })
+        .catch(() => undefined);
+    void load();
+    const timer = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pathname]);
+  return attention;
+}
+
 function Navigation({
   onNavigate,
   whatsapp,
+  codingAttention = 0,
 }: {
   onNavigate?: () => void;
   whatsapp: WhatsAppNavState | null;
+  codingAttention?: number;
 }) {
   const pathname = usePathname();
-  const groups = nav.map((group) =>
+  const withCoding = nav.map((group) => ({
+    ...group,
+    items: group.items.map((item) =>
+      item.href === "/coding" ? { ...item, badge: codingAttention } : item,
+    ),
+  }));
+  const groups = withCoding.map((group) =>
     group.label === "Operate" && whatsapp?.enabled
       ? {
           ...group,
@@ -207,6 +240,7 @@ export function WorkspaceShell({
   const pathname = usePathname();
   const router = useRouter();
   const whatsapp = useWhatsAppNav(pathname);
+  const codingAttention = useCodingAttention(pathname);
 
   if (pathname === "/login") return children;
 
@@ -227,7 +261,7 @@ export function WorkspaceShell({
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground lg:flex lg:flex-col">
           <Brand />
           <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
-            <Navigation whatsapp={whatsapp} />
+            <Navigation whatsapp={whatsapp} codingAttention={codingAttention} />
           </div>
           <div className="shrink-0 px-1 py-1">
             <span className="mb-2 block h-px bg-sidebar-border" />
@@ -268,6 +302,7 @@ export function WorkspaceShell({
               <div className="mt-8 min-h-0 flex-1 overflow-y-auto">
                 <Navigation
                   whatsapp={whatsapp}
+                  codingAttention={codingAttention}
                   onNavigate={() => setMobileOpen(false)}
                 />
               </div>

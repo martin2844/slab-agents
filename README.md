@@ -102,6 +102,7 @@ This preview shows ongoing development and is not included in the current stable
 | Understand permissions and approvals | [Permissions and document changes](docs/permissions-and-docs.md) |
 | Automate customer conversations | [Email](docs/email-automations-and-tool-control-plane.md) · [WhatsApp setup](docs/whatsapp.md) · [WhatsApp automations (development)](docs/whatsapp-automations.md) |
 | Connect business tools | [Calendars](docs/calendar-integrations.md) · [Google Analytics and Search Console](docs/google-data-integrations.md) · [Custom integrations](docs/custom-integrations.md) |
+| Turn Work items into pull requests (development) | [Coding runs](docs/coding.md) |
 | Give agents useful context | [Knowledge sources](docs/sources.md) · [Memory](docs/memory.md) · [Blueprints](docs/operator-packs.md) |
 | Follow progress and maintain my server | [Notifications](docs/operator-notifications.md) · [Updates, backups, and recovery](https://github.com/martin2844/slab-stack#readme) |
 | Work on the code | [Contributing](CONTRIBUTING.md) · [Architecture and configuration](docs/development.md) |

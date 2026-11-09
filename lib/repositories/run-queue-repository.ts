@@ -257,18 +257,25 @@ export class RunQueueRepository {
       // approval must only hold up that conversation, not the agent's inbox.
       // Ordinary work keeps agent-wide serialization, and the same thread is
       // always exclusive even when a human starts a manual turn in that chat.
+      // Coding stages are the same: each stage owns its thread and the code
+      // runner serializes work per workspace, so coding runs run in parallel.
       const scope = {
         agentId: String(run.agent_id),
         threadId: run.thread_id ?? null,
         independentWhatsApp:
-          run.trigger === "whatsapp" && run.mode === "chat" && run.thread_id
+          run.thread_id &&
+          ((run.trigger === "whatsapp" && run.mode === "chat") ||
+            (run.trigger === "coding" && run.mode === "code_stage"))
             ? 1
             : 0,
       };
       const conflictingScope = `agent_id=@agentId AND (
         thread_id=@threadId OR
         (@independentWhatsApp=0 AND (
-          COALESCE(trigger,'')<>'whatsapp' OR COALESCE(mode,'')<>'chat'
+          NOT (
+            (COALESCE(trigger,'')='whatsapp' AND COALESCE(mode,'')='chat')
+            OR (COALESCE(trigger,'')='coding' AND COALESCE(mode,'')='code_stage')
+          )
           OR thread_id IS NULL OR thread_id=''
         ))
       )`;

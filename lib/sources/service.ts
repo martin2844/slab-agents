@@ -242,7 +242,12 @@ async function sourceAccess(source: KnowledgeSourceRecord) {
   ) {
     if (!source.githubAppId)
       throw badRequest("GitHub App connection is missing.");
-    return { githubToken: await githubInstallationToken(source.githubAppId) };
+    // Sources only read trees and blobs: keep the token read-only even though the App can write.
+    return {
+      githubToken: await githubInstallationToken(source.githubAppId, {
+        permissions: { contents: "read", metadata: "read" },
+      }),
+    };
   }
   return { secret };
 }

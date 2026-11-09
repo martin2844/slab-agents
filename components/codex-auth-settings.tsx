@@ -46,9 +46,12 @@ function loginStatusLabel(login: CodexDeviceLogin) {
 export function CodexAuthSettings({
   registered,
   onAuthenticationChanged,
+  apiBase = "/api/runtimes/codex/auth",
 }: {
   registered: boolean;
   onAuthenticationChanged: () => Promise<void>;
+  /** Auth endpoints; the code runner uses /api/coding/runner/auth. */
+  apiBase?: string;
 }) {
   const [auth, setAuth] = useState<CodexAuthStatus | null>(null);
   const [busy, setBusy] = useState<"start" | "cancel" | "logout" | null>(null);
@@ -70,7 +73,7 @@ export function CodexAuthSettings({
       const controller = new AbortController();
       statusControllers.current.add(controller);
       try {
-        const next = await api<CodexAuthStatus>("/api/runtimes/codex/auth", {
+        const next = await api<CodexAuthStatus>(apiBase, {
           signal: controller.signal,
         });
         if (requestId !== requestGeneration.current) return null;
@@ -101,7 +104,7 @@ export function CodexAuthSettings({
         statusControllers.current.delete(controller);
       }
     },
-    [invalidateStatusReads, onAuthenticationChanged],
+    [apiBase, invalidateStatusReads, onAuthenticationChanged],
   );
 
   useEffect(() => {
@@ -142,7 +145,7 @@ export function CodexAuthSettings({
     setBusy("start");
     try {
       const login = await api<CodexDeviceLogin>(
-        "/api/runtimes/codex/auth/device-login",
+        `${apiBase}/device-login`,
         { method: "POST" },
       );
       setAuth((current) => ({
@@ -171,7 +174,7 @@ export function CodexAuthSettings({
     setBusy("cancel");
     try {
       const login = await api<CodexDeviceLogin>(
-        `/api/runtimes/codex/auth/device-login/${encodeURIComponent(loginId)}`,
+        `${apiBase}/device-login/${encodeURIComponent(loginId)}`,
         { method: "DELETE" },
       );
       setAuth((current) =>
@@ -196,7 +199,7 @@ export function CodexAuthSettings({
     setBusy("logout");
     try {
       const next = await api<CodexAuthStatus>(
-        "/api/runtimes/codex/auth/logout",
+        `${apiBase}/logout`,
         { method: "POST" },
       );
       previousStatus.current = next.status;

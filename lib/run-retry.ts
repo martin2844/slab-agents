@@ -33,6 +33,8 @@ function retryRunIdFor(payload: RetriedPayload) {
 function blockReason(run: Run): string | null {
   if (run.trigger === "email")
     return "Email workflow steps retry through their workflow, not individually.";
+  if (run.trigger === "coding")
+    return "Coding stages retry from their coding run (Re-run from here).";
   const agent = agentRepository.getAgent(run.agentId);
   if (!agent) return "The agent no longer exists.";
   if (!agent.enabled) return "This agent is disabled.";

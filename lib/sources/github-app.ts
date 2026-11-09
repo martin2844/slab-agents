@@ -103,7 +103,17 @@ export function createGithubAppManifest(input: {
     redirect_url: `${input.origin}/api/sources/github/callback/manifest`,
     setup_url: `${input.origin}/api/sources/github/callback/install`,
     public: false,
-    default_permissions: { contents: "read", metadata: "read" },
+    // Sources read files; Coding pushes run branches and opens draft PRs.
+    // "workflows" is intentionally NOT requested: GitHub then rejects any
+    // agent push that changes .github/workflows, so CI secrets stay protected.
+    default_permissions: {
+      contents: "write",
+      metadata: "read",
+      pull_requests: "write",
+      issues: "write",
+      checks: "read",
+      statuses: "read",
+    },
     default_events: [] as string[],
   };
   const owner = input.organization
@@ -172,16 +182,31 @@ export async function completeGithubInstallation(
   });
 }
 
-export async function githubInstallationToken(id: string) {
+/**
+ * Installation token, optionally narrowed to some repositories (names, without the owner)
+ * and a subset of the App's permissions. Narrow it whenever the token leaves this process.
+ */
+export type GithubTokenScope = {
+  repositories?: string[];
+  permissions?: Record<string, "read" | "write">;
+};
+
+export async function githubInstallationToken(id: string, scope: GithubTokenScope = {}) {
   const app = requireRegisteredApp(id);
   if (!app.installationId) throw badRequest("Install the GitHub App first.");
+  const body = {
+    ...(scope.repositories ? { repositories: scope.repositories } : {}),
+    ...(scope.permissions ? { permissions: scope.permissions } : {}),
+  };
   const result = await githubJson<{ token: string; expires_at: string }>(
     `/app/installations/${encodeURIComponent(app.installationId)}/access_tokens`,
     {
       method: "POST",
       headers: {
         Authorization: `Bearer ${appJwt(app.appId!, app.privateKeyCiphertext!)}`,
+        ...(Object.keys(body).length ? { "Content-Type": "application/json" } : {}),
       },
+      ...(Object.keys(body).length ? { body: JSON.stringify(body) } : {}),
     },
   );
   return result.token;
