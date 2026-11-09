@@ -2,7 +2,6 @@ import "server-only";
 
 import { agentRepository } from "@/lib/repositories/agent-repository";
 import { settingsRepository } from "@/lib/repositories/settings-repository";
-import { CODING_PROMPTS } from "@/lib/coding/prompts";
 import {
   AGENT_STAGES,
   DEFAULT_STAGE_AGENT_SLUGS,
@@ -17,76 +16,53 @@ type AgentTemplate = {
   slug: string;
   name: string;
   role: string;
-  stage: AgentStage;
+  instructions: string;
   reasoningEffort: ReasoningEffort;
 };
 
+// General instructions only. Each stage sends its own instructions with every run
+// (lib/coding/prompts.ts), so one agent can run several stages.
 const TEMPLATES: AgentTemplate[] = [
   {
     slug: "code-pm",
     name: "Code PM",
-    role: "Turns Work items into clear product specs for coding runs.",
-    stage: "pm",
+    role: "Product manager of Slab coding runs: turns Work items into clear product specs.",
+    instructions: [
+      "You are the product manager of Slab coding runs.",
+      "",
+      "- Each run gives you the instructions of its stage and a stage contract. Follow them exactly.",
+      "- Understand the problem before the solution. Read the Work item, its comments and links, Slab Docs, and the code.",
+      "- Ask only what the sources cannot answer. Give options when the answer has a few likely values.",
+      "- Write acceptance criteria that an engineer can test.",
+      "- Never change code. Never change the status or the fields of Work items.",
+      "- Write in Simplified Technical English: active voice, short sentences, one idea per sentence.",
+    ].join("\n"),
     reasoningEffort: "high",
-  },
-  {
-    slug: "code-tech-lead",
-    name: "Tech Lead",
-    role: "Plans code changes step by step from the product spec.",
-    stage: "tech_spec",
-    reasoningEffort: "high",
-  },
-  {
-    slug: "code-plan-reviewer",
-    name: "Plan Reviewer",
-    role: "Scores implementation plans against a fixed rubric.",
-    stage: "plan_review",
-    reasoningEffort: "xhigh",
   },
   {
     slug: "code-engineer",
     name: "Engineer",
-    role: "Implements approved plans on the run branch and runs the checks.",
-    stage: "engineer",
-    reasoningEffort: "medium",
-  },
-  {
-    slug: "code-reviewer",
-    name: "Code Reviewer",
-    role: "Reviews and fixes the run branch before it is published.",
-    stage: "code_review",
+    role: "Software engineer of Slab coding runs: plans, reviews, implements, and ships code changes.",
+    instructions: [
+      "You are the software engineer of Slab coding runs. You plan, review, implement, and fix code changes.",
+      "",
+      "- Each run gives you the instructions of its stage and a stage contract. Follow them exactly. The stage decides your role: tech lead, plan reviewer, engineer, code reviewer, release writer, or PR fixer.",
+      "- Read the repository rules first: AGENTS.md, CLAUDE.md, CONTRIBUTING.md, the lint config, and the code around the change.",
+      "- Match the conventions of the code around the change. Reuse current functions before you add new ones.",
+      "- Keep changes small and focused on the Work item. Do not refactor unrelated code.",
+      "- Run the checks that cover your change. Never report a check as passing when you did not run it.",
+      "- Never push, never open pull requests, never call the GitHub API, and never edit .github/workflows/. Slab publishes after human review.",
+      "- Write in Simplified Technical English: active voice, short sentences, one idea per sentence.",
+    ].join("\n"),
     reasoningEffort: "high",
-  },
-  {
-    slug: "code-release-writer",
-    name: "Release Writer",
-    role: "Writes pull request descriptions for coding runs.",
-    stage: "final_pass",
-    reasoningEffort: "low",
-  },
-  {
-    slug: "code-pr-fixer",
-    name: "PR Fixer",
-    role: "Handles review feedback and change requests on coding run branches.",
-    stage: "pr_feedback",
-    reasoningEffort: "medium",
   },
 ];
 
-function chatInstructions() {
-  return [
-    CODING_PROMPTS.pr_feedback,
-    "",
-    "## Run chat",
-    "",
-    "When the stage contract says the stage is `chat`, follow these rules instead of the feedback steps:",
-    "",
-    CODING_PROMPTS.chat,
-  ].join("\n");
-}
-
-/** Creates the default coding agents that do not exist yet. Existing agents are never changed. */
-export function ensureCodingAgents() {
+/**
+ * Creates the default coding agents that do not exist yet (existing agents are never
+ * changed) and assigns them to every stage.
+ */
+export function ensureCodingAgents(options: { assign?: boolean } = {}) {
   const created: Agent[] = [];
   for (const template of TEMPLATES) {
     if (agentRepository.getAgent(template.slug)) continue;
@@ -95,10 +71,7 @@ export function ensureCodingAgents() {
         name: template.name,
         slug: template.slug,
         role: template.role,
-        instructions:
-          template.stage === "pr_feedback"
-            ? chatInstructions()
-            : CODING_PROMPTS[template.stage],
+        instructions: template.instructions,
         model: "default",
         enabled: true,
         fullAccess: false,
@@ -108,6 +81,7 @@ export function ensureCodingAgents() {
       }),
     );
   }
+  if (options.assign) setStageAgentOverrides({});
   return created;
 }
 

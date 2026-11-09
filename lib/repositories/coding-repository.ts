@@ -14,6 +14,7 @@ import type {
   CodeRepository,
   CodeRun,
   CodeRunArtifact,
+  CodeRunRepository,
   CodeRunStage,
   StageUsage,
 } from "@/lib/coding/types";
@@ -42,6 +43,43 @@ function mapRepository(row: Row): CodeRepository {
   };
 }
 
+function mapRunRepository(row: Row): CodeRunRepository {
+  const owner = String(row.owner ?? "?");
+  const name = String(row.name ?? "?");
+  return {
+    id: String(row.id),
+    codeRunId: String(row.code_run_id),
+    repositoryId: String(row.repository_id),
+    position: Number(row.position),
+    owner,
+    name,
+    fullName: row.owner == null ? "(deleted repository)" : `${owner}/${name}`,
+    workspaceId: String(row.workspace_id),
+    workspaceStatus: String(row.workspace_status ?? "pending") as CodeRunRepository["workspaceStatus"],
+    baseSha: text(row.base_sha),
+    headSha: text(row.head_sha),
+    prNumber: integer(row.pr_number),
+    prUrl: text(row.pr_url),
+    prState: text(row.pr_state) as CodeRunRepository["prState"],
+    ciState: text(row.ci_state) as CodeRunRepository["ciState"],
+    prCheckedAt: text(row.pr_checked_at),
+    lastPublishedSha: text(row.last_published_sha),
+    publishedAt: text(row.published_at),
+    error: text(row.error),
+  };
+}
+
+const RUN_REPOSITORY_SELECT =
+  "SELECT rr.*, r.owner AS owner, r.name AS name FROM code_run_repositories rr LEFT JOIN code_repositories r ON r.id = rr.repository_id";
+
+function listRunRepositories(codeRunId: string) {
+  return (
+    db
+      .prepare(`${RUN_REPOSITORY_SELECT} WHERE rr.code_run_id=? ORDER BY rr.position`)
+      .all(codeRunId) as Row[]
+  ).map(mapRunRepository);
+}
+
 function mapRun(row: Row): CodeRun {
   return {
     id: String(row.id),
@@ -56,16 +94,8 @@ function mapRun(row: Row): CodeRun {
       row.workspace_status ?? "pending",
     ) as CodeRun["workspaceStatus"],
     branch: String(row.branch),
-    baseSha: text(row.base_sha),
-    headSha: text(row.head_sha),
     note: String(row.note ?? ""),
-    prNumber: integer(row.pr_number),
-    prUrl: text(row.pr_url),
-    prState: text(row.pr_state) as CodeRun["prState"],
-    ciState: text(row.ci_state) as CodeRun["ciState"],
-    prCheckedAt: text(row.pr_checked_at),
-    lastPublishedSha: text(row.last_published_sha),
-    publishedAt: text(row.published_at),
+    repositories: listRunRepositories(String(row.id)),
     error: text(row.error),
     startedAt: String(row.started_at),
     finishedAt: text(row.finished_at),
@@ -113,6 +143,7 @@ function mapFeedback(row: Row): CodeFeedbackItem {
   return {
     id: String(row.id),
     codeRunId: String(row.code_run_id),
+    runRepositoryId: text(row.run_repository_id),
     githubId: String(row.github_id),
     kind: row.kind as CodeFeedbackItem["kind"],
     author: String(row.author),
@@ -152,6 +183,13 @@ const RUN_COLUMNS: Record<string, string> = {
   status: "status",
   currentStage: "current_stage",
   workspaceStatus: "workspace_status",
+  error: "error",
+  finishedAt: "finished_at",
+  title: "title",
+};
+
+const RUN_REPOSITORY_COLUMNS: Record<string, string> = {
+  workspaceStatus: "workspace_status",
   baseSha: "base_sha",
   headSha: "head_sha",
   prNumber: "pr_number",
@@ -162,8 +200,6 @@ const RUN_COLUMNS: Record<string, string> = {
   lastPublishedSha: "last_published_sha",
   publishedAt: "published_at",
   error: "error",
-  finishedAt: "finished_at",
-  title: "title",
 };
 
 const STAGE_COLUMNS: Record<string, string> = {
@@ -279,8 +315,10 @@ export const codingRepository = {
   },
   deleteRepository(id: string) {
     const used = db
-      .prepare("SELECT 1 FROM code_runs WHERE repository_id=? LIMIT 1")
-      .get(id);
+      .prepare(
+        "SELECT 1 FROM code_runs WHERE repository_id=? UNION ALL SELECT 1 FROM code_run_repositories WHERE repository_id=? LIMIT 1",
+      )
+      .get(id, id);
     if (used) return false;
     return (
       db.prepare("DELETE FROM code_repositories WHERE id=?").run(id).changes ===
@@ -289,12 +327,14 @@ export const codingRepository = {
   },
 
   // Runs
+  /** Creates a run on one or more repositories; the first one is the primary repository. */
   createRun(input: {
     issueKey: string;
     title: string;
-    repositoryId: string;
+    repositoryIds: string[];
     note: string;
   }) {
+    if (!input.repositoryIds.length) throw new Error("A coding run needs a repository.");
     const id = randomUUID();
     const timestamp = now();
     const next =
@@ -306,6 +346,7 @@ export const codingRepository = {
         ).value,
       ) + 1;
     const slug = input.issueKey.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+    const workspaceId = `code-run-${next}-${id.slice(0, 8)}`;
     db.prepare(
       `INSERT INTO code_runs (id,number,issue_key,title,repository_id,status,current_stage,workspace_id,workspace_status,branch,note,started_at,updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -314,16 +355,32 @@ export const codingRepository = {
       next,
       input.issueKey,
       input.title,
-      input.repositoryId,
+      input.repositoryIds[0],
       "preparing",
       "pm",
-      `code-run-${next}-${id.slice(0, 8)}`,
+      workspaceId,
       "pending",
       `slab/${slug}-${next}`,
       input.note,
       timestamp,
       timestamp,
     );
+    const insert = db.prepare(
+      `INSERT INTO code_run_repositories (id,code_run_id,repository_id,position,workspace_id,workspace_status,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?)`,
+    );
+    input.repositoryIds.forEach((repositoryId, position) => {
+      insert.run(
+        `${id}:${position}`,
+        id,
+        repositoryId,
+        position,
+        position === 0 ? workspaceId : `${workspaceId}-r${position}`,
+        "pending",
+        timestamp,
+        timestamp,
+      );
+    });
     return codingRepository.getRun(id)!;
   },
   getRun(id: string) {
@@ -357,14 +414,32 @@ export const codingRepository = {
         .all() as Row[]
     ).map(mapRun);
   },
-  listRunsWithOpenPullRequests() {
+  /** Run repositories with a pull request that is still open (runs not cancelled). */
+  listOpenPullRequests() {
     return (
       db
         .prepare(
-          "SELECT * FROM code_runs WHERE pr_number IS NOT NULL AND (pr_state IS NULL OR pr_state IN ('draft','open')) AND status != 'cancelled' ORDER BY number",
+          `${RUN_REPOSITORY_SELECT} JOIN code_runs c ON c.id = rr.code_run_id WHERE rr.pr_number IS NOT NULL AND (rr.pr_state IS NULL OR rr.pr_state IN ('draft','open')) AND c.status != 'cancelled' ORDER BY c.number, rr.position`,
         )
         .all() as Row[]
-    ).map(mapRun);
+    ).map(mapRunRepository);
+  },
+  listRunRepositories,
+  getRunRepository(id: string) {
+    const row = db
+      .prepare(`${RUN_REPOSITORY_SELECT} WHERE rr.id=?`)
+      .get(id) as Row | undefined;
+    return row ? mapRunRepository(row) : null;
+  },
+  updateRunRepository(id: string, patch: Partial<CodeRunRepository>) {
+    updateColumns("code_run_repositories", RUN_REPOSITORY_COLUMNS, id, patch);
+    return codingRepository.getRunRepository(id)!;
+  },
+  /** Open runs that change this repository. */
+  listOpenRunsForRepository(repositoryId: string) {
+    return codingRepository
+      .listOpenRuns()
+      .filter((run) => run.repositories.some((item) => item.repositoryId === repositoryId));
   },
   listRunsWithQueuedSideStages() {
     return (
@@ -582,6 +657,7 @@ export const codingRepository = {
   },
   upsertFeedback(input: {
     codeRunId: string;
+    runRepositoryId: string;
     githubId: string;
     kind: CodeFeedbackItem["kind"];
     author: string;
@@ -598,15 +674,16 @@ export const codingRepository = {
       .prepare(
         "SELECT * FROM code_feedback_items WHERE code_run_id=? AND github_id=?",
       )
-      .get(input.codeRunId, input.githubId) as Row | undefined;
+      .get(input.codeRunId, `${input.githubId}`) as Row | undefined;
     const timestamp = now();
     if (!existing) {
       db.prepare(
-        `INSERT INTO code_feedback_items (id,code_run_id,github_id,kind,author,author_is_bot,path,line,body,url,review_comment_id,github_updated_at,status,created_at,updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO code_feedback_items (id,code_run_id,run_repository_id,github_id,kind,author,author_is_bot,path,line,body,url,review_comment_id,github_updated_at,status,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       ).run(
         randomUUID(),
         input.codeRunId,
+        input.runRepositoryId,
         input.githubId,
         input.kind,
         input.author,

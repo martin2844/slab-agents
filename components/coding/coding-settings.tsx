@@ -29,6 +29,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/client-api";
+import { CODING_PROMPTS } from "@/lib/coding/prompts";
 import { STAGE_DEFINITIONS, type AgentStage } from "@/lib/coding/stages";
 import type { CodeRepository } from "@/lib/coding/types";
 import type { Agent, GitHubRepositoryOption } from "@/lib/types";
@@ -278,7 +279,11 @@ export function CodingSettings({
       setMapping(result.mapping);
       // The agent options come from the server render: refresh them to include the new agents.
       router.refresh();
-      toast.success(result.created ? `Created ${result.created} coding agent(s)` : "All coding agents already exist");
+      toast.success(
+        result.created
+          ? `Created ${result.created} coding agent(s) and assigned them to every stage`
+          : "Assigned Code PM and Engineer to every stage",
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create the agents");
     } finally {
@@ -400,14 +405,14 @@ export function CodingSettings({
       <section>
         <SectionHeader
           title="Stage agents"
-          meta="Each stage runs as a normal Slab agent. Edit their instructions and models on the Agents page."
+          meta="Each stage runs as a normal Slab agent and sends its own stage instructions with every run, so one agent can run several stages. Edit the agents' general instructions and models on the Agents page."
           action={
             <Button size="sm" variant="outline" onClick={() => void createAgents()} disabled={busy}>
-              {busy ? <LoaderCircle className="animate-spin" /> : <Wand2 />} Create default agents
+              {busy ? <LoaderCircle className="animate-spin" /> : <Wand2 />} Use Code PM and Engineer
             </Button>
           }
         />
-        <div className="grid gap-2 rounded-lg border bg-card p-3">
+        <div className="grid gap-3 rounded-lg border bg-card p-3">
           {(mapping ?? []).map((item) => (
             <div key={item.stage} className="grid items-center gap-2 sm:grid-cols-[12rem_1fr]">
               <span className="text-sm font-[600]">{STAGE_DEFINITIONS[item.stage].name}</span>
@@ -423,6 +428,12 @@ export function CodingSettings({
                   ))}
                 </SelectContent>
               </Select>
+              <details className="text-xs text-muted-foreground sm:col-span-2">
+                <summary className="cursor-pointer select-none hover:text-foreground">Stage instructions</summary>
+                <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-[0.7rem] leading-5 text-foreground">
+                  {CODING_PROMPTS[item.stage]}
+                </pre>
+              </details>
             </div>
           ))}
         </div>

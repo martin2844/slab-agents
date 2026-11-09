@@ -61,7 +61,7 @@ import {
   STAGE_STATUS_LABELS,
   type CodingStage,
 } from "@/lib/coding/stages";
-import type { CodeFeedbackItem, CodeRunArtifact } from "@/lib/coding/types";
+import type { CodeFeedbackItem, CodeRunArtifact, CodeRunRepository } from "@/lib/coding/types";
 import type { CodeDiff } from "@/lib/coding/code-runner";
 import type { CodingRunDetail, CodeStageDetail } from "@/lib/coding/service";
 import type { Message, RunDetailData, RunEvent } from "@/lib/types";
@@ -267,12 +267,14 @@ function Activity({ runId }: { runId: string | null }) {
 function FeedbackPanel({
   runId,
   items,
+  repositories,
   stage,
   actionable,
   onChanged,
 }: {
   runId: string;
   items: CodeFeedbackItem[];
+  repositories: CodeRunRepository[];
   stage: CodeStageDetail | undefined;
   actionable: boolean;
   onChanged: () => Promise<void>;
@@ -329,6 +331,11 @@ function FeedbackPanel({
       {open.map((item) => (
         <div key={item.id} className="grid gap-2 rounded-lg border p-3">
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            {repositories.length > 1 && (
+              <span className="rounded-full border px-1.5 font-mono">
+                {repositories.find((entry) => entry.id === item.runRepositoryId)?.fullName ?? "?"}
+              </span>
+            )}
             <span className="font-[650] text-foreground">{item.author}</span>
             {item.authorIsBot && <StatusBadge status="draft" />}
             <span>{item.kind.replaceAll("_", " ")}</span>
@@ -396,25 +403,35 @@ function FeedbackPanel({
   );
 }
 
-function DiffDialog({ runId, open, onOpenChange }: { runId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+function DiffDialog({
+  runId,
+  repository,
+  onOpenChange,
+}: {
+  runId: string;
+  repository: CodeRunRepository | null;
+  onOpenChange: (open: boolean) => void;
+}) {
   const [diff, setDiff] = useState<CodeDiff | null>(null);
   const [error, setError] = useState("");
+  const open = Boolean(repository);
+  const repositoryId = repository?.id ?? null;
   useEffect(() => {
-    if (!open) return;
+    if (!repositoryId) return;
     const timer = window.setTimeout(() => {
       setDiff(null);
       setError("");
-      api<CodeDiff>(`/api/coding/runs/${runId}/diff`)
+      api<CodeDiff>(`/api/coding/runs/${runId}/diff?repository=${encodeURIComponent(repositoryId)}`)
         .then(setDiff)
         .catch((reason: Error) => setError(reason.message));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [open, runId]);
+  }, [repositoryId, runId]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[calc(100vh-2rem)] flex-col sm:max-w-5xl">
         <DialogHeader>
-          <DialogTitle>Files changed</DialogTitle>
+          <DialogTitle>Files changed{repository ? <span className="font-mono text-muted-foreground"> · {repository.fullName}</span> : null}</DialogTitle>
         </DialogHeader>
         {error && <p className="text-sm text-destructive">{error}</p>}
         {!diff && !error && <p className="text-sm text-muted-foreground">Loading…</p>}
@@ -464,7 +481,7 @@ export function CodingRunDetailView({ initialData }: { initialData: CodingRunDet
   const [tab, setTab] = useState<"output" | "conversation" | "activity">("output");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [diffOpen, setDiffOpen] = useState(false);
+  const [diffRepository, setDiffRepository] = useState<CodeRunRepository | null>(null);
   const [artifact, setArtifact] = useState<CodeRunArtifact | null>(null);
   const [stageOutput, setStageOutput] = useState<CodeRunArtifact | null>(null);
   const followCurrent = useRef(true);
@@ -551,6 +568,7 @@ export function CodingRunDetailView({ initialData }: { initialData: CodingRunDet
   const open = ["preparing", "active", "waiting"].includes(run.status);
   const workspaceReady = run.workspaceStatus === "ready";
   const actionable = workspaceReady && run.status !== "cancelled";
+  const hasPullRequest = run.repositories.some((item) => item.prNumber);
   const running = stageDetail && ["queued", "running"].includes(stageDetail.status);
   const canReply =
     workspaceReady &&
@@ -577,17 +595,19 @@ export function CodingRunDetailView({ initialData }: { initialData: CodingRunDet
               <Link href="/work" className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-xs hover:bg-muted">
                 {run.issueKey}
               </Link>
-              <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-xs">
-                <FolderGit2 className="size-3" /> {run.repository.fullName}
-              </span>
+              {run.repositories.map((item) => (
+                <span key={item.id} className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-xs">
+                  <FolderGit2 className="size-3" /> {item.fullName}
+                </span>
+              ))}
               <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-xs">
                 <GitBranch className="size-3" /> {run.branch}
               </span>
-              {run.prUrl && (
-                <a href={run.prUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-xs hover:bg-muted">
-                  <GitPullRequest className="size-3" /> #{run.prNumber}
+              {run.repositories.filter((item) => item.prUrl).map((item) => (
+                <a key={item.id} href={item.prUrl!} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-xs hover:bg-muted">
+                  <GitPullRequest className="size-3" /> {run.repositories.length > 1 ? item.name : ""}#{item.prNumber}
                 </a>
-              )}
+              ))}
               <span className="inline-flex items-center gap-1 text-xs">
                 <Clock className="size-3" /> Started {formatDateTime(run.startedAt)}
               </span>
@@ -626,7 +646,7 @@ export function CodingRunDetailView({ initialData }: { initialData: CodingRunDet
       )}
       {["pending", "preparing"].includes(run.workspaceStatus) && run.status !== "failed" && (
         <div className="flex items-center gap-2 rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
-          <LoaderCircle className="size-4 animate-spin" /> Preparing the workspace: cloning {run.repository.fullName} and running the setup command…
+          <LoaderCircle className="size-4 animate-spin" /> Preparing the workspace: cloning {run.repositories.map((item) => item.fullName).join(", ")} and running the setup commands…
         </div>
       )}
 
@@ -652,37 +672,53 @@ export function CodingRunDetailView({ initialData }: { initialData: CodingRunDet
         ))}
       </section>
 
-      {run.prUrl && (
-        <section className="rounded-xl border bg-card p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="flex items-center gap-2 font-mono text-sm">
-                <GitPullRequest className="size-4" /> {run.repository.fullName}{" "}
-                <span className="text-emerald-700">#{run.prNumber}</span>
-                {run.prState && <StatusBadge status={run.prState === "merged" ? "done" : run.prState} />}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                CI: {run.ciState ?? "unknown"} · branch {run.branch}
-                {run.publishedAt ? ` · last published ${formatDateTime(run.publishedAt)}` : ""}
-              </p>
+      {workspaceReady && (
+        <section className="grid gap-3 rounded-xl border bg-card p-4">
+          {run.repositories.map((item) => (
+            <div key={item.id} className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 font-mono text-sm">
+                  <GitPullRequest className="size-4" /> {item.fullName}{" "}
+                  {item.prUrl ? (
+                    <>
+                      <span className="text-emerald-700">#{item.prNumber}</span>
+                      {item.prState && <StatusBadge status={item.prState === "merged" ? "done" : item.prState} />}
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">no pull request yet</span>
+                  )}
+                </p>
+                {item.prUrl && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    CI: {item.ciState ?? "unknown"} · branch {run.branch}
+                    {item.publishedAt ? ` · last published ${formatDateTime(item.publishedAt)}` : ""}
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {item.prUrl && (
+                  <Button asChild size="sm">
+                    <a href={item.prUrl} target="_blank" rel="noreferrer">
+                      <ExternalLink /> Open PR
+                    </a>
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" onClick={() => setDiffRepository(item)}>
+                  <FileText /> Files changed
+                </Button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button asChild size="sm">
-                <a href={run.prUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink /> Open PR
-                </a>
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setDiffOpen(true)} disabled={!workspaceReady}>
-                <FileText /> Files changed
-              </Button>
+          ))}
+          {hasPullRequest && (
+            <div className="flex flex-wrap justify-end gap-2 border-t pt-3">
               <Button size="sm" variant="outline" disabled={!actionable || Boolean(busy)} onClick={() => void action("publish", `/api/coding/runs/${run.id}/publish`)}>
                 {busy === "publish" ? <LoaderCircle className="animate-spin" /> : <Upload />} Publish changes
               </Button>
-              <Button size="sm" variant="outline" disabled={!workspaceReady || Boolean(busy)} onClick={() => select("pr_feedback")}>
+              <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => select("pr_feedback")}>
                 <MessagesSquare /> PR feedback
               </Button>
             </div>
-          </div>
+          )}
         </section>
       )}
 
@@ -750,8 +786,8 @@ export function CodingRunDetailView({ initialData }: { initialData: CodingRunDet
           )}
 
           {selected === "pr_feedback" ? (
-            run.prNumber ? (
-              <FeedbackPanel runId={run.id} items={data.feedback} stage={latestAttempt(data.stages, "pr_feedback")} actionable={actionable} onChanged={refresh} />
+            hasPullRequest ? (
+              <FeedbackPanel runId={run.id} items={data.feedback} repositories={run.repositories} stage={latestAttempt(data.stages, "pr_feedback")} actionable={actionable} onChanged={refresh} />
             ) : (
               <p className="p-4 text-sm text-muted-foreground">PR feedback is available after Slab opens the pull request.</p>
             )
@@ -853,18 +889,22 @@ export function CodingRunDetailView({ initialData }: { initialData: CodingRunDet
               </button>
             ))}
           </div>
-          {data.repository && (
-            <div className="border-t p-4 text-xs text-muted-foreground">
-              <p className="mb-1 font-mono uppercase tracking-wider">Repository commands</p>
-              <p>setup: {data.repository.setupCommand ?? "—"}</p>
-              <p>test: {data.repository.testCommand ?? "—"}</p>
-              <p>lint: {data.repository.lintCommand ?? "—"}</p>
-            </div>
+          {data.repositories.map((repository) =>
+            repository ? (
+              <div key={repository.id} className="border-t p-4 text-xs text-muted-foreground">
+                <p className="mb-1 font-mono uppercase tracking-wider">
+                  {data.repositories.length > 1 ? repository.fullName : "Repository commands"}
+                </p>
+                <p>setup: {repository.setupCommand ?? "—"}</p>
+                <p>test: {repository.testCommand ?? "—"}</p>
+                <p>lint: {repository.lintCommand ?? "—"}</p>
+              </div>
+            ) : null,
           )}
         </aside>
       </div>
 
-      <DiffDialog runId={run.id} open={diffOpen} onOpenChange={setDiffOpen} />
+      <DiffDialog runId={run.id} repository={diffRepository} onOpenChange={(value) => !value && setDiffRepository(null)} />
       <Dialog open={Boolean(artifact)} onOpenChange={(value) => !value && setArtifact(null)}>
         <DialogContent className="flex max-h-[calc(100vh-2rem)] flex-col sm:max-w-4xl">
           <DialogHeader>

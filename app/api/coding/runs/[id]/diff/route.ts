@@ -4,10 +4,10 @@ import { getRunDiff } from "@/lib/coding/service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
-    return Response.json({ data: await getRunDiff(id) });
+    return Response.json({ data: await getRunDiff(id, new URL(request.url).searchParams.get("repository")) });
   } catch (error) {
     return apiError(error, "Could not read the diff.");
   }

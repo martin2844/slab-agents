@@ -12,14 +12,17 @@ export async function GET(request: Request) {
 
 const startSchema = z.object({
   issueKey: z.string().min(1).max(64),
-  repositoryId: z.string().min(1),
+  /** First repository is the primary one. `repositoryId` is the single-repository form. */
+  repositoryIds: z.array(z.string().min(1)).min(1).max(5).optional(),
+  repositoryId: z.string().min(1).optional(),
   note: z.string().max(10_000).optional(),
 });
 
 export async function POST(request: Request) {
   try {
-    const input = startSchema.parse(await request.json());
-    return Response.json({ data: await startCodingRun(input) }, { status: 201 });
+    const { repositoryIds, repositoryId, issueKey, note } = startSchema.parse(await request.json());
+    const ids = repositoryIds ?? (repositoryId ? [repositoryId] : []);
+    return Response.json({ data: await startCodingRun({ issueKey, note, repositoryIds: ids }) }, { status: 201 });
   } catch (error) {
     return apiError(error, "Could not start the coding run.");
   }

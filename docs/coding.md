@@ -1,6 +1,6 @@
 # Coding runs (development preview)
 
-A coding run turns a Work item into a reviewed draft pull request. Each stage is a normal Slab agent run that works in its own checkout of one GitHub repository:
+A coding run turns a Work item into reviewed draft pull requests. A run can change one or several GitHub repositories (up to 5). Each stage is a normal Slab agent run that works in the run's checkouts:
 
 ```
 PM → Tech spec → Plan review → Engineer → Code review → Publish → Final pass   │   PR feedback · Run chat
@@ -17,7 +17,13 @@ PM → Tech spec → Plan review → Engineer → Code review → Publish → Fi
 | PR feedback | On demand. Slab reads review comments from GitHub; the agent triages each one (fix, reply, no action); you review the decisions; the agent fixes the accepted ones; you publish the fixes and replies. | Each step. |
 | Run chat | Ask about the run or request changes on the branch. Changes stay local until you choose **Publish changes**. | — |
 
-Agents never push, never open pull requests, and never call GitHub. Slab publishes the branch (`slab/<work-item>-<n>`) with the GitHub App after you approve, opens the PR as a draft, and leaves merging to you. When the PR is merged, the Work item moves to Done.
+Agents never push, never open pull requests, and never call GitHub. Slab publishes the branch (`slab/<work-item>-<n>`) with the GitHub App after you approve, opens the PR as a draft, and leaves merging to you. When every PR of the run is merged, the Work item moves to Done.
+
+## Several repositories
+
+Choose more than one repository when you start the run. Slab clones each one into its own workspace on the same branch name. The first repository you select is the primary one: the agent works from its checkout, and its workspace holds the handoff folder. The stage contract lists every checkout with its base commit, commands, setup notes, and PR.
+
+When you publish, Slab pushes only the repositories with commits and opens one draft PR in each. Every PR links the Work item and its sibling PRs, and the final pass description goes to all of them. PR feedback reads the comments of every PR; each item names its repository. With several repositories, the engineer writes the setup notes with one `### owner/name` subsection per repository.
 
 ## Set up
 
@@ -30,12 +36,12 @@ Agents never push, never open pull requests, and never call GitHub. Slab publish
 2. **Sign in to Codex on the code runner** in **Coding → Settings**. It has its own login, separate from the main runner.
 3. **Connect a GitHub App** in **Sources**. Apps created before Coding must accept the new permissions on GitHub: contents (write), pull requests (write), issues (write), checks and commit statuses (read). The App never requests the `workflows` permission, so GitHub rejects any agent change to `.github/workflows`.
 4. **Add the repository** in **Coding → Settings**: default branch, setup/test/lint/typecheck commands, and the Work project that uses it by default.
-5. **Create the stage agents** with **Create default agents**. They are normal agents (Code PM, Tech Lead, Plan Reviewer, Engineer, Code Reviewer, Release Writer, PR Fixer); edit their instructions, models, and reasoning effort on the Agents page, or assign other agents to stages.
+5. **Create the stage agents** with **Use Code PM and Engineer**. Slab creates two normal agents and assigns them: **Code PM** runs the PM stage and **Engineer** runs every other stage. Each stage sends its own instructions with every run (the stage prompts, visible under each stage in Settings), so the agents keep only general instructions. Edit their instructions, models, and reasoning effort on the Agents page, or assign other agents to stages.
 6. Protect the default branch on GitHub (required review). Slab never merges.
 
 ## Start a run
 
-Open a Work item and choose **Start coding run**, or use **New coding run** on the Coding page. Pick the repository and add an optional note for the PM.
+Open a Work item and choose **Start coding run**, or use **New coding run** on the Coding page. Pick one or more repositories (the repositories linked to the Work project are preselected) and add an optional note for the PM.
 
 The run page shows the stage strip (time, cost, model per stage), the pull request with CI state, each stage's output, conversation and activity, and every handoff file with its attempts. **Re-run from here** restarts a stage and every later one. Replying to a finished stage continues the same conversation and restarts the later stages.
 
@@ -43,7 +49,7 @@ The run page shows the stage strip (time, cost, model per stage), the pull reque
 
 The code runner container is the sandbox: Codex runs there without per-command approvals. The container holds only its own Codex login and runner token.
 
-- **GitHub tokens.** Installation tokens reach the code runner only during clone and push, never while an agent runs. They are limited to the one repository and to `contents` (read for clone, write for push). Pull requests, comments and CI state use a separate token that never leaves Slab.
+- **GitHub tokens.** Installation tokens reach the code runner only during clone and push, never while an agent runs. They are limited to one repository and to `contents` (read for clone, write for push). Pull requests, comments and CI state use a separate token that never leaves Slab.
 - **Publishing.** The runner pushes from a clean copy of the branch, never from the agent's checkout, and only to the run branch. It refuses any commit that touches `.github/workflows/` or `.gitmodules`.
 - **Tools.** Coding stages get only Work and Docs. Email, calendar, Google and custom integrations are never passed to them, even when the agent has them.
 - **PR comments.** Comments from people outside the repository (anyone can comment on a public repository) start dismissed and never reach the agent unless you reopen them. The same applies to bot summaries.

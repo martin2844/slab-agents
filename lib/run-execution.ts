@@ -71,7 +71,7 @@ const WORK_DELIVERABLE_POLICY = [
 const CODE_STAGE_POLICY = [
   "This run is one stage of a Slab coding run on the associated Work item.",
   "Follow the stage contract in the task input exactly: inputs, output file, and git rules.",
-  "Work in the repository checkout and the handoff folder only.",
+  "Work in the repository checkouts and the handoff folder only.",
   "Never push, never open pull requests, and never change the Work item status; Slab does this.",
 ].join("\n");
 

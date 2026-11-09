@@ -151,7 +151,11 @@ export function CodingRunsView({ initialRuns }: { initialRuns: CodeRunSummary[] 
                     {run.title}
                   </Link>
                 </td>
-                <td className={cn(denseTableCell, "font-mono text-xs")}>{run.repository.fullName}</td>
+                <td className={cn(denseTableCell, "font-mono text-xs")}>
+                  {run.repositories.map((item) => (
+                    <div key={item.id} className="truncate">{item.fullName}</div>
+                  ))}
+                </td>
                 <td className={denseTableCell}>
                   <MiniStrip run={run} />
                 </td>
@@ -166,16 +170,20 @@ export function CodingRunsView({ initialRuns }: { initialRuns: CodeRunSummary[] 
                   </div>
                 </td>
                 <td className={denseTableCell}>
-                  {run.prUrl ? (
-                    <a href={run.prUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs hover:underline">
-                      #{run.prNumber}
-                      {run.prState && <StatusBadge status={run.prState === "merged" ? "done" : run.prState} />}
-                      {run.ciState && run.ciState !== "none" && (
-                        <span className={cn("font-mono", run.ciState === "failure" ? "text-destructive" : run.ciState === "success" ? "text-emerald-700" : "text-amber-700")}>
-                          CI {run.ciState}
-                        </span>
-                      )}
-                    </a>
+                  {run.repositories.some((item) => item.prUrl) ? (
+                    <div className="flex flex-col gap-0.5">
+                      {run.repositories.filter((item) => item.prUrl).map((item) => (
+                        <a key={item.id} href={item.prUrl!} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs hover:underline">
+                          {run.repositories.length > 1 ? `${item.name}#${item.prNumber}` : `#${item.prNumber}`}
+                          {item.prState && <StatusBadge status={item.prState === "merged" ? "done" : item.prState} />}
+                          {item.ciState && item.ciState !== "none" && (
+                            <span className={cn("font-mono", item.ciState === "failure" ? "text-destructive" : item.ciState === "success" ? "text-emerald-700" : "text-amber-700")}>
+                              CI {item.ciState}
+                            </span>
+                          )}
+                        </a>
+                      ))}
+                    </div>
                   ) : (
                     <span className="text-xs text-muted-foreground">—</span>
                   )}

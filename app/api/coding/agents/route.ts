@@ -23,10 +23,10 @@ export async function GET() {
   return Response.json({ data: mapping() });
 }
 
-/** Creates the default coding agents that are missing. */
+/** Creates the default coding agents (PM and Engineer) that are missing and assigns them to every stage. */
 export async function POST() {
   try {
-    const created = ensureCodingAgents();
+    const created = ensureCodingAgents({ assign: true });
     return Response.json({ data: { created: created.length, mapping: mapping() } });
   } catch (error) {
     return apiError(error, "Could not create the coding agents.");

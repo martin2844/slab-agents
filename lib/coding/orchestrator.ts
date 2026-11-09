@@ -1,7 +1,12 @@
 import "server-only";
 
 import { codingRepository } from "@/lib/repositories/coding-repository";
-import { codeRunner, CodeRunnerError, type CodeWorkspace } from "@/lib/coding/code-runner";
+import {
+  codeRunner,
+  CodeRunnerError,
+  type CodeWorkspace,
+  type PublishResult,
+} from "@/lib/coding/code-runner";
 import {
   appIdentity,
   createDraftPullRequest,
@@ -28,7 +33,8 @@ import {
   type AgentStage,
   type CodingStage,
 } from "@/lib/coding/stages";
-import type { CodeRepository, CodeRun, CodeRunStage } from "@/lib/coding/types";
+import type { CodeRepository, CodeRun, CodeRunRepository, CodeRunStage } from "@/lib/coding/types";
+import { CODING_PROMPTS } from "@/lib/coding/prompts";
 import { agentForStage } from "@/lib/coding/agents";
 import {
   syncPullRequestMerged,
@@ -76,11 +82,20 @@ export function workspaceForRun(run: CodeRun) {
 // ---------------------------------------------------------------------------
 // Workspace preparation
 
-async function prepareWorkspace(run: CodeRun, repository: CodeRepository) {
-  codingRepository.updateRun(run.id, { workspaceStatus: "preparing", error: null });
+/** The configured repository of each run repository; throws when one was deleted. */
+export function runRepositories(run: CodeRun) {
+  return run.repositories.map((item) => {
+    const repository = codingRepository.getRepository(item.repositoryId);
+    if (!repository) throw new Error(`The repository ${item.fullName} no longer exists.`);
+    return { item, repository };
+  });
+}
+
+async function prepareWorkspace(run: CodeRun, item: CodeRunRepository, repository: CodeRepository) {
+  codingRepository.updateRunRepository(item.id, { workspaceStatus: "preparing", error: null });
   const token = await installationToken(repository, "fetch");
   await codeRunner.createWorkspace({
-    workspaceId: run.workspaceId,
+    workspaceId: item.workspaceId,
     repository: {
       cloneUrl: repositoryCloneUrl(repository),
       defaultBranch: repository.defaultBranch,
@@ -94,12 +109,13 @@ async function prepareWorkspace(run: CodeRun, repository: CodeRepository) {
   });
 }
 
-async function writeRunBrief(run: CodeRun, repository: CodeRepository) {
+async function writeRunBrief(run: CodeRun) {
+  const repositories = runRepositories(run).map(({ repository }) => repository.fullName);
   const lines = [
     "---",
     `run: ${run.number}`,
     `work_item: ${run.issueKey}`,
-    `repository: ${repository.fullName}`,
+    `repositories: [${repositories.join(", ")}]`,
     `branch: ${run.branch}`,
     "---",
     `# ${run.issueKey} — ${run.title}`,
@@ -140,57 +156,73 @@ function stillPreparing(runId: string) {
   return Boolean(latest && latest.status === "preparing");
 }
 
-async function reconcileWorkspace(run: CodeRun, repository: CodeRepository) {
+function failPreparation(run: CodeRun, item: CodeRunRepository, error: string) {
+  codingRepository.updateRunRepository(item.id, { workspaceStatus: "failed", error });
+  codingRepository.updateRun(run.id, {
+    workspaceStatus: "failed",
+    status: "failed",
+    error,
+    finishedAt: now(),
+  });
+}
+
+/** Prepares one workspace per repository. True when every workspace is ready. */
+async function reconcileWorkspace(run: CodeRun) {
+  if (run.workspaceStatus === "ready") return true;
+  if (run.workspaceStatus !== "pending" && run.workspaceStatus !== "preparing") return false;
   if (run.workspaceStatus === "pending") {
-    once(`workspace:${run.id}`, async () => {
-      try {
-        await prepareWorkspace(run, repository);
-      } catch (error) {
-        if (!stillPreparing(run.id)) return;
-        codingRepository.updateRun(run.id, {
-          workspaceStatus: "failed",
-          status: "failed",
-          error: `Could not prepare the workspace: ${errorMessage(error)}`,
-          finishedAt: now(),
-        });
-      }
-    });
-    return false;
+    codingRepository.updateRun(run.id, { workspaceStatus: "preparing", error: null });
   }
-  if (run.workspaceStatus === "preparing") {
-    once(`workspace:${run.id}`, async () => {
+  once(`workspace:${run.id}`, async () => {
+    const repositories = runRepositories(run);
+    let ready = 0;
+    for (const { repository } of repositories) {
+      if (!stillPreparing(run.id)) return;
+      const item = codingRepository
+        .listRunRepositories(run.id)
+        .find((entry) => entry.repositoryId === repository.id)!;
+      if (item.workspaceStatus === "ready") {
+        ready += 1;
+        continue;
+      }
+      if (item.workspaceStatus === "pending") {
+        try {
+          await prepareWorkspace(run, item, repository);
+        } catch (error) {
+          if (!stillPreparing(run.id)) return;
+          failPreparation(run, item, `Could not prepare the workspace of ${repository.fullName}: ${errorMessage(error)}`);
+          return;
+        }
+        continue;
+      }
       let workspace: CodeWorkspace;
       try {
-        workspace = await codeRunner.getWorkspace(run.workspaceId);
+        workspace = await codeRunner.getWorkspace(item.workspaceId);
       } catch (error) {
         if (error instanceof CodeRunnerError && error.status === 404) {
-          codingRepository.updateRun(run.id, { workspaceStatus: "pending" });
+          codingRepository.updateRunRepository(item.id, { workspaceStatus: "pending" });
         }
-        return;
+        continue;
       }
       if (!stillPreparing(run.id)) return;
       if (workspace.status === "failed") {
-        codingRepository.updateRun(run.id, {
-          workspaceStatus: "failed",
-          status: "failed",
-          error: `The workspace failed: ${workspace.error ?? "unknown error"}`,
-          finishedAt: now(),
-        });
+        failPreparation(run, item, `The workspace of ${repository.fullName} failed: ${workspace.error ?? "unknown error"}`);
         return;
       }
-      if (workspace.status === "preparing") return;
-      await writeRunBrief(run, repository);
-      if (!stillPreparing(run.id)) return;
-      codingRepository.updateRun(run.id, {
+      if (workspace.status === "preparing") continue;
+      codingRepository.updateRunRepository(item.id, {
         workspaceStatus: "ready",
         baseSha: workspace.baseSha,
         headSha: workspace.headSha,
-        status: "active",
       });
-    });
-    return false;
-  }
-  return run.workspaceStatus === "ready";
+      ready += 1;
+    }
+    if (ready < repositories.length) return;
+    await writeRunBrief(run);
+    if (!stillPreparing(run.id)) return;
+    codingRepository.updateRun(run.id, { workspaceStatus: "ready", status: "active" });
+  });
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -237,8 +269,7 @@ export function queueStage(
 
 /** Starts (or continues) one agent stage as a Slab run on the code runner. */
 export async function launchStage(run: CodeRun, stage: CodeRunStage) {
-  const repository = codingRepository.getRepository(run.repositoryId);
-  if (!repository) throw new Error("The coding run repository no longer exists.");
+  const repositories = runRepositories(run);
   const agentStage = stageAgentKey(stage.stage);
   if (!agentStage) throw new Error("This stage has no agent.");
   const agent = agentForStage(agentStage);
@@ -250,7 +281,10 @@ export async function launchStage(run: CodeRun, stage: CodeRunStage) {
     });
     return null;
   }
-  const workspace = await codeRunner.getWorkspace(run.workspaceId);
+  const workspaces = await Promise.all(
+    repositories.map(({ item }) => codeRunner.getWorkspace(item.workspaceId)),
+  );
+  const workspace = workspaces[0]!;
   const continuing = Boolean(stage.threadId && stage.lastRunId);
   let threadId = stage.threadId;
   if (!threadId || conversationRepository.getThread(threadId)?.agentId !== agent.id) {
@@ -279,14 +313,16 @@ export async function launchStage(run: CodeRun, stage: CodeRunStage) {
           title: run.title,
           stage: stage.stage,
           attempt: stage.attempt,
-          repository,
+          repositories: repositories.map(({ item, repository }, index) => ({
+            ...repository,
+            repoPath: workspaces[index]!.repoPath,
+            baseSha: item.baseSha ?? workspaces[index]!.baseSha,
+            prUrl: item.prUrl,
+            prState: item.prState,
+          })),
           branch: run.branch,
-          baseSha: run.baseSha ?? workspace.baseSha,
-          repoPath: workspace.repoPath,
           handoffPath: workspace.handoffPath,
           availableInputs: await availableHandoff(run),
-          prUrl: run.prUrl,
-          prState: run.prState,
           retryReason: options.retryReason,
           userMessage: options.userMessage,
           feedbackStep: input.feedbackStep ?? null,
@@ -313,6 +349,8 @@ export async function launchStage(run: CodeRun, stage: CodeRunStage) {
     mode: "code_stage",
     prompt: prompt || "Continue.",
     issueKey: run.issueKey,
+    // The stage instructions travel with every run, so any agent can run any stage.
+    eventInstructions: `Instructions for the ${STAGE_DEFINITIONS[stage.stage].name} stage. Follow them over the general agent instructions when they differ.\n\n${CODING_PROMPTS[agentStage]}`,
   });
   codingRepository.linkRunToStage(agentRun.id, stage.id);
   const { retryReason: _retry, pendingMessage: _pending, ...remainingInput } = input;
@@ -433,14 +471,50 @@ function completeStage(stage: CodeRunStage, patch: Partial<CodeRunStage> = {}) {
   });
 }
 
+/** Footer of every PR of a run: the Work item, the run, and the sibling PRs. */
+function pullRequestFooter(run: CodeRun, current: CodeRunRepository | null) {
+  const siblings = run.repositories.filter((item) => item.id !== current?.id && item.prUrl);
+  return [
+    "---",
+    `Work item: ${run.issueKey} · Slab coding run #${run.number}`,
+    ...(siblings.length
+      ? [`Related pull requests: ${siblings.map((item) => `${item.fullName}#${item.prNumber}`).join(", ")}`]
+      : []),
+  ].join("\n");
+}
+
 async function applyPullRequestBody(run: CodeRun, body: string) {
-  if (!run.prNumber) return;
-  const repository = codingRepository.getRepository(run.repositoryId);
-  if (!repository) return;
-  const footer = `\n\n---\nWork item: ${run.issueKey} · Slab coding run #${run.number}`;
-  await updatePullRequest(repository, run.prNumber, {
-    body: `${body.trim()}${body.includes(`Slab coding run #${run.number}`) ? "" : footer}`,
-  });
+  const text = body.replace(/\n---\nWork item: [^\n]*Slab coding run #\d+[\s\S]*$/, "").trim();
+  for (const { item, repository } of runRepositories(run)) {
+    if (!item.prNumber) continue;
+    await updatePullRequest(repository, item.prNumber, {
+      body: `${text}\n\n${pullRequestFooter(run, item)}`,
+    });
+  }
+}
+
+/**
+ * Setup notes of each repository from the engineer report. With several
+ * repositories the section has one `### owner/name` subsection per repository.
+ */
+export function splitSetupNotes(notes: string, fullNames: string[]) {
+  const result = new Map<string, string>();
+  const clean = notes.trim();
+  if (!clean || clean === "(none)") return result;
+  if (fullNames.length === 1) {
+    result.set(fullNames[0]!, clean);
+    return result;
+  }
+  const parts = clean.split(/^###\s+/m);
+  for (const part of parts.slice(1)) {
+    const [heading = "", ...rest] = part.split("\n");
+    const name = fullNames.find(
+      (fullName) => heading.trim().replace(/`/g, "").toLowerCase() === fullName.toLowerCase(),
+    );
+    const body = rest.join("\n").trim();
+    if (name && body && body !== "(none)") result.set(name, body);
+  }
+  return result;
 }
 
 async function evaluateStage(run: CodeRun, stage: CodeRunStage) {
@@ -537,9 +611,14 @@ async function evaluateStage(run: CodeRun, stage: CodeRunStage) {
       return;
     }
     case "engineer": {
-      const notes = markdownSection(content ?? "", "Repo setup notes");
-      if (notes && notes !== "(none)") {
-        codingRepository.setRepositorySetupNotes(run.repositoryId, notes);
+      const repositories = runRepositories(run);
+      const notes = splitSetupNotes(
+        markdownSection(content ?? "", "Repo setup notes"),
+        repositories.map(({ repository }) => repository.fullName),
+      );
+      for (const { repository } of repositories) {
+        const value = notes.get(repository.fullName);
+        if (value) codingRepository.setRepositorySetupNotes(repository.id, value);
       }
       const checks = (values.checks ?? "").toLowerCase();
       if (checks === "fail") {
@@ -656,71 +735,95 @@ async function evaluateFeedbackStage(run: CodeRun, stage: CodeRunStage) {
 // ---------------------------------------------------------------------------
 // Publishing
 
-export async function publishRun(
-  run: CodeRun,
-  options: { commitMessage: string; openPullRequest: boolean },
-) {
-  const repository = codingRepository.getRepository(run.repositoryId);
-  if (!repository) throw new Error("The coding run repository no longer exists.");
-  if (!run.baseSha) throw new Error("The workspace base commit is unknown; prepare the workspace again.");
-  const token = await installationToken(repository, "push");
-  const result = await codeRunner.publish(run.workspaceId, {
-    pushToken: token,
-    remoteUrl: repositoryCloneUrl(repository),
-    branch: run.branch,
-    baseSha: run.baseSha,
-    commitMessage: options.commitMessage,
-    forbiddenPaths: [".github/workflows/", ".gitmodules"],
-  });
-  let updated = codingRepository.updateRun(run.id, {
-    headSha: result.headSha,
-    lastPublishedSha: result.headSha,
-    publishedAt: now(),
-  });
-  const latestRun = codingRepository.getRun(run.id);
-  if (options.openPullRequest && !updated.prNumber && latestRun?.status !== "cancelled") {
-    const review = codingRepository.latestArtifact(run.id, "code-review.md")?.content ?? "";
-    const title =
-      markdownSection(review, "PR title").split("\n")[0]?.trim() ||
-      `[${run.issueKey}] ${run.title}`;
-    const summary = markdownSection(review, "PR summary");
-    const pull = await createDraftPullRequest(
-      repository,
-      {
-        title,
-        branch: run.branch,
-        body: [
-          summary || `Implements ${run.issueKey}: ${run.title}.`,
-          "",
-          "---",
-          `Work item: ${run.issueKey} · Slab coding run #${run.number}`,
-        ].join("\n"),
-      },
-      token,
-    );
-    updated = codingRepository.updateRun(run.id, {
-      prNumber: pull.number,
-      prUrl: pull.url,
-      prState: pull.state,
-      ciState: "pending",
+export type RepositoryPublishResult = {
+  repository: string;
+  result: PublishResult | null;
+  prUrl: string | null;
+};
+
+/**
+ * Pushes the run branch of every repository with changes and opens a draft PR
+ * where none exists yet. Repositories without commits and without a PR are skipped.
+ */
+export async function publishRun(run: CodeRun, options: { commitMessage: string }) {
+  const results: RepositoryPublishResult[] = [];
+  const review = codingRepository.latestArtifact(run.id, "code-review.md")?.content ?? "";
+  const title =
+    markdownSection(review, "PR title").split("\n")[0]?.trim() || `[${run.issueKey}] ${run.title}`;
+  const summary = markdownSection(review, "PR summary");
+  for (const { item, repository } of runRepositories(run)) {
+    if (!item.baseSha)
+      throw new Error(`The base commit of ${repository.fullName} is unknown; prepare the workspace again.`);
+    if (!item.prNumber) {
+      const diff = await codeRunner.diff(item.workspaceId);
+      if (!diff.commits.length && !diff.uncommitted) {
+        results.push({ repository: repository.fullName, result: null, prUrl: null });
+        continue;
+      }
+    }
+    const token = await installationToken(repository, "push");
+    const result = await codeRunner.publish(item.workspaceId, {
+      pushToken: token,
+      remoteUrl: repositoryCloneUrl(repository),
+      branch: run.branch,
+      baseSha: item.baseSha,
+      commitMessage: options.commitMessage,
+      forbiddenPaths: [".github/workflows/", ".gitmodules"],
     });
-    void syncPullRequestOpened(updated, pull.url);
+    let updated = codingRepository.updateRunRepository(item.id, {
+      headSha: result.headSha,
+      lastPublishedSha: result.headSha,
+      publishedAt: now(),
+    });
+    if (!updated.prNumber && codingRepository.getRun(run.id)?.status !== "cancelled") {
+      const pull = await createDraftPullRequest(
+        repository,
+        {
+          title,
+          branch: run.branch,
+          body: [
+            summary || `Implements ${run.issueKey}: ${run.title}.`,
+            "",
+            pullRequestFooter(codingRepository.getRun(run.id)!, updated),
+          ].join("\n"),
+        },
+        token,
+      );
+      updated = codingRepository.updateRunRepository(item.id, {
+        prNumber: pull.number,
+        prUrl: pull.url,
+        prState: pull.state,
+        ciState: "pending",
+      });
+      void syncPullRequestOpened(run, repository.fullName, pull.url);
+    }
+    results.push({ repository: repository.fullName, result, prUrl: updated.prUrl });
   }
-  return { run: updated, result };
+  if (!results.some((entry) => entry.result)) {
+    throw new Error("No repository has changes to publish.");
+  }
+  return { run: codingRepository.getRun(run.id)!, results };
+}
+
+export function describePublish(results: RepositoryPublishResult[]) {
+  return results
+    .map(({ repository, result, prUrl }) =>
+      result
+        ? `${repository}: pushed ${result.commits} commit(s) to ${result.branch}${prUrl ? ` · ${prUrl}` : ""}`
+        : `${repository}: no changes`,
+    )
+    .join("\n");
 }
 
 function runPublishStage(run: CodeRun, stage: CodeRunStage) {
   codingRepository.updateStage(stage.id, { status: "running", startedAt: now() });
   once(`publish:${stage.id}`, async () => {
     try {
-      const { result, run: updated } = await publishRun(run, {
+      const { results } = await publishRun(run, {
         commitMessage: `[${run.issueKey}] Apply review fixes`,
-        openPullRequest: true,
       });
       if (!stillRunning(stage.id)) return;
-      completeStage(stage, {
-        summary: `Pushed ${result.commits} commit(s) to ${result.branch}${updated.prUrl ? ` · ${updated.prUrl}` : ""}.`,
-      });
+      completeStage(stage, { summary: describePublish(results) });
     } catch (error) {
       if (!stillRunning(stage.id)) return;
       const details =
@@ -807,21 +910,27 @@ function refreshRunStatus(run: CodeRun) {
   if (next !== run.status) codingRepository.updateRun(run.id, { status: next });
 }
 
-async function pollPullRequest(run: CodeRun) {
-  if (!run.prNumber) return;
-  if (run.prCheckedAt && Date.now() - Date.parse(run.prCheckedAt) < PR_POLL_MS) return;
-  const repository = codingRepository.getRepository(run.repositoryId);
+async function pollPullRequest(item: CodeRunRepository) {
+  if (!item.prNumber) return;
+  if (item.prCheckedAt && Date.now() - Date.parse(item.prCheckedAt) < PR_POLL_MS) return;
+  const repository = codingRepository.getRepository(item.repositoryId);
   if (!repository) return;
-  codingRepository.updateRun(run.id, { prCheckedAt: now() });
-  const { pull, token } = await getPullRequest(repository, run.prNumber);
+  codingRepository.updateRunRepository(item.id, { prCheckedAt: now() });
+  const { pull, token } = await getPullRequest(repository, item.prNumber);
   const ci = await getCiState(repository, pull.headSha, token).catch(() => null);
-  const wasMerged = run.prState === "merged";
-  const updated = codingRepository.updateRun(run.id, {
+  const wasMerged = item.prState === "merged";
+  codingRepository.updateRunRepository(item.id, {
     prState: pull.state,
     prUrl: pull.url,
-    ciState: ci?.state ?? run.ciState,
+    ciState: ci?.state ?? item.ciState,
   });
-  if (pull.state === "merged" && !wasMerged) void syncPullRequestMerged(updated);
+  if (pull.state !== "merged" || wasMerged) return;
+  // The Work item is done when every pull request of the run is merged.
+  const run = codingRepository.getRun(item.codeRunId);
+  const pulls = run?.repositories.filter((entry) => entry.prNumber) ?? [];
+  if (run && pulls.every((entry) => entry.prState === "merged")) {
+    void syncPullRequestMerged(run, pulls.map((entry) => entry.prUrl!).filter(Boolean));
+  }
 }
 
 export async function tickCoding() {
@@ -844,11 +953,9 @@ export async function tickCoding() {
     }
     for (const listed of codingRepository.listOpenRuns()) {
       const run = codingRepository.getRun(listed.id)!;
-      const repository = codingRepository.getRepository(run.repositoryId);
-      if (!repository) continue;
       try {
         reapStaleStages(run);
-        if (!(await reconcileWorkspace(run, repository))) continue;
+        if (!(await reconcileWorkspace(run))) continue;
         startOrAdvance(codingRepository.getRun(run.id)!);
         startQueuedSideStages(codingRepository.getRun(run.id)!);
         refreshRunStatus(codingRepository.getRun(run.id)!);
@@ -856,8 +963,8 @@ export async function tickCoding() {
         console.error(`[coding] run #${run.number} tick failed`, error);
       }
     }
-    for (const run of codingRepository.listRunsWithOpenPullRequests()) {
-      once(`pr:${run.id}`, () => pollPullRequest(run));
+    for (const item of codingRepository.listOpenPullRequests()) {
+      once(`pr:${item.id}`, () => pollPullRequest(item));
     }
   } finally {
     state.slabCodingBusy = false;

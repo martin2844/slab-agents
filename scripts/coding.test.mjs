@@ -37,6 +37,7 @@ const [
   { conversationRepository },
   { runRepository },
   github,
+  { agentRepository },
 ] = await Promise.all([
   import("../lib/coding/handoff.ts"),
   import("../lib/coding/stage-message.ts"),
@@ -50,6 +51,7 @@ const [
   import("../lib/repositories/conversation-repository.ts"),
   import("../lib/repositories/run-repository.ts"),
   import("../lib/coding/github.ts"),
+  import("../lib/repositories/agent-repository.ts"),
 ]);
 
 test.after(async () => {
@@ -118,22 +120,24 @@ test("buildStageMessage states the contract, inputs, and git rules", () => {
     title: "Fix download CTA",
     stage: "tech_spec",
     attempt: 2,
-    repository: {
-      fullName: "cleancut/web",
-      defaultBranch: "main",
-      setupCommand: "pnpm i",
-      testCommand: "pnpm test",
-      lintCommand: null,
-      typecheckCommand: null,
-      setupNotes: "Use Node 22.",
-    },
+    repositories: [
+      {
+        fullName: "cleancut/web",
+        defaultBranch: "main",
+        setupCommand: "pnpm i",
+        testCommand: "pnpm test",
+        lintCommand: null,
+        typecheckCommand: null,
+        setupNotes: "Use Node 22.",
+        repoPath: "/w/repo",
+        baseSha: "abc123",
+        prUrl: null,
+        prState: null,
+      },
+    ],
     branch: "slab/cc-42-4",
-    baseSha: "abc123",
-    repoPath: "/w/repo",
     handoffPath: "/w/handoff",
     availableInputs: ["run.md", "spec.md", "review.md", "other.md"],
-    prUrl: null,
-    prState: null,
     retryReason: "Failed rubric items: tests",
   });
   assert.match(message, /Coding run: #4 · Work item: CC-42/);
@@ -144,6 +148,18 @@ test("buildStageMessage states the contract, inputs, and git rules", () => {
   assert.match(message, /This is a retry\. Reason:\nFailed rubric items: tests/);
   assert.match(message, /lint \(not configured\)/);
   assert.match(message, /Use Node 22\./);
+  assert.match(message, /Checkout: \/w\/repo · default branch main · base commit abc123/);
+  assert.doesNotMatch(message, /This run changes/);
+});
+
+test("splitSetupNotes assigns engineer notes to each repository", () => {
+  const notes = orchestrator.splitSetupNotes(
+    "### cleancut/api\nUse make.\n\n### `cleancut/web`\nRun pnpm i.\n### cleancut/docs\n(none)\n### other/repo\nIgnored.",
+    ["cleancut/web", "cleancut/api", "cleancut/docs"],
+  );
+  assert.deepEqual(Object.fromEntries(notes), { "cleancut/api": "Use make.", "cleancut/web": "Run pnpm i." });
+  assert.deepEqual(Object.fromEntries(orchestrator.splitSetupNotes("Run it.", ["a/b"])), { "a/b": "Run it." });
+  assert.equal(orchestrator.splitSetupNotes("(none)", ["a/b"]).size, 0);
 });
 
 test("combineCiState prefers failure, then pending", () => {
@@ -181,6 +197,9 @@ const workUpdates = [];
 let pull = null;
 let remoteFeedback = [];
 let workspaceDelayMs = 0;
+/** Replaces scriptStage when set (multi-repository test). */
+let scriptOverride = null;
+const otherPulls = new Map();
 
 function sse(events) {
   return new Response(events.map((event) => `id: ${event.id}\ndata: ${JSON.stringify(event)}\n\n`).join(""), {
@@ -194,6 +213,7 @@ function write(workspaceId, name, content) {
 }
 
 function scriptStage(workspaceId, stage, body) {
+  if (scriptOverride) return scriptOverride(workspaceId, stage, body);
   const count = (stageCalls.get(stage) ?? 0) + 1;
   stageCalls.set(stage, count);
   const files = workspaces.get(workspaceId).handoff;
@@ -279,9 +299,12 @@ globalThis.fetch = async (resource, init = {}) => {
     if (parts[0] === "workspaces") {
       if (method === "POST" && parts.length === 1) {
         assert.equal(json.fetchToken, "ghs_installation_token");
-        assert.equal(json.repository.cloneUrl, "https://github.com/cleancut/web.git");
+        assert.match(json.repository.cloneUrl, /^https:\/\/github\.com\/cleancut\/(web|api|docs)\.git$/);
         workspaces.set(json.workspaceId, {
           id: json.workspaceId,
+          cloneUrl: json.repository.cloneUrl,
+          // The docs repository never gets commits: Slab must not publish it.
+          changed: !json.repository.cloneUrl.endsWith("/docs.git"),
           branch: json.branch,
           polls: 0,
           handoff: new Map(),
@@ -321,7 +344,14 @@ globalThis.fetch = async (resource, init = {}) => {
         }
         return Response.json({ data: { name, content: workspace.handoff.get(name), updatedAt: "" } });
       }
+      if (parts[2] === "diff") {
+        const commits = workspace.changed ? [{ sha: "c0ffee", subject: "change" }] : [];
+        return Response.json({
+          data: { baseSha: "base000", headSha: "head111", files: [], insertions: 0, deletions: 0, uncommitted: false, commits, patch: "", truncated: false },
+        });
+      }
       if (parts[2] === "publish") {
+        assert.ok(workspace.changed, "unchanged repositories are never published");
         assert.equal(json.pushToken, "ghs_installation_token");
         assert.deepEqual(json.forbiddenPaths, [".github/workflows/", ".gitmodules"]);
         assert.equal(json.branch, workspace.branch);
@@ -363,6 +393,19 @@ globalThis.fetch = async (resource, init = {}) => {
   if (url.host === "api.github.com") {
     githubCalls.push({ method, path: `${url.pathname}${url.search}`, body: json });
     if (url.pathname.endsWith("/access_tokens")) return Response.json({ token: "ghs_installation_token", expires_at: "2030-01-01T00:00:00Z" });
+    const other = /^\/repos\/cleancut\/(api|docs)\/pulls(?:\/(\d+))?$/.exec(url.pathname);
+    if (other) {
+      const [, name, number] = other;
+      if (!number && method === "GET") return Response.json([]);
+      if (!number && method === "POST") {
+        const created = { number: 8, html_url: `https://github.com/cleancut/${name}/pull/8`, state: "open", draft: true, head: { sha: "pushed1", ref: json.head }, base: { ref: "main" }, title: json.title, body: json.body };
+        otherPulls.set(name, created);
+        return Response.json(created, { status: 201 });
+      }
+      const existing = otherPulls.get(name);
+      if (method === "PATCH") otherPulls.set(name, { ...existing, ...json });
+      return Response.json(otherPulls.get(name));
+    }
     if (url.pathname === "/repos/cleancut/web/pulls" && method === "GET") return Response.json(pull ? [] : []);
     if (url.pathname === "/repos/cleancut/web/pulls" && method === "POST") {
       assert.equal(json.draft, true);
@@ -446,15 +489,15 @@ test("a coding run goes from a Work item to a published, described PR", async ()
   });
   assert.equal(repository.workProjectKey, "CC");
   await assert.rejects(
-    () => service.startCodingRun({ issueKey: "nope", repositoryId: repository.id }),
+    () => service.startCodingRun({ issueKey: "nope", repositoryIds: [repository.id] }),
     /Choose a Work item/,
   );
 
-  const run = await service.startCodingRun({ issueKey: "cc-1", repositoryId: repository.id, note: "Focus on mobile." });
+  const run = await service.startCodingRun({ issueKey: "cc-1", repositoryIds: [repository.id], note: "Focus on mobile." });
   assert.equal(run.issueKey, "CC-1");
   assert.equal(run.branch, "slab/cc-1-1");
   await assert.rejects(
-    () => service.startCodingRun({ issueKey: "CC-1", repositoryId: repository.id }),
+    () => service.startCodingRun({ issueKey: "CC-1", repositoryIds: [repository.id] }),
     /already open/,
   );
 
@@ -472,6 +515,9 @@ test("a coding run goes from a Work item to a published, described PR", async ()
   assert.equal(pmBodies.length, 2);
   assert.equal(pmBodies[1].thread.runtimeThreadId, pmBodies[0].thread.runtimeThreadId ?? "thread-pm-0");
   assert.ok(runnerRunBodies.every((body) => body.workspace.id === run.workspaceId));
+  // The stage instructions travel with each run; PM runs on the Code PM agent.
+  assert.ok(pmBodies.every((body) => JSON.stringify(body).includes("You are the PM of a Slab coding run")));
+  assert.equal(runRepository.getRun(current(run.id, "pm").lastRunId).agentId, agentRepository.getAgent("code-pm").id);
 
   service.approveStage(run.id, current(run.id, "pm").id);
 
@@ -489,8 +535,9 @@ test("a coding run goes from a Work item to a published, described PR", async ()
   service.approveStage(run.id, current(run.id, "code_review").id);
   await until(() => codingRepository.getRun(run.id).status === "done", "run done");
   const done = codingRepository.getRun(run.id);
-  assert.equal(done.prNumber, 7);
-  assert.equal(done.prUrl, "https://github.com/cleancut/web/pull/7");
+  assert.equal(done.repositories.length, 1);
+  assert.equal(done.repositories[0].prNumber, 7);
+  assert.equal(done.repositories[0].prUrl, "https://github.com/cleancut/web/pull/7");
   assert.equal(pull.title, "[CC-1] Improve download CTA");
   assert.match(pull.body, /A visible CTA\./);
   assert.match(pull.body, /Slab coding run #1/);
@@ -566,6 +613,9 @@ test("a coding run goes from a Work item to a published, described PR", async ()
   assert.equal(someRun.mode, "code_stage");
   assert.equal(someRun.trigger, "coding");
   assert.equal(someRun.issueKey, "CC-1");
+  assert.equal(someRun.agentId, agentRepository.getAgent("code-engineer").id);
+  assert.match(someRun.runInstructions, /You are the engineer of a Slab coding run/);
+  assert.equal(agentRepository.getAgent("code-tech-lead"), null, "only the PM and Engineer agents are created");
 
   // Re-run from tech spec supersedes later stages and restarts the pipeline there.
   const rerun = await service.rerunFrom(run.id, "tech_spec");
@@ -582,7 +632,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 test("cancelling a run while a stage launch or workspace check is in flight sticks", async () => {
   const repository = codingRepository.listRepositories()[0];
   // Launch in flight: the PM stage must not start after the cancel.
-  const first = await service.startCodingRun({ issueKey: "CC-10", repositoryId: repository.id });
+  const first = await service.startCodingRun({ issueKey: "CC-10", repositoryIds: [repository.id] });
   await until(() => codingRepository.getRun(first.id).workspaceStatus === "ready", "workspace ready");
   await until(() => current(first.id, "pm") !== null, "pm created");
   const before = runnerRunBodies.length;
@@ -597,7 +647,7 @@ test("cancelling a run while a stage launch or workspace check is in flight stic
   assert.equal(codingRepository.getRun(first.id).status, "cancelled");
 
   // Workspace check in flight: the run must not come back to active.
-  const second = await service.startCodingRun({ issueKey: "CC-11", repositoryId: repository.id });
+  const second = await service.startCodingRun({ issueKey: "CC-11", repositoryIds: [repository.id] });
   await orchestrator.tickCoding();
   await sleep(20);
   workspaceDelayMs = 200;
@@ -608,4 +658,98 @@ test("cancelling a run while a stage launch or workspace check is in flight stic
   for (let index = 0; index < 3; index += 1) await orchestrator.tickCoding();
   assert.equal(codingRepository.getRun(second.id).status, "cancelled");
   assert.deepEqual(codingRepository.listStages(second.id), []);
+});
+
+test("a coding run changes several repositories and opens one PR per changed repository", async () => {
+  const web = codingRepository.listRepositories().find((item) => item.name === "web");
+  const base = {
+    sourceAppId: web.sourceAppId,
+    owner: "cleancut",
+    defaultBranch: "main",
+    setupCommand: null,
+    testCommand: null,
+    lintCommand: null,
+    typecheckCommand: null,
+    setupNotes: "",
+    workProjectKey: null,
+    enabled: true,
+  };
+  const api = service.createCodeRepository({ ...base, name: "api", testCommand: "make test" });
+  const docs = service.createCodeRepository({ ...base, name: "docs" });
+  await assert.rejects(
+    () => service.startCodingRun({ issueKey: "CC-20", repositoryIds: [] }),
+    /at least one repository/,
+  );
+
+  const messages = new Map();
+  scriptOverride = (workspaceId, stage, body) => {
+    messages.set(stage, body.message);
+    const done = (name, extra = "") => write(workspaceId, name, `---\nstatus: done\n${extra}---\n# ${name}\n`);
+    switch (stage) {
+      case "pm": return done("spec.md"), "DONE";
+      case "tech_spec": return done("plan.md"), "DONE";
+      case "plan_review": return done("review.md", "verdict: pass\n"), "DONE";
+      case "engineer":
+        write(
+          workspaceId,
+          "engineer.md",
+          "---\nstatus: done\nchecks: pass\n---\n# Engineer report\n\n## Repo setup notes\n### cleancut/api\nUse make.\n### cleancut/docs\n(none)\n## Handoff\n- ok",
+        );
+        return "DONE";
+      case "code_review":
+        write(workspaceId, "code-review.md", "---\nstatus: done\nready: true\n---\n# Review\n\n## PR title\n[CC-20] Shared change\n## PR summary\nOne change in two services.\n");
+        return "DONE";
+      case "final_pass":
+        write(workspaceId, "pr-body.md", "## What\nShared change.");
+        done("final.md");
+        return "DONE";
+      default:
+        throw new Error(`Unexpected stage ${stage}`);
+    }
+  };
+  try {
+    const run = await service.startCodingRun({ issueKey: "CC-20", repositoryIds: [api.id, docs.id, web.id, api.id] });
+    assert.deepEqual(run.repositories.map((item) => item.fullName), ["cleancut/api", "cleancut/docs", "cleancut/web"]);
+    assert.equal(run.repositories[0].workspaceId, run.workspaceId);
+    assert.equal(new Set(run.repositories.map((item) => item.workspaceId)).size, 3);
+    await until(() => current(run.id, "pm")?.status === "waiting_approval", "PM spec ready", 300);
+    for (const item of codingRepository.getRun(run.id).repositories) {
+      assert.equal(item.workspaceStatus, "ready");
+      assert.ok(workspaces.has(item.workspaceId));
+    }
+    // Only the primary workspace holds the handoff folder; the agent runs there.
+    assert.ok(workspaces.get(run.workspaceId).handoff.has("run.md"));
+    assert.match(workspaces.get(run.workspaceId).handoff.get("run.md"), /repositories: \[cleancut\/api, cleancut\/docs, cleancut\/web\]/);
+    const pmMessage = messages.get("pm");
+    assert.match(pmMessage, /This run changes 3 repositories/);
+    assert.match(pmMessage, /1\. cleancut\/api \(primary, your working directory\)/);
+    for (const item of run.repositories) assert.ok(pmMessage.includes(`/workspaces/${item.workspaceId}/repo`));
+    assert.match(pmMessage, /test `make test`/);
+
+    service.approveStage(run.id, current(run.id, "pm").id);
+    await until(() => current(run.id, "code_review")?.status === "waiting_approval", "code review waits", 300);
+    assert.equal(codingRepository.getRepository(api.id).setupNotes, "Use make.");
+    assert.equal(codingRepository.getRepository(docs.id).setupNotes, "");
+    assert.equal(codingRepository.getRepository(web.id).setupNotes, "Run pnpm i first.", "repositories without notes keep theirs");
+
+    service.approveStage(run.id, current(run.id, "code_review").id);
+    await until(() => codingRepository.getRun(run.id).status === "done", "run done", 300);
+    const done = codingRepository.getRun(run.id);
+    const [apiItem, docsItem, webItem] = done.repositories;
+    assert.equal(apiItem.prNumber, 8);
+    assert.equal(docsItem.prNumber, null, "a repository without commits gets no PR");
+    assert.equal(webItem.prNumber, 7);
+    assert.match(current(run.id, "publish").summary, /cleancut\/docs: no changes/);
+    // The final pass description reaches every PR, each linking its siblings.
+    assert.match(otherPulls.get("api").body, /Shared change\./);
+    assert.match(otherPulls.get("api").body, /Related pull requests: cleancut\/web#7/);
+    assert.match(pull.body, /Related pull requests: cleancut\/api#8/);
+    assert.ok(workComments.some((comment) => /draft pull request on `cleancut\/api`/.test(comment.body)));
+
+    // Repositories used by open runs cannot move to another GitHub repository.
+    await service.cancelCodingRun(run.id);
+    assert.throws(() => service.deleteCodeRepository(docs.id), /use this repository/);
+  } finally {
+    scriptOverride = null;
+  }
 });

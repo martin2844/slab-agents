@@ -22,27 +22,50 @@ export type CodeRepository = {
   updatedAt: string;
 };
 
+export type WorkspaceStatus = "pending" | "preparing" | "ready" | "failed" | "deleted";
+export type PullRequestStatus = "draft" | "open" | "merged" | "closed";
+export type CiStatus = "pending" | "success" | "failure" | "none";
+
+/** One repository of a coding run: its own workspace, branch base, and pull request. */
+export type CodeRunRepository = {
+  id: string;
+  codeRunId: string;
+  repositoryId: string;
+  /** 0 is the primary repository: its workspace holds the handoff folder. */
+  position: number;
+  owner: string;
+  name: string;
+  fullName: string;
+  workspaceId: string;
+  workspaceStatus: WorkspaceStatus;
+  baseSha: string | null;
+  headSha: string | null;
+  prNumber: number | null;
+  prUrl: string | null;
+  prState: PullRequestStatus | null;
+  ciState: CiStatus | null;
+  prCheckedAt: string | null;
+  lastPublishedSha: string | null;
+  publishedAt: string | null;
+  error: string | null;
+};
+
 export type CodeRun = {
   id: string;
   number: number;
   issueKey: string;
   title: string;
+  /** Primary repository. */
   repositoryId: string;
   status: CodeRunStatus;
   currentStage: CodingStage;
+  /** Primary workspace: the agent's working directory and the handoff folder. */
   workspaceId: string;
-  workspaceStatus: "pending" | "preparing" | "ready" | "failed" | "deleted";
+  /** All workspaces of the run: ready only when every repository is ready. */
+  workspaceStatus: WorkspaceStatus;
   branch: string;
-  baseSha: string | null;
-  headSha: string | null;
   note: string;
-  prNumber: number | null;
-  prUrl: string | null;
-  prState: "draft" | "open" | "merged" | "closed" | null;
-  ciState: "pending" | "success" | "failure" | "none" | null;
-  prCheckedAt: string | null;
-  lastPublishedSha: string | null;
-  publishedAt: string | null;
+  repositories: CodeRunRepository[];
   error: string | null;
   startedAt: string;
   finishedAt: string | null;
@@ -93,6 +116,7 @@ export type CodeFeedbackStatus =
 export type CodeFeedbackItem = {
   id: string;
   codeRunId: string;
+  runRepositoryId: string | null;
   githubId: string;
   kind: "review_comment" | "review" | "issue_comment";
   author: string;
@@ -123,7 +147,6 @@ export type StageUsage = {
 };
 
 export type CodeRunSummary = CodeRun & {
-  repository: Pick<CodeRepository, "id" | "owner" | "name" | "fullName">;
   stages: Array<
     Pick<CodeRunStage, "id" | "stage" | "status" | "attempt"> & StageUsage
   >;

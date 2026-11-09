@@ -20,23 +20,23 @@ async function bestEffort(label: string, action: () => Promise<unknown>) {
   }
 }
 
-export function syncRunStarted(run: CodeRun, repository: string) {
+export function syncRunStarted(run: CodeRun, repositories: string[]) {
   return bestEffort("run started", async () => {
     await WorkClient.updateIssue(run.issueKey, { status: "in_progress" });
     await WorkClient.addComment(
       run.issueKey,
       AUTHOR,
-      `Coding run #${run.number} started on \`${repository}\` (branch \`${run.branch}\`). Follow it at ${runLink(run)}.`,
+      `Coding run #${run.number} started on ${repositories.map((name) => `\`${name}\``).join(", ")} (branch \`${run.branch}\`). Follow it at ${runLink(run)}.`,
     );
   });
 }
 
-export function syncPullRequestOpened(run: CodeRun, url: string) {
+export function syncPullRequestOpened(run: CodeRun, repository: string, url: string) {
   return bestEffort("pull request opened", async () => {
     await WorkClient.addComment(
       run.issueKey,
       AUTHOR,
-      `Coding run #${run.number} opened a draft pull request: ${url}`,
+      `Coding run #${run.number} opened a draft pull request on \`${repository}\`: ${url}`,
     );
     await WorkClient.updateIssue(run.issueKey, {
       status: "review" satisfies Issue["status"],
@@ -44,7 +44,7 @@ export function syncPullRequestOpened(run: CodeRun, url: string) {
   });
 }
 
-export function syncPullRequestMerged(run: CodeRun) {
+export function syncPullRequestMerged(run: CodeRun, urls: string[]) {
   return bestEffort("pull request merged", async () => {
     await WorkClient.updateIssue(run.issueKey, {
       status: "done" satisfies Issue["status"],
@@ -52,7 +52,9 @@ export function syncPullRequestMerged(run: CodeRun) {
     await WorkClient.addComment(
       run.issueKey,
       AUTHOR,
-      `The pull request of coding run #${run.number} was merged${run.prUrl ? `: ${run.prUrl}` : "."}`,
+      urls.length > 1
+        ? `Every pull request of coding run #${run.number} was merged: ${urls.join(", ")}`
+        : `The pull request of coding run #${run.number} was merged${urls[0] ? `: ${urls[0]}` : "."}`,
     );
   });
 }

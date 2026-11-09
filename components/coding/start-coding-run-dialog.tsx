@@ -16,13 +16,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/client-api";
 import type { CodeRepository, CodeRun } from "@/lib/coding/types";
@@ -43,7 +36,8 @@ export function StartCodingRunDialog({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [repositories, setRepositories] = useState<CodeRepository[] | null>(null);
-  const [repositoryId, setRepositoryId] = useState("");
+  /** Selected repositories in selection order; the first one is the primary repository. */
+  const [repositoryIds, setRepositoryIds] = useState<string[]>([]);
   const [key, setKey] = useState(issueKey ?? "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -58,9 +52,9 @@ export function StartCodingRunDialog({
         const enabled = items.filter((item) => item.enabled);
         setRepositories(enabled);
         const project = (projectKey ?? issueKey?.split("-")[0] ?? "").toUpperCase();
-        const preferred =
-          enabled.find((item) => item.workProjectKey === project) ?? enabled[0];
-        setRepositoryId((current) => current || preferred?.id || "");
+        const matching = enabled.filter((item) => item.workProjectKey === project);
+        const preferred = matching.length ? matching : enabled.slice(0, 1);
+        setRepositoryIds((current) => (current.length ? current : preferred.map((item) => item.id)));
       })
       .catch((reason: Error) => active && setError(reason.message));
     return () => {
@@ -75,7 +69,7 @@ export function StartCodingRunDialog({
     try {
       const run = await api<CodeRun>("/api/coding/runs", {
         method: "POST",
-        body: JSON.stringify({ issueKey: key, repositoryId, note }),
+        body: JSON.stringify({ issueKey: key, repositoryIds, note }),
       });
       toast.success(`Coding run #${run.number} started`);
       setOpen(false);
@@ -123,8 +117,8 @@ export function StartCodingRunDialog({
               disabled={Boolean(issueKey) || busy}
             />
           </label>
-          <label className={labelClass}>
-            Repository
+          <div className={labelClass}>
+            Repositories
             {repositories && repositories.length === 0 ? (
               <p className="text-sm font-normal normal-case tracking-normal text-muted-foreground">
                 No repository is configured. Add one in{" "}
@@ -133,21 +127,40 @@ export function StartCodingRunDialog({
                 </Link>
                 .
               </p>
+            ) : !repositories ? (
+              <p className="text-sm font-normal normal-case tracking-normal text-muted-foreground">Loading…</p>
             ) : (
-              <Select value={repositoryId} onValueChange={setRepositoryId} disabled={busy}>
-                <SelectTrigger>
-                  <SelectValue placeholder={repositories ? "Choose a repository" : "Loading…"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {(repositories ?? []).map((repository) => (
-                    <SelectItem key={repository.id} value={repository.id}>
-                      {repository.fullName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="grid gap-1 rounded-md border p-2 font-normal normal-case tracking-normal">
+                {repositories.map((repository) => {
+                  const position = repositoryIds.indexOf(repository.id);
+                  return (
+                    <label key={repository.id} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-[var(--accent)]"
+                        checked={position >= 0}
+                        disabled={busy || (position < 0 && repositoryIds.length >= 5)}
+                        onChange={(event) =>
+                          setRepositoryIds((current) =>
+                            event.target.checked
+                              ? [...current, repository.id]
+                              : current.filter((id) => id !== repository.id),
+                          )
+                        }
+                      />
+                      <span className="font-mono">{repository.fullName}</span>
+                      {position === 0 && repositoryIds.length > 1 && (
+                        <span className="text-xs text-muted-foreground">primary</span>
+                      )}
+                    </label>
+                  );
+                })}
+                <p className="px-1.5 pt-1 text-xs text-muted-foreground">
+                  The agents can change every selected repository. Slab opens one draft PR per repository with changes. The first one you select is the primary repository.
+                </p>
+              </div>
             )}
-          </label>
+          </div>
           <label className={labelClass}>
             Note for the PM (optional)
             <Textarea
@@ -160,7 +173,7 @@ export function StartCodingRunDialog({
           </label>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
-            <Button type="submit" disabled={busy || !repositoryId || !key.trim()}>
+            <Button type="submit" disabled={busy || !repositoryIds.length || !key.trim()}>
               {busy && <LoaderCircle className="animate-spin" />}
               Start run
             </Button>

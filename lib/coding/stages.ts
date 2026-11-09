@@ -152,15 +152,16 @@ export function isCodingStage(value: string): value is CodingStage {
   return value in STAGE_DEFINITIONS;
 }
 
+/** The PM writes the spec; the Engineer runs every other stage with that stage's instructions. */
 export const DEFAULT_STAGE_AGENT_SLUGS: Record<AgentStage, string> = {
   pm: "code-pm",
-  tech_spec: "code-tech-lead",
-  plan_review: "code-plan-reviewer",
+  tech_spec: "code-engineer",
+  plan_review: "code-engineer",
   engineer: "code-engineer",
-  code_review: "code-reviewer",
-  final_pass: "code-release-writer",
-  pr_feedback: "code-pr-fixer",
-  chat: "code-pr-fixer",
+  code_review: "code-engineer",
+  final_pass: "code-engineer",
+  pr_feedback: "code-engineer",
+  chat: "code-engineer",
 };
 
 export type CodeRunStatus =

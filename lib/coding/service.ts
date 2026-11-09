@@ -6,6 +6,7 @@ import { codeRunner } from "@/lib/coding/code-runner";
 import { ensureCodingAgents, stageAgentMapping } from "@/lib/coding/agents";
 import { listPullRequestFeedback, replyToFeedback } from "@/lib/coding/github";
 import {
+  describePublish,
   publishRun,
   queueStage,
   stopStageRun,
@@ -84,7 +85,7 @@ export function updateCodeRepository(id: string, input: RepositoryInput) {
     normalized.sourceAppId === existing.sourceAppId;
   if (!sameIdentity) {
     // Open runs cloned this repository; never publish them to another one.
-    if (codingRepository.listOpenRuns().some((run) => run.repositoryId === id))
+    if (codingRepository.listOpenRunsForRepository(id).length)
       throw conflict("Coding runs are open on this repository. Finish or cancel them before you change it.");
     if (
       codingRepository
@@ -106,15 +107,23 @@ export function deleteCodeRepository(id: string) {
 // ---------------------------------------------------------------------------
 // Runs
 
+export const MAX_RUN_REPOSITORIES = 5;
+
 export async function startCodingRun(input: {
   issueKey: string;
-  repositoryId: string;
+  /** The first repository is the primary one. */
+  repositoryIds: string[];
   note?: string;
 }) {
   const issueKey = input.issueKey.trim().toUpperCase();
   if (!/^[A-Z][A-Z0-9_]*-\d+$/.test(issueKey)) throw badRequest("Choose a Work item.");
-  const repository = codingRepository.getRepository(input.repositoryId);
-  if (!repository || !repository.enabled) throw badRequest("Choose an enabled repository.");
+  const ids = [...new Set(input.repositoryIds)];
+  if (!ids.length) throw badRequest("Choose at least one repository.");
+  if (ids.length > MAX_RUN_REPOSITORIES)
+    throw badRequest(`A coding run can change up to ${MAX_RUN_REPOSITORIES} repositories.`);
+  const repositories = ids.map((id) => codingRepository.getRepository(id));
+  if (repositories.some((repository) => !repository || !repository.enabled))
+    throw badRequest("Choose enabled repositories.");
   const open = codingRepository
     .listRunsForIssue(issueKey)
     .find((run) => ["preparing", "active", "waiting"].includes(run.status));
@@ -131,10 +140,10 @@ export async function startCodingRun(input: {
   const run = codingRepository.createRun({
     issueKey,
     title: issue.title,
-    repositoryId: repository.id,
+    repositoryIds: ids,
     note: input.note?.trim() ?? "",
   });
-  void syncRunStarted(run, repository.fullName);
+  void syncRunStarted(run, repositories.map((repository) => repository!.fullName));
   return run;
 }
 
@@ -248,7 +257,11 @@ export async function deleteCodingWorkspace(runId: string) {
   const run = requireRun(runId);
   if (["preparing", "active", "waiting"].includes(run.status))
     throw conflict("Cancel the run before you delete its workspace.");
-  await codeRunner.deleteWorkspace(run.workspaceId);
+  for (const item of run.repositories) {
+    if (item.workspaceStatus === "deleted") continue;
+    await codeRunner.deleteWorkspace(item.workspaceId);
+    codingRepository.updateRunRepository(item.id, { workspaceStatus: "deleted" });
+  }
   return codingRepository.updateRun(run.id, { workspaceStatus: "deleted" });
 }
 
@@ -270,16 +283,16 @@ export function sendChatMessage(runId: string, message: string) {
 export async function publishChanges(runId: string) {
   const run = requireRun(runId);
   assertOpen(run);
-  if (!run.prNumber) throw conflict("Open the pull request first: approve the code review stage.");
+  if (!run.repositories.some((item) => item.prNumber))
+    throw conflict("Open the pull request first: approve the code review stage.");
   const busy = codingRepository
     .listStages(run.id)
     .some((stage) => !stage.superseded && stage.status === "running");
   if (busy) throw conflict("Wait until the running stage finishes.");
-  const { result } = await publishRun(run, {
+  const { results } = await publishRun(run, {
     commitMessage: `[${run.issueKey}] Apply requested changes`,
-    openPullRequest: false,
   });
-  return result;
+  return { results, summary: describePublish(results) };
 }
 
 // ---------------------------------------------------------------------------
@@ -296,12 +309,59 @@ const DECIDED: CodeFeedbackItem["status"][] = [
 export async function checkPullRequestFeedback(runId: string) {
   const run = requireRun(runId);
   assertOpen(run);
-  if (!run.prNumber) throw conflict("This run has no pull request yet.");
+  const pulls = run.repositories.filter((item) => item.prNumber);
+  if (!pulls.length) throw conflict("This run has no pull request yet.");
   const current = codingRepository.currentStage(run.id, "pr_feedback");
   if (current && ["queued", "running"].includes(current.status))
     throw conflict("A feedback round is already running.");
-  const repository = codingRepository.getRepository(run.repositoryId)!;
-  const remote = await listPullRequestFeedback(repository, run.prNumber);
+  let created = 0;
+  for (const pull of pulls) {
+    const repository = codingRepository.getRepository(pull.repositoryId);
+    if (!repository) continue;
+    created += await collectFeedback(run, pull.id, await listPullRequestFeedback(repository, pull.prNumber!));
+  }
+  const items = codingRepository.listFeedback(run.id);
+  const fresh = items.filter((item) => item.status === "new");
+  if (!fresh.length) return { started: false, newItems: 0, changed: created };
+  const byId = new Map(run.repositories.map((item) => [item.id, item]));
+  await codeRunner.writeHandoff(
+    run.workspaceId,
+    "feedback-items.json",
+    JSON.stringify(
+      {
+        pullRequests: pulls.map((item) => ({ repository: item.fullName, url: item.prUrl })),
+        items: fresh.map((item) => ({
+          id: item.id,
+          repository: byId.get(item.runRepositoryId ?? "")?.fullName ?? null,
+          kind: item.kind,
+          author: item.author,
+          bot: item.authorIsBot,
+          path: item.path,
+          line: item.line,
+          body: item.body,
+          url: item.url,
+        })),
+      },
+      null,
+      2,
+    ),
+  );
+  const decidedIds = items.filter((item) => DECIDED.includes(item.status)).map((item) => item.id);
+  if (current) codingRepository.supersedeStages(run.id, ["pr_feedback"]);
+  codingRepository.createStage({
+    codeRunId: run.id,
+    stage: "pr_feedback",
+    input: { feedbackStep: "triage", feedbackDecidedIds: decidedIds } satisfies StageInput,
+  });
+  return { started: true, newItems: fresh.length, changed: created };
+}
+
+/** Stores the comments of one pull request in the feedback ledger. Returns the changed count. */
+async function collectFeedback(
+  run: CodeRun,
+  runRepositoryId: string,
+  remote: Awaited<ReturnType<typeof listPullRequestFeedback>>,
+) {
   // Fold replies into their thread root, so a new reply reopens one item.
   const roots = new Map<number, (typeof remote)[number]>();
   const appBotPattern = /\[bot\]$/;
@@ -324,6 +384,7 @@ export async function checkPullRequestFeedback(runId: string) {
     if (item.authorIsBot && item.body.includes(`Slab coding run #${run.number}`)) continue;
     const outcome = codingRepository.upsertFeedback({
       codeRunId: run.id,
+      runRepositoryId,
       githubId: item.githubId,
       kind: item.kind,
       author: item.author,
@@ -341,38 +402,7 @@ export async function checkPullRequestFeedback(runId: string) {
     });
     if (outcome !== "unchanged") created += 1;
   }
-  const items = codingRepository.listFeedback(run.id);
-  const fresh = items.filter((item) => item.status === "new");
-  if (!fresh.length) return { started: false, newItems: 0, changed: created };
-  await codeRunner.writeHandoff(
-    run.workspaceId,
-    "feedback-items.json",
-    JSON.stringify(
-      {
-        pullRequest: run.prUrl,
-        items: fresh.map((item) => ({
-          id: item.id,
-          kind: item.kind,
-          author: item.author,
-          bot: item.authorIsBot,
-          path: item.path,
-          line: item.line,
-          body: item.body,
-          url: item.url,
-        })),
-      },
-      null,
-      2,
-    ),
-  );
-  const decidedIds = items.filter((item) => DECIDED.includes(item.status)).map((item) => item.id);
-  if (current) codingRepository.supersedeStages(run.id, ["pr_feedback"]);
-  codingRepository.createStage({
-    codeRunId: run.id,
-    stage: "pr_feedback",
-    input: { feedbackStep: "triage", feedbackDecidedIds: decidedIds } satisfies StageInput,
-  });
-  return { started: true, newItems: fresh.length, changed: created };
+  return created;
 }
 
 export function decideFeedback(
@@ -442,8 +472,7 @@ export function applyFeedback(runId: string) {
 export async function publishFeedback(runId: string) {
   const run = requireRun(runId);
   assertOpen(run);
-  if (!run.prNumber) throw conflict("This run has no pull request.");
-  const repository = codingRepository.getRepository(run.repositoryId)!;
+  if (!run.repositories.some((item) => item.prNumber)) throw conflict("This run has no pull request.");
   const stage = codingRepository.currentStage(run.id, "pr_feedback");
   // Fixes exist only after the apply step finished. Before that ("Post replies only"
   // during triage), push nothing and leave the accepted fixes for the apply step.
@@ -455,17 +484,22 @@ export async function publishFeedback(runId: string) {
   const fixes = items.filter((item) => item.action === "fix");
   let pushed = null;
   if (fixes.length) {
-    pushed = (
-      await publishRun(run, {
-        commitMessage: `[${run.issueKey}] Address review feedback`,
-        openPullRequest: false,
-      })
-    ).result;
+    pushed = describePublish(
+      (
+        await publishRun(run, {
+          commitMessage: `[${run.issueKey}] Address review feedback`,
+        })
+      ).results,
+    );
   }
+  const primary = run.repositories[0]!;
   let replies = 0;
   for (const item of items) {
     if (item.reply?.trim() && (item.action === "reply" || item.action === "fix")) {
-      await replyToFeedback(repository, run.prNumber, {
+      const target = run.repositories.find((entry) => entry.id === item.runRepositoryId) ?? primary;
+      const repository = codingRepository.getRepository(target.repositoryId);
+      if (!repository || !target.prNumber) continue;
+      await replyToFeedback(repository, target.prNumber, {
         reviewCommentId: item.kind === "review_comment" ? item.reviewCommentId : null,
         body: item.kind === "review_comment" ? item.reply : `@${item.author} ${item.reply}`,
       });
@@ -489,7 +523,6 @@ export async function publishFeedback(runId: string) {
 // Read models
 
 function summarizeRun(run: CodeRun): CodeRunSummary {
-  const repository = codingRepository.getRepository(run.repositoryId);
   const stages = codingRepository.listStages(run.id).filter((stage) => !stage.superseded);
   const usage = codingRepository.stageUsage(stages.map(({ id }) => id));
   const stageSummaries = stages.map((stage) => ({
@@ -512,9 +545,6 @@ function summarizeRun(run: CodeRun): CodeRunSummary {
   const costs = [...allUsage.values()].map((item) => item.costUsd).filter((value): value is number => value !== null);
   return {
     ...run,
-    repository: repository
-      ? { id: repository.id, owner: repository.owner, name: repository.name, fullName: repository.fullName }
-      : { id: run.repositoryId, owner: "?", name: "?", fullName: "(deleted repository)" },
     stages: stageSummaries,
     costUsd: costs.length ? costs.reduce((sum, value) => sum + value, 0) : null,
   };
@@ -563,7 +593,7 @@ export function getCodingRunDetail(id: string) {
   });
   return {
     run: summary,
-    repository: codingRepository.getRepository(run.repositoryId),
+    repositories: run.repositories.map((item) => codingRepository.getRepository(item.repositoryId)),
     stages: stageDetails,
     artifacts: codingRepository.listArtifacts(run.id).map((artifact) => ({
       id: artifact.id,
@@ -588,10 +618,15 @@ export function getArtifact(runId: string, artifactId: string) {
   return artifact;
 }
 
-export async function getRunDiff(runId: string) {
+/** Diff of one repository of the run (the primary one by default). */
+export async function getRunDiff(runId: string, runRepositoryId?: string | null) {
   const run = requireRun(runId);
   if (run.workspaceStatus !== "ready") throw conflict("The workspace is not available.");
-  return codeRunner.diff(run.workspaceId);
+  const item = runRepositoryId
+    ? run.repositories.find((entry) => entry.id === runRepositoryId)
+    : run.repositories[0];
+  if (!item) throw notFound("Repository not found in this run.");
+  return codeRunner.diff(item.workspaceId);
 }
 
 export function getStageConversation(runId: string, stageId: string) {

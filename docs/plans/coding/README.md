@@ -2,6 +2,8 @@
 
 Estado: implementado (C0–C5) en `feat/coding` · 2026-11-09 · Guía de uso: [docs/coding.md](../../coding.md)
 
+> Cambios posteriores: multi-repo por run (`code_run_repositories`, migración `202611100001`) y dos agentes por defecto (Code PM y Engineer); el prompt de cada etapa viaja con cada run como instrucciones de la etapa.
+>
 > Diferencias con la propuesta: el runner-code está en la red `control` (riesgo aceptado, sin gateway MCP); los agentes de etapa se crean desde Coding → Settings en lugar de un blueprint; el estado del PR y del CI se lee por polling cada 2 minutos.
 Base: el pipeline del Hub (`hub-code-2026-10-27`), adaptado a Slab Work, Slab Agents y
 [slab-runner-code](../../../../slab-runner/docs/plans/slab-runner-code.md).
@@ -39,7 +41,7 @@ GitHub, y la UI.
 | Worktrees en `~/hub/worktrees` | Workspace del runner-code: clone propio y rama `slab/<issue>-<n>` creada por Slab |
 | El bot hace `git push` y `gh pr create` | **El agente nunca pushea.** Slab publica (runner-code) y abre el PR (GitHub App) tras el gate |
 | `gh pr edit` en final pass | El agente escribe `pr-body.md` y Slab lo aplica por API |
-| Varios repos por run | **Un repo por run** en v1. Multi-repo después. |
+| Varios repos por run | **Varios repos por run** (hasta 5): un workspace por repo con la misma rama, handoff en el repo primario, un PR draft por repo con cambios. |
 | Jev para elegir modelo | Fuera de v1. El modelo es el del agente de la etapa, con override por run. |
 | Screenshots y SonarCloud | Fuera de v1. CI se lee por la API de checks de GitHub. |
 
