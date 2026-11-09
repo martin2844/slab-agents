@@ -749,7 +749,7 @@ export function SettingsView({
               </SettingRow>
               <SettingRow
                 title="Honcho connection"
-                description="Server-side connection used to store and recall memories."
+                description="Server-side connection used to store and recall memories. For the self-hosted Honcho bundled with Slab use http://honcho-api:8000 and leave the API key empty; its OpenAI key is configured on the server, not here."
               >
                 <div
                   className={cn(
@@ -808,7 +808,11 @@ export function SettingsView({
                     />
                   </label>
                   <label className="grid gap-1.5 text-xs font-semibold sm:col-span-2">
-                    API key
+                    Honcho API key
+                    <span className="text-xs font-normal text-muted-foreground">
+                      Only for managed Honcho (api.honcho.dev). This is not an
+                      OpenAI key.
+                    </span>
                     <div className="relative">
                       <Input
                         value={honchoKey}
