@@ -86,6 +86,8 @@ export function createRunExecution(input: {
   issueKey?: string | null;
   automationId?: string | null;
   eventInstructions?: string | null;
+  /** Exact persisted policy to reuse (retries) instead of rebuilding it. */
+  runInstructions?: string;
 }) {
   const agent = agentRepository.getAgent(input.agentId);
   const thread = conversationRepository.getThread(input.threadId);
@@ -107,7 +109,7 @@ export function createRunExecution(input: {
       trigger: execution.trigger,
       mode: execution.mode,
       issueKey: execution.issueKey,
-      runInstructions: execution.policy,
+      runInstructions: input.runInstructions ?? execution.policy,
     });
     conversationRepository.addMessage(thread.id, run.id, "user", input.prompt);
     runRepository.addRunEvent(run.id, "run_execution_created", {

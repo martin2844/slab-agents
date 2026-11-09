@@ -2,6 +2,7 @@ import { runRepository } from "@/lib/repositories/run-repository";
 import { approvalRepository } from "@/lib/repositories/approval-repository";
 import { buildRunContextProfile } from "@/lib/run-context-profile";
 import { apiError, notFound } from "@/lib/api";
+import { getRunRetryState } from "@/lib/run-retry";
 export async function GET(
   _request: Request,
   ctx: RouteContext<"/api/runs/[id]">,
@@ -16,6 +17,7 @@ export async function GET(
       events,
       approvals: approvalRepository.listForRun(id),
       contextProfile: buildRunContextProfile(run, events),
+      retry: getRunRetryState(run, events),
     },
   });
 }

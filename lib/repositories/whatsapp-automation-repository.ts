@@ -553,6 +553,110 @@ export const whatsappAutomationRepository = {
     });
   },
 
+  /**
+   * Why a failed turn cannot be answered again, or null when it can. Retrying
+   * must never risk a duplicate reply or answer out of order, so any sign that
+   * the customer was already answered (by this turn, a newer turn or the owner
+   * from the phone) blocks it.
+   */
+  retryBlockReason(runId: string): string | null {
+    const current = batch(runId);
+    if (!current) return "WhatsApp conversation context is missing.";
+    if (current.status === "active")
+      return "This turn is still being finalized. Try again in a few seconds.";
+    if (receipt(runId))
+      return "This turn already tried to send a reply. Check the chat in WhatsApp instead of retrying.";
+    const linked = db
+      .prepare(
+        "SELECT count(*) n, max(sequence) last FROM whatsapp_messages WHERE run_id=? AND from_me=0",
+      )
+      .get(runId) as { n: number; last: number | null };
+    if (!linked.n || linked.last === null)
+      return "No customer messages are linked to this turn.";
+    const state = conversation(current.account, current.chat_id);
+    if (!state) return "WhatsApp conversation context is missing.";
+    if (state.active_run_id)
+      return "Another turn is in progress in this chat.";
+    const later = db
+      .prepare(
+        `SELECT
+          sum(CASE WHEN from_me=1 THEN 1 ELSE 0 END) owner,
+          sum(CASE WHEN from_me=0 AND run_id IS NOT NULL AND run_id<>? THEN 1 ELSE 0 END) newer
+        FROM whatsapp_messages WHERE account=? AND chat_id=? AND sequence>?`,
+      )
+      .get(runId, current.account, current.chat_id, linked.last) as {
+      owner: number | null;
+      newer: number | null;
+    };
+    if (later.newer) return "A newer turn already ran in this chat.";
+    if (later.owner) return "You already replied from WhatsApp after this turn.";
+    const automation = automationRepository.getAutomation(
+      current.automation_id,
+    );
+    if (
+      !automation?.enabled ||
+      !automation.whatsapp ||
+      automation.whatsapp.account !== current.account ||
+      !whatsappIncludesChat(automation.whatsapp, current.chat_id)
+    )
+      return "The WhatsApp automation for this chat is off or no longer includes it.";
+    return whatsappAutomationBlockReason(
+      automation.agentId,
+      automation.whatsapp,
+    );
+  },
+
+  /**
+   * Explicit operator retry of a failed turn: hand its messages back to the
+   * queue and resume the chat so the next tick answers them (together with any
+   * message that arrived meanwhile) through the normal guarded path.
+   */
+  requeueFailedTurn(runId: string) {
+    return withImmediateTransaction(() => {
+      const reason = whatsappAutomationRepository.retryBlockReason(runId);
+      if (reason) throw conflict(reason, "RUN_RETRY_UNAVAILABLE");
+      const current = batch(runId)!;
+      const automation = automationRepository.getAutomation(
+        current.automation_id,
+      )!;
+      const sequences = (
+        db
+          .prepare(
+            "SELECT sequence FROM whatsapp_messages WHERE run_id=? AND from_me=0 ORDER BY sequence",
+          )
+          .all(runId) as Array<{ sequence: number }>
+      ).map((row) => row.sequence);
+      db.prepare(
+        "UPDATE whatsapp_messages SET handled=0,run_id=NULL WHERE run_id=? AND from_me=0",
+      ).run(runId);
+      const resumedAt = now();
+      db.prepare(
+        "UPDATE whatsapp_conversations SET paused=0,pause_reason=NULL,revision=revision+1,updated_at=? WHERE account=? AND chat_id=?",
+      ).run(resumedAt, current.account, current.chat_id);
+      // The failed runtime may hold a partial native thread; rehydrate product
+      // history on the retried turn instead of resuming it.
+      const thread = existingThread(
+        current.account,
+        current.chat_id,
+        automation.agentId,
+      );
+      if (thread)
+        conversationRepository.setRuntimeThread(thread.thread_id, null);
+      return sequences;
+    });
+  },
+
+  /** Run that picked up the given requeued messages, if any yet. */
+  runForMessages(sequences: number[]): string | null {
+    if (!sequences.length) return null;
+    const row = db
+      .prepare(
+        `SELECT run_id FROM whatsapp_messages WHERE sequence IN (${sequences.map(() => "?").join(",")}) AND run_id IS NOT NULL LIMIT 1`,
+      )
+      .get(...sequences) as { run_id: string } | undefined;
+    return row?.run_id ?? null;
+  },
+
   claimDue(
     create: (
       automation: Automation,

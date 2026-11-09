@@ -1,5 +1,6 @@
 import { isWhatsAppInstalled } from "@/lib/integrations/whatsapp";
 import "server-only";
+import { getRunRetryState } from "@/lib/run-retry";
 
 import { agentRepository } from "@/lib/repositories/agent-repository";
 import { automationRepository } from "@/lib/repositories/automation-repository";
@@ -243,6 +244,7 @@ export function getRunDetailPageData(id: string): RunDetailData | null {
     approvals: approvalRepository.listForRun(id),
     contextProfile: buildRunContextProfile(run, events),
     budget: getRunBudget(id),
+    retry: getRunRetryState(run, events),
   };
 }
 

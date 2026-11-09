@@ -363,12 +363,18 @@ export type RunsData = {
   conversations: RunConversation[];
 };
 
+export type RunRetryState =
+  | { status: "available" }
+  | { status: "unavailable"; reason: string }
+  | { status: "retried"; retryRunId: string | null };
+
 export type RunDetailData = {
   run: Run;
   events: RunEvent[];
   approvals: Approval[];
   contextProfile: RunContextProfile;
   budget: RunBudgetSnapshot | null;
+  retry: RunRetryState | null;
 };
 
 export type AutomationsData = {

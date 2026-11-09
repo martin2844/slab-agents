@@ -18,6 +18,7 @@ import { RunContextUsage } from "@/components/run-context-usage";
 import { DocsReviewNotice } from "@/components/docs-review-notice";
 import { RunDocsChangesPanel } from "@/components/run-docs-changes";
 import { WhatsAppChatStatus } from "@/components/whatsapp-chat-status";
+import { RunRetryPanel } from "@/components/run-retry";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { RunDetailData } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
@@ -38,6 +39,8 @@ export function RunDetail({ data }: { data: RunDetailData }) {
   const budgetSkipReason = String(
     skipped?.payload.budgetReason ?? data.budget?.reason ?? "budget_rejected",
   ).replaceAll("_", " ");
+  const retryOf = data.events.find((event) => event.type === "run_retry_of")
+    ?.payload.sourceRunId;
   const runtimeStarted = data.events.some(
     (event) => event.type === "runner_run_started",
   );
@@ -165,6 +168,19 @@ export function RunDetail({ data }: { data: RunDetailData }) {
                   <dt className="text-muted-foreground">Runtime started</dt>
                   <dd>{runtimeStarted ? "Yes" : "No"}</dd>
                 </div>
+                {typeof retryOf === "string" && (
+                  <div className="grid min-h-11 grid-cols-[10rem_1fr] items-center gap-3">
+                    <dt className="text-muted-foreground">Retry of</dt>
+                    <dd>
+                      <Link
+                        className="font-mono text-xs underline underline-offset-2"
+                        href={`/runs/${retryOf}`}
+                      >
+                        run {retryOf.slice(0, 12)}
+                      </Link>
+                    </dd>
+                  </div>
+                )}
               </dl>
             </div>
             <div className="rounded-lg border bg-card p-4">
@@ -265,9 +281,19 @@ export function RunDetail({ data }: { data: RunDetailData }) {
               ) : null}
             </section>
           )}
-          {data.run.error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-              {data.run.error}
+          {(data.run.error || data.retry) && (
+            <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+              {data.run.error && (
+                <p className="text-sm text-destructive">{data.run.error}</p>
+              )}
+              {data.retry && (
+                <RunRetryPanel
+                  key={data.run.id}
+                  runId={data.run.id}
+                  trigger={data.run.trigger}
+                  retry={data.retry}
+                />
+              )}
             </div>
           )}
         </TabsContent>
