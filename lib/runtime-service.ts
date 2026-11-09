@@ -1,5 +1,7 @@
 import "server-only";
 
+import { discoverOpenRouterModels } from "./openrouter-discovery.mjs";
+
 import { runtimeConfigRepository } from "@/lib/repositories/runtime-config-repository";
 
 import { OperationalError } from "@/lib/operational-error";
@@ -291,76 +293,17 @@ export async function testRuntime(
         throw new OperationalError("Configure an OpenRouter API key first.");
       }
       const credential = decryptLocalSecret(config.credentialCiphertext);
-      const requestOptions = {
-        headers: {
-          Authorization: `Bearer ${credential}`,
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(10_000),
-        cache: "no-store" as const,
-        redirect: "manual" as const,
-      };
-      const keyResponse = await fetcher(
-        "https://openrouter.ai/api/v1/key",
-        requestOptions,
-      );
-      if (keyResponse.status >= 300 && keyResponse.status < 400) {
-        throw new OperationalError("OpenRouter key check refused a redirect.");
-      }
-      if (!keyResponse.ok) {
+      let models: string[];
+      try {
+        models = await discoverOpenRouterModels(credential, {
+          zdr: config.openrouterZdr,
+          fetcher,
+        });
+      } catch (error) {
         throw new OperationalError(
-          keyResponse.status === 401 || keyResponse.status === 403
-            ? "OpenRouter rejected the configured API key."
-            : `OpenRouter key check returned ${keyResponse.status}.`,
-        );
-      }
-      const keyPayload = (await readJsonLimited(keyResponse)) as {
-        data?: unknown;
-      };
-      if (
-        !keyPayload?.data ||
-        typeof keyPayload.data !== "object" ||
-        Array.isArray(keyPayload.data)
-      ) {
-        throw new OperationalError(
-          "OpenRouter key check returned an invalid response.",
-        );
-      }
-
-      const params = new URLSearchParams({ supported_parameters: "tools" });
-      if (config.openrouterZdr) params.set("zdr", "true");
-      const response = await fetcher(
-        `https://openrouter.ai/api/v1/models?${params.toString()}`,
-        requestOptions,
-      );
-      if (response.status >= 300 && response.status < 400) {
-        throw new OperationalError(
-          "OpenRouter model discovery refused a redirect.",
-        );
-      }
-      if (!response.ok) {
-        throw new OperationalError(
-          response.status === 401 || response.status === 403
-            ? "OpenRouter rejected the configured API key."
-            : `OpenRouter model discovery returned ${response.status}.`,
-        );
-      }
-      const payload = (await readJsonLimited(response)) as {
-        data?: Array<{ id?: unknown; supported_parameters?: unknown }>;
-      };
-      const discovered = (Array.isArray(payload?.data) ? payload.data : [])
-        .filter(
-          ({ supported_parameters }) =>
-            Array.isArray(supported_parameters) &&
-            supported_parameters.includes("tools"),
-        )
-        .map(({ id }) => (typeof id === "string" ? id.trim() : ""))
-        .filter((id) => id.length > 0 && id.length <= 200)
-        .slice(0, 500);
-      const models = [...new Set(discovered)];
-      if (models.length === 0) {
-        throw new OperationalError(
-          "OpenRouter did not report any tool-capable models for this policy.",
+          error instanceof Error
+            ? error.message
+            : "OpenRouter verification failed.",
         );
       }
       if (

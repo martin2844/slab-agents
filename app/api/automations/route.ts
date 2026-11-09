@@ -1,5 +1,9 @@
 import { agentRepository } from "@/lib/repositories/agent-repository";
-import { automationRepository } from "@/lib/repositories/automation-repository";
+import {
+  automationRepository,
+  assertWhatsAppRouting,
+} from "@/lib/repositories/automation-repository";
+import { ensureWhatsAppWebhook } from "@/lib/integrations/whatsapp";
 import { automationExecutionRepository } from "@/lib/repositories/automation-execution-repository";
 import { apiError, notFound } from "@/lib/api";
 import { automationCreateSchema } from "@/lib/api-schemas/automation";
@@ -23,6 +27,10 @@ export async function POST(request: Request) {
       throw notFound("Agent not found");
     const lifecycleStatus =
       input.lifecycleStatus ?? (input.enabled ? "enabled" : "paused");
+    if (input.triggerType === "whatsapp" && lifecycleStatus === "enabled") {
+      assertWhatsAppRouting("", input.agentId, input.whatsapp, true);
+      await ensureWhatsAppWebhook(input.whatsapp!.account);
+    }
     if (input.triggerType === "email" && lifecycleStatus === "enabled") {
       await assertEmailAutomationTarget(
         input.agentId,

@@ -1,4 +1,6 @@
 import "server-only";
+import { closeRunDocsAccess } from "@/lib/docs-run-changes";
+import { whatsappAutomationRepository } from "@/lib/repositories/whatsapp-automation-repository";
 
 import { agentRepository } from "@/lib/repositories/agent-repository";
 import { automationRepository } from "@/lib/repositories/automation-repository";
@@ -230,6 +232,27 @@ export async function* executeRun(
     if (!lease) return;
     const leaseOwner = lease.ownerId;
 
+    if (run.trigger === "whatsapp" && !run.runnerRunId) {
+      try {
+        whatsappAutomationRepository.assertRun(run.id);
+      } catch {
+        const reason =
+          "WhatsApp conversation or access changed before execution.";
+        const persisted = withImmediateTransaction(() => {
+          if (!runRepository.ownsRunLease(run.id, leaseOwner)) return false;
+          runRepository.updateRun(run.id, "skipped");
+          runRepository.addRunEvent(run.id, "run_skipped", {
+            reason,
+            runtimeStarted: false,
+          });
+          return true;
+        });
+        if (persisted)
+          yield { type: "run_skipped", runId: run.id, reason, issueKey: null };
+        return;
+      }
+    }
+
     let preflightResult: WorkRunPreflightResult | null;
     try {
       preflightResult = await runPreflight(run, agent);
@@ -379,17 +402,30 @@ export async function* executeRun(
     const memoryConfiguration = loadMemoryConfiguration();
     let memoryRecall: MemoryRecall;
     try {
-      memoryRecall = await recallMemory(
-        {
-          agentId: agent.id,
-          agentName: agent.name,
-          agentRole: agent.role,
-          prompt: runInput.body,
-          mode: run.mode,
-          issueKey: run.issueKey,
-        },
-        memoryConfiguration,
-      );
+      // A personal WhatsApp contact must not inherit the agent's cross-chat
+      // memory. Conversation continuity comes only from its dedicated thread.
+      memoryRecall =
+        run.trigger === "whatsapp"
+          ? {
+              provider: "disabled",
+              status: "disabled",
+              context: "",
+              characters: 0,
+              approxTokens: 0,
+              truncated: false,
+              durationMs: 0,
+            }
+          : await recallMemory(
+              {
+                agentId: agent.id,
+                agentName: agent.name,
+                agentRole: agent.role,
+                prompt: runInput.body,
+                mode: run.mode,
+                issueKey: run.issueKey,
+              },
+              memoryConfiguration,
+            );
     } catch {
       memoryRecall = {
         provider: "honcho",
@@ -626,6 +662,8 @@ export async function* executeRun(
             }
             if (event.type === "thread.created") {
               const createdThreadId = String(data.runtimeThreadId ?? "");
+              const continuity =
+                data.continuity === "resumed" ? "resumed" : "fresh";
               if (createdThreadId) {
                 if (runtimeThreadPlan.reusable) {
                   conversationRepository.setRuntimeThread(
@@ -637,14 +675,14 @@ export async function* executeRun(
               }
               runRepository.addRunEvent(run.id, "thread_created", {
                 runtimeThreadId: createdThreadId,
-                continuity: "fresh",
+                continuity,
                 reusable: runtimeThreadPlan.reusable,
               });
               return advance({
                 action: "next" as const,
                 runtimeThreadId: createdThreadId || runtimeThreadId,
                 runtimeContinuity: createdThreadId
-                  ? ("fresh" as const)
+                  ? continuity
                   : runtimeContinuity,
               });
             }
@@ -822,6 +860,29 @@ export async function* executeRun(
                   assistantBody,
                 );
               }
+              const deliveryError =
+                run.trigger === "whatsapp"
+                  ? whatsappAutomationRepository.replyFailure(run.id)
+                  : null;
+              if (deliveryError) {
+                const closedApprovals = approvalRepository.closePending(run.id);
+                runRepository.updateRun(run.id, "failed", {
+                  error: deliveryError,
+                });
+                runRepository.addRunEvent(run.id, "run_failed", {
+                  error: deliveryError,
+                  closedApprovals,
+                });
+                settleBudget(run.id, "failed");
+                return advance({
+                  action: "failed" as const,
+                  browser: {
+                    type: "run_failed",
+                    error: deliveryError,
+                    runId: run.id,
+                  },
+                });
+              }
               runRepository.updateRun(run.id, "completed");
               runRepository.addRunEvent(run.id, "run_completed", completedData);
               settleBudget(run.id, "completed");
@@ -967,6 +1028,10 @@ export async function* executeRun(
   } finally {
     lease?.release();
     executingRuns.delete(run.id);
+    await closeRunDocsAccess(run.id).catch(() => {
+      // The scheduler retries closing access after crashes or Docs outages.
+      console.error("[docs] Could not close Docs access for a terminal run.");
+    });
   }
 }
 

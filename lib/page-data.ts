@@ -1,3 +1,4 @@
+import { isWhatsAppInstalled } from "@/lib/integrations/whatsapp";
 import "server-only";
 
 import { agentRepository } from "@/lib/repositories/agent-repository";
@@ -255,6 +256,8 @@ export async function getAutomationsPageData(): Promise<AutomationsData> {
       : `“${dispatchWarning.automationName}” event ${dispatchWarning.inboundEventId} stopped after repeated dispatch failures: ${dispatchWarning.error}`
     : null;
   return {
+    whatsapp: integrationRepository.getIntegration("whatsapp"),
+    whatsappInstalled: await isWhatsAppInstalled(),
     automations: automationRepository.listAutomations(),
     executions: automationExecutionRepository.listRecentWithSteps(),
     agents: agentRepository.listAgents(),

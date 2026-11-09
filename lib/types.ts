@@ -10,6 +10,7 @@ import type {
   PersistedAutomationWorkflowStep,
 } from "@/lib/automation-workflow";
 import type { ReasoningEffort } from "@/lib/runtime-reasoning";
+import type { WhatsAppAutomationConfig } from "@/lib/whatsapp-automation";
 
 export type Agent = {
   id: string;
@@ -144,7 +145,9 @@ export type Automation = {
   name: string;
   agentId: string;
   agentName?: string;
-  triggerType: "schedule" | "email";
+  triggerType: "schedule" | "email" | "whatsapp";
+  whatsapp?: WhatsAppAutomationConfig | null;
+  whatsappEnabledAt?: string | null;
   cronExpression: string | null;
   scheduleTimezone: string;
   emailAccountId: string | null;
@@ -216,6 +219,7 @@ export type Comment = {
 };
 
 export type Document = {
+  version?: number;
   id: string;
   slug: string;
   title: string;
@@ -368,6 +372,8 @@ export type RunDetailData = {
 };
 
 export type AutomationsData = {
+  whatsappInstalled?: boolean;
+  whatsapp?: Integration | null;
   automations: Automation[];
   executions: Array<AutomationExecution & { steps: AutomationStepExecution[] }>;
   agents: Agent[];

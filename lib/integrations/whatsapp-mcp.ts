@@ -10,6 +10,14 @@ import {
   whatsappSession,
 } from "@/lib/integrations/whatsapp";
 import { WHATSAPP_TOOLS } from "@/lib/integrations/catalog";
+import { whatsappAutomationRepository } from "@/lib/repositories/whatsapp-automation-repository";
+import {
+  assertWhatsAppSendApproved,
+  markWhatsAppReplyForReview,
+  whatsappApprovalServer,
+  whatsappRunReplyConfig,
+} from "@/lib/whatsapp-reply-policy";
+import { filterToolsByRunPolicy } from "@/lib/agent-tool-policy";
 
 const chatId = z
   .string()
@@ -49,10 +57,26 @@ export async function handleWhatsAppMcpRequest(
   integrationId: string,
   runId: string,
 ) {
+  const review = new URL(request.url).searchParams.get("review") === "1";
   const token =
     request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  const access = () =>
-    getRunCustomIntegrationRuntimeAccess(integrationId, runId, token);
+  const access = () => {
+    const current = getRunCustomIntegrationRuntimeAccess(
+      integrationId,
+      runId,
+      token,
+    );
+    if (review && current.status === "ok")
+      return {
+        ...current,
+        allowedTools: filterToolsByRunPolicy(
+          runId,
+          `whatsapp_review_${current.record.slug}`,
+          current.allowedTools.filter((tool) => tool === "whatsapp_send_text"),
+        ),
+      };
+    return current;
+  };
   const initial = access();
   if (initial.status !== "ok" || initial.record.provider !== "whatsapp")
     return new Response("WhatsApp access unavailable", {
@@ -61,6 +85,11 @@ export async function handleWhatsAppMcpRequest(
   const account = initial.record.config.accountEmail;
   if (!account || !initial.record.enabled)
     return new Response("WhatsApp is disconnected", { status: 409 });
+  const replyConfig = whatsappRunReplyConfig(runId);
+  if (review && replyConfig?.replyApproval !== "conditional")
+    return new Response("WhatsApp reply review is unavailable for this run", {
+      status: 409,
+    });
   const server = new McpServer({ name: "slab-whatsapp", version: "1.0.0" });
   const execute = async (tool: string, operation: () => Promise<unknown>) => {
     try {
@@ -71,6 +100,10 @@ export async function handleWhatsAppMcpRequest(
         !current.allowedTools.includes(tool)
       )
         throw new Error("WhatsApp access changed. Start a new run.");
+      if (review && tool === "whatsapp_send_text") {
+        whatsappAutomationRepository.assertRun(runId, account);
+        markWhatsAppReplyForReview(runId);
+      }
       const session = await getWhatsAppSession();
       if (session?.status !== "WORKING" || session.me?.id !== account)
         throw new Error(
@@ -80,6 +113,7 @@ export async function handleWhatsAppMcpRequest(
       const latest = access();
       if (latest.status !== "ok" || !latest.allowedTools.includes(tool))
         throw new Error("WhatsApp access changed. Start a new run.");
+      whatsappAutomationRepository.assertRun(runId, account);
       return result(await operation());
     } catch (error) {
       return result(
@@ -95,7 +129,13 @@ export async function handleWhatsAppMcpRequest(
     initial.allowedTools.includes(item.key),
   )) {
     const metadata = {
-      description: tool.description,
+      description:
+        tool.key === "whatsapp_send_text" &&
+        replyConfig?.replyApproval === "conditional"
+          ? review
+            ? "Ask the owner to approve the exact WhatsApp reply before sending. Use for replies outside the automatic criteria, and whenever unsure."
+            : "Send without approval only when the owner's automatic reply criteria clearly hold. Otherwise use whatsapp_send_text on the whatsapp_review_ server."
+          : tool.description,
       annotations: {
         readOnlyHint: tool.readOnly,
         destructiveHint: false,
@@ -109,6 +149,12 @@ export async function handleWhatsAppMcpRequest(
         { ...metadata, inputSchema: page },
         (args) =>
           execute(tool.key, async () => {
+            const turn = whatsappAutomationRepository.assertRun(runId, account);
+            if (turn)
+              return {
+                account,
+                chats: args.offset ? [] : [{ id: turn.chat_id }],
+              };
             const rows = await wahaRequest(
               `/api/${whatsappSession}/chats?limit=${args.limit}&offset=${args.offset}`,
             );
@@ -130,8 +176,18 @@ export async function handleWhatsAppMcpRequest(
         { ...metadata, inputSchema: { ...page, chatId } },
         (args) =>
           execute(tool.key, async () => {
+            whatsappAutomationRepository.assertRun(runId, account, args.chatId);
             const rows = await wahaRequest(
               `/api/${whatsappSession}/chats/${encodeURIComponent(args.chatId)}/messages?limit=${args.limit}&offset=${args.offset}&downloadMedia=false`,
+              "GET",
+              undefined,
+              () => {
+                whatsappAutomationRepository.assertRun(
+                  runId,
+                  account,
+                  args.chatId,
+                );
+              },
             );
             return {
               account,
@@ -169,15 +225,57 @@ export async function handleWhatsAppMcpRequest(
         (args) =>
           execute(tool.key, async () => {
             // No automatic retries: a timeout may mean that WhatsApp already sent it.
-            return pick(
-              await wahaRequest("/api/sendText", "POST", {
-                session: whatsappSession,
-                chatId: args.chatId,
-                text: args.text,
-                linkPreview: false,
-              }),
-              ["id", "timestamp", "from", "to", "ack"],
-            );
+            let managed = false;
+            try {
+              const sent = pick(
+                await wahaRequest(
+                  "/api/sendText",
+                  "POST",
+                  {
+                    session: whatsappSession,
+                    chatId: args.chatId,
+                    text: args.text,
+                    linkPreview: false,
+                  },
+                  () => {
+                    const latest = access();
+                    if (
+                      latest.status !== "ok" ||
+                      !latest.allowedTools.includes(tool.key)
+                    )
+                      throw new Error(
+                        "WhatsApp access changed. Start a new run.",
+                      );
+                    const approvalServer = whatsappApprovalServer(
+                      runId,
+                      latest.record.slug,
+                      review,
+                    );
+                    if (approvalServer)
+                      assertWhatsAppSendApproved(runId, approvalServer, args);
+                    managed = whatsappAutomationRepository.claimReply(
+                      runId,
+                      account,
+                      args.chatId,
+                      args.text,
+                    );
+                  },
+                ),
+                ["id", "timestamp", "from", "to", "ack"],
+              );
+              if (managed) {
+                if (typeof sent.id !== "string" || !sent.id)
+                  throw new Error(
+                    "WhatsApp did not return a message identifier. Check the chat before resuming.",
+                  );
+                whatsappAutomationRepository.finishReply(runId, sent.id, true);
+              }
+              return sent;
+            } catch (error) {
+              if (managed)
+                whatsappAutomationRepository.finishReply(runId, null, false);
+              throw error;
+            }
           }),
       );
   }

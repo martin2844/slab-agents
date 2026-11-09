@@ -1,4 +1,8 @@
-import { automationRepository } from "@/lib/repositories/automation-repository";
+import {
+  automationRepository,
+  assertWhatsAppRouting,
+} from "@/lib/repositories/automation-repository";
+import { ensureWhatsAppWebhook } from "@/lib/integrations/whatsapp";
 import { agentRepository } from "@/lib/repositories/agent-repository";
 import { apiError, notFound } from "@/lib/api";
 import { automationUpdateSchema } from "@/lib/api-schemas/automation";
@@ -39,7 +43,23 @@ export async function PATCH(
       emailAccountId,
       emailMatch: input.emailMatch,
       steps: input.steps,
+      whatsapp: input.whatsapp ?? current.whatsapp,
     });
+    if (current.triggerType === "whatsapp") {
+      input.expectedWorkflowVersion ??= current.workflowVersion;
+      const enabled =
+        (input.lifecycleStatus ??
+          (input.enabled === undefined
+            ? current.lifecycleStatus
+            : input.enabled
+              ? "enabled"
+              : "paused")) === "enabled";
+      if (enabled) {
+        const config = input.whatsapp ?? current.whatsapp!;
+        assertWhatsAppRouting(id, agentId, config, true);
+        await ensureWhatsAppWebhook(config.account);
+      }
+    }
     if (
       current.triggerType === "email" &&
       emailAccountId &&

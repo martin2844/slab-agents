@@ -23,6 +23,21 @@ export function ApprovalActionDetails({
   approval: Pick<Approval, "command" | "details">;
   compact?: boolean;
 }) {
+  if (approval.details.docsRunScope === true)
+    return (
+      <div className="rounded-md border bg-background p-3 text-sm">
+        <p className="font-medium">Allow Docs changes for this run</p>
+        <p className="mt-2 text-muted-foreground">
+          Allow the agent to update Docs for the rest of this run. Its existing
+          access restrictions still apply. You will not be asked again for those
+          changes.
+        </p>
+        <p className="mt-2 text-muted-foreground">
+          Review the diff and undo changes in the run’s Docs changes tab. Other
+          actions keep their own permissions.
+        </p>
+      </div>
+    );
   const whatsapp = approval.details.whatsappAction as
     { account?: string; recipient?: string; text?: string } | undefined;
   if (whatsapp)
@@ -38,6 +53,12 @@ export function ApprovalActionDetails({
             {whatsapp.recipient || "Unavailable"}
           </dd>
         </dl>
+        {approval.details.writeContextRedacted === true && (
+          <p className="border-b px-3 py-2 text-xs text-destructive">
+            Approval is disabled because part of the message contains hidden
+            credentials. Ask the agent to prepare a message without them.
+          </p>
+        )}
         <pre className="max-h-64 overflow-auto whitespace-pre-wrap p-3 font-sans text-sm">
           {whatsapp.text || "Message unavailable; approval disabled."}
         </pre>

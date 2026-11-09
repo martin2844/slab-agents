@@ -3,7 +3,11 @@ import "server-only";
 import { sourceRepository } from "@/lib/repositories/source-repository";
 
 type DocsAccessTokenResponse = {
-  data?: { token?: unknown; expiresAt?: unknown };
+  data?: {
+    token?: unknown;
+    expiresAt?: unknown;
+    features?: { runChanges?: unknown; draftChanges?: unknown };
+  };
   error?: { message?: unknown } | null;
 };
 
@@ -27,6 +31,8 @@ export async function issueDocsRunAccess(input: {
   agentId: string;
   docsMcpUrl: string;
   adminApiKey: string;
+  editingMode?: "auto" | "review";
+  author?: string;
   fetcher?: typeof fetch;
 }) {
   const sources = sourceRepository.listSourcesForAgent(input.agentId);
@@ -50,11 +56,16 @@ export async function issueDocsRunAccess(input: {
       },
       body: JSON.stringify({
         subject: `run:${input.runId}:agent:${input.agentId}`,
+        runId: input.runId,
+        ...(input.editingMode
+          ? { editingMode: input.editingMode, author: input.author }
+          : {}),
         readCollectionIds,
         writeCollectionIds: ["workspace"],
         ttlSeconds: 86_400,
       }),
       signal: AbortSignal.timeout(10_000),
+      redirect: "manual",
     },
   );
   const payload = (await response
@@ -82,6 +93,10 @@ export async function issueDocsRunAccess(input: {
       writeCollectionIds: ["workspace"],
       sources: sourceSnapshot,
       expiresAt,
+      runChanges: payload?.data?.features?.runChanges === 1,
+      draftChanges:
+        !!input.editingMode && payload?.data?.features?.draftChanges === 1,
+      editingMode: input.editingMode,
     },
   };
 }

@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { LoaderCircle, MessageCircle, RefreshCw } from "lucide-react";
+import { Info, LoaderCircle, MessageCircle, RefreshCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -157,10 +158,36 @@ export function WhatsAppIntegrationEditor({
             WhatsApp
           </DialogTitle>
           <DialogDescription>
-            Link your personal account, then choose what each agent can read and
-            send.
+            Connect your WhatsApp and choose which agents can read or send
+            messages. To reply when new messages arrive, create an automation.
           </DialogDescription>
         </DialogHeader>
+        <section
+          aria-label="About WAHA"
+          className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4"
+        >
+          <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          <div className="space-y-2 text-sm">
+            <h3 className="font-semibold">Unofficial WhatsApp connection</h3>
+            <p>
+              WAHA is an unofficial connector, not endorsed by WhatsApp or Meta.
+              Using it may result in your account being restricted or banned.
+              The connection can also stop working if WhatsApp changes.
+            </p>
+            <p className="text-muted-foreground">
+              Messages an agent reads may be sent to its AI provider. Choose
+              carefully which agents you give access to.
+            </p>
+            <a
+              href="https://waha.devlike.pro/docs/overview/introduction/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block underline underline-offset-4"
+            >
+              Read WAHA’s disclaimer
+            </a>
+          </div>
+        </section>
         {error && (
           <p
             role="alert"
@@ -182,11 +209,17 @@ export function WhatsAppIntegrationEditor({
             >
               <p className="text-sm font-medium" role="status">
                 {installing
-                  ? "Installing WhatsApp on your host…"
+                  ? "Setting up WhatsApp…"
                   : (labels[data.status] ?? data.status)}
               </p>
               {data.account && (
                 <p className="mt-1 font-mono text-sm">{data.account}</p>
+              )}
+              {data.status === "FAILED" && (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  The QR may have expired or the connection was interrupted.
+                  Connect again to retry and get a new QR if needed.
+                </p>
               )}
               {data.host.installation?.state === "failed" && (
                 <p role="alert" className="mt-2 text-sm text-destructive">
@@ -197,8 +230,8 @@ export function WhatsAppIntegrationEditor({
                 <div className="mt-3 space-y-3">
                   <p className="text-sm text-muted-foreground">
                     {data.host.available
-                      ? "Install the WhatsApp service on this host to link your account."
-                      : "Upgrade slab-stack on the host to enable installation here."}
+                      ? "Set up WhatsApp on your server, then scan a QR code to connect your account."
+                      : "Your server needs an update before you can set up WhatsApp here."}
                   </p>
                   <Button
                     disabled={busy || installing || !data.host.available}
@@ -234,8 +267,8 @@ export function WhatsAppIntegrationEditor({
                   )}
                   {data.status.startsWith("PASSKEY") && (
                     <p className="mt-3 text-sm text-muted-foreground">
-                      This account needs an additional WhatsApp passkey step. QR
-                      pairing cannot finish here until it is confirmed.
+                      Open WhatsApp on your phone and confirm the passkey
+                      request to finish connecting.
                     </p>
                   )}
                   <div className="mt-4 flex flex-wrap gap-2">
@@ -255,17 +288,18 @@ export function WhatsAppIntegrationEditor({
                       <RefreshCw className="size-4" />
                       {data.qr ? "Refresh QR" : "Reconnect"}
                     </Button>
-                    {data.integration && (
-                      <Button
-                        variant="ghost"
-                        disabled={busy}
-                        onClick={() => setConfirmUnlink(true)}
-                      >
-                        Unlink account
-                      </Button>
-                    )}
                   </div>
                 </>
+              )}
+              {data.integration?.enabled && (
+                <Button
+                  className="mt-3"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => setConfirmUnlink(true)}
+                >
+                  Unlink account
+                </Button>
               )}
               {confirmUnlink && (
                 <div className="mt-4 border-t pt-3">
@@ -293,10 +327,21 @@ export function WhatsAppIntegrationEditor({
             </section>
             {data.integration && (
               <section aria-label="WhatsApp agent permissions">
-                <h3 className="text-sm font-semibold">Agent access</h3>
+                <Button variant="outline" asChild className="mb-4">
+                  <Link
+                    href="/automations/new?template=whatsapp-replies"
+                    onClick={() => onOpenChange(false)}
+                  >
+                    Set up replies
+                  </Link>
+                </Button>
+                <h3 className="text-sm font-semibold">Agent permissions</h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Changes apply to new runs. Sending with approval shows the
-                  account, recipient and exact message before it is sent.
+                  Reading allows an agent to open chats and messages. Choose
+                  whether it can send messages, and whether you want to approve
+                  each one. Automations can have their own approval rules.
+                  Removing send permission stops all replies. These permissions
+                  alone do not turn on automatic replies.
                 </p>
                 <div className="mt-3 divide-y rounded-lg border">
                   {agents.map((agent) => {
@@ -319,20 +364,22 @@ export function WhatsAppIntegrationEditor({
                           <Switch
                             aria-label={`Read WhatsApp for ${agent.name}`}
                             checked={read}
-                            disabled={busy || !connected}
+                            disabled={busy || (!connected && !read)}
                             onCheckedChange={(value) =>
                               void access(agent.id, value, write)
                             }
                           />
-                          Read
+                          Read messages
                         </label>
                         <label className="flex items-center gap-2 text-sm">
-                          Send
+                          Send messages
                           <select
                             aria-label={`Send WhatsApp for ${agent.name}`}
                             className="h-9 rounded-md border bg-background px-2 text-sm"
                             value={write}
-                            disabled={busy || !connected}
+                            disabled={
+                              busy || (!connected && write === "disabled")
+                            }
                             onChange={(event) =>
                               void access(
                                 agent.id,
@@ -341,11 +388,19 @@ export function WhatsAppIntegrationEditor({
                               )
                             }
                           >
-                            <option value="disabled">Disabled</option>
-                            <option value="approval_required">
-                              Require approval
+                            <option value="disabled">Not allowed</option>
+                            <option
+                              value="approval_required"
+                              disabled={!connected && write === "disabled"}
+                            >
+                              Ask me first
                             </option>
-                            <option value="autonomous">Autonomous</option>
+                            <option
+                              value="autonomous"
+                              disabled={!connected && write !== "autonomous"}
+                            >
+                              Without asking
+                            </option>
                           </select>
                         </label>
                       </div>

@@ -153,6 +153,24 @@ const workTools: ToolDefinition[] = [
 
 const docsTools: ToolDefinition[] = [
   defineTool(
+    "list_doc_commits",
+    "List commits",
+    "Browse published document changes.",
+    true,
+  ),
+  defineTool(
+    "get_doc_commit",
+    "Read commit",
+    "Read the before and after of each document in a commit.",
+    true,
+  ),
+  defineTool(
+    "revert_doc_commit",
+    "Revert commit",
+    "Restore a commit’s documents without overwriting newer work.",
+    false,
+  ),
+  defineTool(
     "list_docs",
     "List documents",
     "Browse document metadata and hierarchy.",
@@ -192,9 +210,8 @@ const docsTools: ToolDefinition[] = [
   defineTool(
     "archive_doc",
     "Archive document",
-    "Soft-delete a document while retaining history.",
+    "Archive a document with a reversible commit.",
     false,
-    "destructive",
   ),
 ];
 

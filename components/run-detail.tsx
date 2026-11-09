@@ -15,6 +15,9 @@ import {
 } from "@/components/operational-ui";
 import { StatusBadge } from "@/components/status-badge";
 import { RunContextUsage } from "@/components/run-context-usage";
+import { DocsReviewNotice } from "@/components/docs-review-notice";
+import { RunDocsChangesPanel } from "@/components/run-docs-changes";
+import { WhatsAppChatStatus } from "@/components/whatsapp-chat-status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { RunDetailData } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
@@ -87,15 +90,26 @@ export function RunDetail({ data }: { data: RunDetailData }) {
           </div>
         }
       />
+      {data.run.trigger === "whatsapp" && data.run.threadId && (
+        <WhatsAppChatStatus
+          key={data.run.threadId}
+          threadId={data.run.threadId}
+        />
+      )}
+      <DocsReviewNotice key={data.run.id} runId={data.run.id} />
       <Tabs defaultValue="overview" className="space-y-5">
         <TabsList className="h-9 w-full justify-start overflow-x-auto rounded-lg border bg-card p-1 sm:w-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="context">Context / Usage</TabsTrigger>
           <TabsTrigger value="tools">Tools</TabsTrigger>
+          <TabsTrigger value="docs">Docs changes</TabsTrigger>
           <TabsTrigger value="debug">Debug</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="docs">
+          <RunDocsChangesPanel runId={data.run.id} />
+        </TabsContent>
         <TabsContent value="overview" className="space-y-5">
           <section className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-2 xl:grid-cols-5">
             {[

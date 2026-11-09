@@ -1,6 +1,6 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { DomainError, conflict, notFound } from "@/lib/api";
@@ -23,11 +23,7 @@ const sessionSchema = z.object({
     .nullish(),
 });
 
-export async function wahaRequest(
-  path: string,
-  method = "GET",
-  body?: unknown,
-): Promise<unknown> {
+async function readWahaKey() {
   let key: string;
   try {
     key = (
@@ -44,6 +40,33 @@ export async function wahaRequest(
       503,
     );
   }
+  return key;
+}
+
+export async function isWhatsAppInstalled() {
+  try {
+    await readWahaKey();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function whatsappWebhookKey() {
+  return createHmac("sha256", await readWahaKey())
+    .update("slab-whatsapp-webhook-v1")
+    .digest("hex");
+}
+
+export async function wahaRequest(
+  path: string,
+  method = "GET",
+  body?: unknown,
+  beforeRequest?: () => void,
+): Promise<unknown> {
+  const key = await readWahaKey();
+  // No await between the last authorization check and the outbound request.
+  beforeRequest?.();
   try {
     const response = await fetch(
       new URL(path, process.env.SLAB_WAHA_URL ?? "http://slab-whatsapp:3000"),
@@ -118,8 +141,28 @@ export function syncWhatsAppAccount(
       return integrationRepository.getIntegration(current.id);
     const account = session?.status === "WORKING" ? session.me?.id : null;
     if (!current && !account) return null;
-    if (!account) return current ? integrationRepository.updateIntegrationCheckIfVersion(current.id, current.version, { status: current.enabled ? "failed" : "disabled", lastError: "WhatsApp is disconnected.", lastTestedAt: new Date().toISOString() }) : null;
-    if (current?.config.accountEmail === account) return integrationRepository.updateIntegrationCheckIfVersion(current.id, current.version, { status: current.enabled ? "connected" : "disabled", lastError: null, lastTestedAt: new Date().toISOString() });
+    if (!account)
+      return current
+        ? integrationRepository.updateIntegrationCheckIfVersion(
+            current.id,
+            current.version,
+            {
+              status: current.enabled ? "failed" : "disabled",
+              lastError: "WhatsApp is disconnected.",
+              lastTestedAt: new Date().toISOString(),
+            },
+          )
+        : null;
+    if (current?.config.accountEmail === account)
+      return integrationRepository.updateIntegrationCheckIfVersion(
+        current.id,
+        current.version,
+        {
+          status: current.enabled ? "connected" : "disabled",
+          lastError: null,
+          lastTestedAt: new Date().toISOString(),
+        },
+      );
     return integrationRepository.saveIntegration({
       ...(current
         ? {
@@ -148,12 +191,19 @@ export function syncWhatsAppAccount(
 }
 
 export async function getWhatsAppState() {
-  const before = integrationRepository.getIntegrationRecordByProvider("whatsapp");
+  const before =
+    integrationRepository.getIntegrationRecordByProvider("whatsapp");
   const session = await getWhatsAppSession();
-  const after = integrationRepository.getIntegrationRecordByProvider("whatsapp");
-  const integration = before?.version === after?.version && before?.id === after?.id
-    ? syncWhatsAppAccount(session) : after ? integrationRepository.getIntegration(after.id) : null;
-  if (after?.config.providerMetadata?.unlinked === true) return { status: "STOPPED", account: null, qr: null, integration };
+  const after =
+    integrationRepository.getIntegrationRecordByProvider("whatsapp");
+  const integration =
+    before?.version === after?.version && before?.id === after?.id
+      ? syncWhatsAppAccount(session)
+      : after
+        ? integrationRepository.getIntegration(after.id)
+        : null;
+  if (after?.config.providerMetadata?.unlinked === true)
+    return { status: "STOPPED", account: null, qr: null, integration };
   let qr: string | null = null;
   if (session?.status === "SCAN_QR_CODE") {
     const image = z
@@ -175,9 +225,7 @@ export async function getWhatsAppState() {
   };
 }
 
-async function performSessionChange(
-  action: "connect" | "restart" | "unlink",
-) {
+async function performSessionChange(action: "connect" | "restart" | "unlink") {
   if (action === "unlink") {
     // Revoke first: an upstream failure must not leave agents able to send.
     withImmediateTransaction(() => {
@@ -215,7 +263,7 @@ async function performSessionChange(
     ["STOPPED", "FAILED"].includes(session.status)
   ) {
     await wahaRequest(
-      `/api/sessions/${whatsappSession}/${action === "restart" ? "restart" : "start"}`,
+      `/api/sessions/${whatsappSession}/${action === "restart" || session.status === "FAILED" ? "restart" : "start"}`,
       "POST",
     );
   }
@@ -246,19 +294,27 @@ export function setWhatsAppAccess(input: {
       integrationRepository.getIntegrationRecordByProvider("whatsapp");
     if (!record || !agentRepository.getAgent(input.agentId))
       throw notFound("WhatsApp connection or agent not found.");
-    if (!record.enabled || record.status !== "connected")
-      throw conflict("Link WhatsApp before assigning access.");
     const permissions = integrationRepository.listIntegrationPermissions(
       record.id,
     );
-    permissions[input.agentId] = WHATSAPP_TOOLS.filter((tool) =>
-      tool.readOnly ? input.read : input.write !== "disabled",
-    ).map((tool) => tool.key);
+    const previousGrants = permissions[input.agentId] ?? [];
     const modes =
       (record.config.providerMetadata?.writeModes as Record<
         string,
         WhatsAppWriteMode
       >) ?? {};
+    const previousWrite = previousGrants.includes("whatsapp_send_text")
+      ? (modes[input.agentId] ?? "approval_required")
+      : "disabled";
+    const writeRank = { disabled: 0, approval_required: 1, autonomous: 2 };
+    const increasesAccess =
+      (input.read && !previousGrants.includes("whatsapp_list_chats")) ||
+      writeRank[input.write] > writeRank[previousWrite as WhatsAppWriteMode];
+    if ((!record.enabled || record.status !== "connected") && increasesAccess)
+      throw conflict("Link WhatsApp before assigning additional access.");
+    permissions[input.agentId] = WHATSAPP_TOOLS.filter((tool) =>
+      tool.readOnly ? input.read : input.write !== "disabled",
+    ).map((tool) => tool.key);
     return integrationRepository.saveIntegration({
       ...record,
       permissions,
@@ -275,14 +331,74 @@ export function setWhatsAppAccess(input: {
   });
 }
 
-export async function changeWhatsAppSession(action: "connect" | "restart" | "unlink") {
+export async function withWhatsAppSessionOperation<T>(
+  operation: () => Promise<T>,
+) {
   const lockKey = "whatsapp_session_operation";
-  const lease = JSON.stringify({ id: randomUUID(), expiresAt: Date.now() + 90_000 });
+  const lease = JSON.stringify({
+    id: randomUUID(),
+    expiresAt: Date.now() + 90_000,
+  });
   withImmediateTransaction(() => {
     const previous = settingsRepository.get(lockKey);
-    if (previous && JSON.parse(previous).expiresAt > Date.now()) throw conflict("Another WhatsApp connection action is running.");
+    if (previous && JSON.parse(previous).expiresAt > Date.now())
+      throw conflict("Another WhatsApp connection action is running.");
     settingsRepository.set(lockKey, lease);
   });
-  try { await performSessionChange(action); }
-  finally { settingsRepository.compareAndSet(lockKey, lease, "{}"); }
+  try {
+    return await operation();
+  } finally {
+    settingsRepository.compareAndSet(lockKey, lease, "{}");
+  }
+}
+
+export async function changeWhatsAppSession(
+  action: "connect" | "restart" | "unlink",
+) {
+  return withWhatsAppSessionOperation(() => performSessionChange(action));
+}
+
+export async function ensureWhatsAppWebhook(account: string) {
+  return withWhatsAppSessionOperation(async () => {
+    const session = z
+      .object({
+        status: z.string(),
+        me: z.object({ id: z.string() }).nullish(),
+        config: z.record(z.string(), z.unknown()).nullish(),
+      })
+      .parse(await wahaRequest(`/api/sessions/${whatsappSession}`));
+    if (session.status !== "WORKING" || session.me?.id !== account)
+      throw conflict(
+        "Reconnect the selected WhatsApp account before activating replies.",
+      );
+    const url =
+      process.env.SLAB_WHATSAPP_WEBHOOK_URL ??
+      "http://slab-agents:3009/api/integrations/whatsapp/events";
+    const webhook = {
+      url,
+      events: ["message.any"],
+      hmac: { key: await whatsappWebhookKey() },
+      retries: { policy: "exponential", delaySeconds: 2, attempts: 15 },
+    };
+    const config = session.config ?? {};
+    const previous = Array.isArray(config.webhooks)
+      ? (config.webhooks as Record<string, unknown>[])
+      : [];
+    if (
+      previous.some(
+        (item) =>
+          item.url === url &&
+          JSON.stringify(item.events) === JSON.stringify(webhook.events) &&
+          (item.hmac as { key?: string } | undefined)?.key === webhook.hmac.key,
+      )
+    )
+      return;
+    // WAHA replaces session config on PUT, so retain settings and other consumers.
+    await wahaRequest(`/api/sessions/${whatsappSession}`, "PUT", {
+      config: {
+        ...config,
+        webhooks: [...previous.filter((item) => item.url !== url), webhook],
+      },
+    });
+  });
 }

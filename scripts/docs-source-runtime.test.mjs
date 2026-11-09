@@ -137,6 +137,7 @@ test("a fresh run receives only its assigned Docs source snapshot", async (t) =>
           return Response.json({
             data: {
               token: "run-scoped-docs-token",
+              features: { runChanges: 1, draftChanges: 1 },
               expiresAt: "2026-08-29T00:00:00.000Z",
             },
             error: null,
@@ -152,6 +153,19 @@ test("a fresh run receives only its assigned Docs source snapshot", async (t) =>
   );
   await result.contextProfile;
 
+  assert.equal(issuedScope.runId, run.id);
+  assert.equal(
+    runnerBody.mcpServers.find((server) => server.name === "docs")
+      .docsRunApproval,
+    undefined,
+  );
+  assert.equal(issuedScope.editingMode, "review");
+  assert.equal(
+    runnerBody.mcpServers.find((server) => server.name === "docs").approval
+      .tools.update_doc,
+    "approve",
+  );
+  assert.equal(result.capabilitySnapshot.docsAccess.draftChanges, true);
   assert.deepEqual(issuedScope.readCollectionIds, ["workspace", source.id]);
   assert.deepEqual(issuedScope.writeCollectionIds, ["workspace"]);
   assert.equal(

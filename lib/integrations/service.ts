@@ -4,6 +4,7 @@ import { agentRepository } from "@/lib/repositories/agent-repository";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
 import { runRepository } from "@/lib/repositories/run-repository";
 import { withImmediateTransaction } from "@/lib/db/transaction";
+import { whatsappRunReplyConfig } from "@/lib/whatsapp-reply-policy";
 import type { McpToolPolicy } from "@/lib/agent-tool-policy";
 import { filterToolsByRunPolicy } from "@/lib/agent-tool-policy";
 import type { IntegrationRecord } from "@/lib/repositories/integration-repository";
@@ -1128,7 +1129,12 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
           .filter(
             (integration) =>
               integration.enabled &&
-              integration.status === "connected" &&
+              (integration.status === "connected" ||
+                // WAHA reconnects independently of the admin UI. Each native
+                // MCP call verifies the live linked identity before execution.
+                (integration.provider === "whatsapp" &&
+                  integration.status === "failed" &&
+                  !!integration.accountEmail)) &&
               (integration.provider === "custom_http" ||
                 integration.provider === "custom_mcp" ||
                 integration.provider === "whatsapp"),
@@ -1174,7 +1180,15 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
         tokenHash: hashCapabilityToken(token),
         allowedTools: effectiveAllowedTools,
       });
-      return [
+      const replyConfig =
+        integration.provider === "whatsapp"
+          ? whatsappRunReplyConfig(runId)
+          : null;
+      const sendWithoutApproval =
+        replyConfig && replyConfig.replyApproval !== "inherit"
+          ? ["autonomous", "conditional"].includes(replyConfig.replyApproval)
+          : integration.whatsappWriteModes?.[agentId] === "autonomous";
+      const entries = [
         {
           server: {
             name: `${integration.provider}_${integration.slug}`,
@@ -1185,13 +1199,11 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
             ...(integration.provider === "whatsapp"
               ? {
                   approval: {
-                    defaultMode: "approve" as const,
+                    defaultMode: "approve" as McpToolPolicy["defaultMode"],
                     tools: {
-                      whatsapp_send_text:
-                        integration.whatsappWriteModes?.[agentId] ===
-                        "autonomous"
-                          ? ("approve" as const)
-                          : ("prompt" as const),
+                      whatsapp_send_text: sendWithoutApproval
+                        ? ("approve" as const)
+                        : ("prompt" as const),
                     },
                   },
                 }
@@ -1199,7 +1211,7 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
             ...(integration.provider === "custom_http"
               ? {
                   approval: {
-                    defaultMode: "approve" as const,
+                    defaultMode: "approve" as McpToolPolicy["defaultMode"],
                     tools: {} as McpToolPolicy["tools"],
                   },
                 }
@@ -1214,6 +1226,25 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
           },
         },
       ];
+      if (
+        replyConfig?.replyApproval === "conditional" &&
+        effectiveAllowedTools.includes("whatsapp_send_text")
+      ) {
+        const base = entries[0]!;
+        entries.push({
+          server: {
+            ...base.server,
+            name: `whatsapp_review_${integration.slug}`,
+            url: `${base.server.url}&review=1`,
+            approval: {
+              defaultMode: "prompt",
+              tools: { whatsapp_send_text: "prompt" },
+            },
+          },
+          snapshot: { ...base.snapshot, tools: ["whatsapp_send_text"] },
+        });
+      }
+      return entries;
     });
   });
 }

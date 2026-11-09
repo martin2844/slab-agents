@@ -22,13 +22,10 @@ export type PolicyAwareMcpServer = {
     headers?: Record<string, string>;
   };
   approval?: McpToolPolicy;
+  docsRunApproval?: boolean;
 };
 
-const toolPolicyModes = new Set<ToolPolicyMode>([
-  "approve",
-  "prompt",
-  "deny",
-]);
+const toolPolicyModes = new Set<ToolPolicyMode>(["approve", "prompt", "deny"]);
 
 export function parseToolPolicyOverrides(
   value: unknown,
@@ -87,6 +84,8 @@ const READ_ONLY_TOOLS: Record<string, readonly string[]> = {
     "get_doc",
     "list_doc_revisions",
     "get_doc_revision",
+    "list_doc_commits",
+    "get_doc_commit",
   ],
 };
 
@@ -162,7 +161,8 @@ function presetPolicy(
   const permissionMode = effectiveAgentPermissionMode(agent);
   if (permissionMode === "yolo") {
     return server.name.startsWith("whatsapp_") && server.approval
-      ? server.approval : { defaultMode: "approve", tools: {} };
+      ? server.approval
+      : { defaultMode: "approve", tools: {} };
   }
   if (permissionMode !== "full") return guardedPolicy(agent, server);
 
@@ -220,7 +220,11 @@ export function snapshotAgentToolPolicies(input: {
   catalog?: AgentToolCatalogServer[];
   overrides?: Record<string, McpToolPolicy>;
 }) {
-  const policies = livePolicies(input.agent, input.servers, input.catalog ?? []);
+  const policies = livePolicies(
+    input.agent,
+    input.servers,
+    input.catalog ?? [],
+  );
   for (const [serverName, override] of Object.entries(input.overrides ?? {})) {
     if (policies[serverName]) {
       policies[serverName] = combinePolicies(policies[serverName], override);

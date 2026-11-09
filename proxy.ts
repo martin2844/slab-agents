@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth/service";
 
 const publicPaths = new Set([
+  "/api/integrations/whatsapp/events",
   "/health",
   "/ready",
   "/login",

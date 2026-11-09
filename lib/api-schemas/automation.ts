@@ -5,6 +5,7 @@ import {
   emailAutomationMatchSchema,
 } from "../automation-workflow.ts";
 import { isValidTimeZone } from "../automation-schedule.ts";
+import { whatsappAutomationSchema } from "../whatsapp-automation.ts";
 
 const lifecycleStatusSchema = z.enum([
   "draft",
@@ -34,7 +35,8 @@ export const automationCreateSchema = z
   .object({
     name: z.string().trim().min(2).max(120),
     agentId: z.string().uuid(),
-    triggerType: z.enum(["schedule", "email"]).default("schedule"),
+    triggerType: z.enum(["schedule", "email", "whatsapp"]).default("schedule"),
+    whatsapp: whatsappAutomationSchema.optional(),
     cronExpression: cronExpressionSchema.nullable(),
     scheduleTimezone: timezoneSchema.default("UTC"),
     emailAccountId: z.string().min(1).max(200).nullable().default(null),
@@ -47,6 +49,26 @@ export const automationCreateSchema = z
     missedRunPolicy: z.enum(["skip", "latest_once"]).default("latest_once"),
   })
   .superRefine((input, ctx) => {
+    if (
+      input.triggerType === "whatsapp" &&
+      (!input.whatsapp ||
+        input.cronExpression !== null ||
+        input.emailAccountId !== null ||
+        input.emailMatch !== undefined ||
+        (input.steps?.length ?? 0) > 0)
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["whatsapp"],
+        message:
+          "Choose a WhatsApp account and contacts, without an Email workflow or schedule.",
+      });
+    if (input.triggerType !== "whatsapp" && input.whatsapp !== undefined)
+      ctx.addIssue({
+        code: "custom",
+        path: ["whatsapp"],
+        message: "WhatsApp settings require a WhatsApp trigger.",
+      });
     if (input.triggerType === "email" && !input.emailAccountId) {
       ctx.addIssue({
         code: "custom",
@@ -96,6 +118,7 @@ export const automationCreateSchema = z
   });
 
 const workflowDefinitionFields = [
+  "whatsapp",
   "agentId",
   "cronExpression",
   "scheduleTimezone",
@@ -109,6 +132,7 @@ const workflowDefinitionFields = [
 
 export const automationUpdateSchema = z
   .object({
+    whatsapp: whatsappAutomationSchema.optional(),
     enabled: z.boolean().optional(),
     expectedWorkflowVersion: z.number().int().positive().optional(),
     agentId: z.string().uuid().optional(),

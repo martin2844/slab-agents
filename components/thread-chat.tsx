@@ -14,6 +14,8 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ApprovalActionDetails } from "@/components/approval-action-details";
+import { DocsReviewNotice } from "@/components/docs-review-notice";
+import { WhatsAppChatStatus } from "@/components/whatsapp-chat-status";
 import { Textarea } from "@/components/ui/textarea";
 import { api, apiClientError } from "@/lib/client-api";
 import { buildReplyDurations } from "@/lib/chat-metrics";
@@ -294,6 +296,9 @@ export function ThreadChat({
       setApprovalResolving(false);
     }
   }
+  const docsRunId =
+    backgroundRunId ??
+    data.messages.findLast((message) => message.runId)?.runId;
   const progress = buildRunProgress(
     runEvents,
     runStatus ?? (streaming || backgroundRunId ? "running" : null),
@@ -323,6 +328,10 @@ export function ThreadChat({
         </div>
       </header>
       <div className="flex-1 overflow-y-auto">
+        <div className="sticky top-0 z-10 mx-auto max-w-3xl bg-background px-4 pt-4 sm:px-8">
+          <WhatsAppChatStatus key={threadId} threadId={threadId} />
+          {docsRunId && <DocsReviewNotice key={docsRunId} runId={docsRunId} />}
+        </div>
         <div className="mx-auto flex min-h-full max-w-3xl flex-col px-4 py-8 sm:px-8">
           {!data.messages.length && !partial ? (
             <div className="my-auto py-16">

@@ -3,6 +3,7 @@ import { apiError } from "@/lib/api";
 import { DocsClient } from "@/lib/mcp/docs-client";
 import { getSetting } from "@/lib/settings";
 const schema = z.object({
+  expected_version: z.number().int().positive().optional(),
   title: z.string().min(1).optional(),
   body: z.string().optional(),
   parent_id: z.string().uuid().nullable().optional(),

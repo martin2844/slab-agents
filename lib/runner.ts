@@ -1,3 +1,4 @@
+import { docsEditingPlan } from "@/lib/docs-editing-policy";
 import { agentRepository } from "@/lib/repositories/agent-repository";
 import { emailAccessRepository } from "@/lib/repositories/email-access-repository";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
@@ -66,6 +67,7 @@ import type {
 } from "@/lib/codex-auth-contract";
 import { codexLoginIdPattern } from "@/lib/codex-auth-contract";
 import { issueDocsRunAccess } from "@/lib/docs-access";
+import { registerDocsRunAccess } from "@/lib/docs-run-changes";
 import {
   emailReplyConstraintHeaders,
   type EmailReplyToolConstraint,
@@ -432,15 +434,6 @@ export async function startRunnerRun(
   const workApiKey = getSetting("work_api_key");
   const docsApiKey = getSetting("docs_api_key");
   const docsMcpUrl = getSetting("docs_mcp_url");
-  const docsAccess = docsApiKey
-    ? await issueDocsRunAccess({
-        runId: input.controlPlaneRunId ?? input.runId,
-        agentId: input.agent.id,
-        docsMcpUrl,
-        adminApiKey: docsApiKey,
-        fetcher: dependencies.fetcher,
-      })
-    : null;
   const configuredIntegrations = integrationRepository.listIntegrations();
   const configuredEmailAccess = emailAccessRepository.getAgentEmailAccess(
     input.agent.id,
@@ -527,7 +520,6 @@ export async function startRunnerRun(
     {
       name: "docs" as const,
       url: docsMcpUrl,
-      ...(docsAccess ? { credentials: { bearerToken: docsAccess.token } } : {}),
     },
     ...(posthogMcp ? [posthogMcp] : []),
     ...(emailServer ? [emailServer] : []),
@@ -544,6 +536,27 @@ export async function startRunnerRun(
       catalog: toolCatalog,
       overrides: input.toolPolicyOverrides,
     });
+  const docsPlan = docsEditingPlan(toolPolicySnapshot.policies.docs);
+  const docsAccess = docsApiKey
+    ? await issueDocsRunAccess({
+        runId: input.controlPlaneRunId ?? input.runId,
+        agentId: input.agent.id,
+        docsMcpUrl,
+        editingMode: docsPlan.editingMode,
+        author: input.agent.name,
+        adminApiKey: docsApiKey,
+        fetcher: dependencies.fetcher,
+      })
+    : null;
+  if (docsAccess?.snapshot.runChanges)
+    registerDocsRunAccess(input.controlPlaneRunId ?? input.runId, docsMcpUrl);
+  const docsServer = mcpServers.find(({ name }) => name === "docs");
+  if (docsServer && docsAccess) {
+    docsServer.credentials = { bearerToken: docsAccess.token };
+    if (docsAccess.snapshot.draftChanges)
+      docsServer.approval = docsPlan.stagedPolicy;
+    else if (docsAccess.snapshot.runChanges) docsServer.docsRunApproval = true;
+  }
   const effectiveToolsByServer = new Map(
     mcpServers.map(({ name }) => [
       name,
@@ -602,6 +615,11 @@ export async function startRunnerRun(
   const instructionParts = [
     input.agent.instructions,
     workInstructions,
+    ...(docsAccess?.snapshot.draftChanges
+      ? [
+          `Docs edits are private drafts for this run. You may finish all permitted document edits without asking for per-tool approval. ${docsPlan.editingMode === "auto" ? "After a successful run, all changes publish together as one commit." : "After the run finishes, the owner reviews one complete diff and chooses Approve & merge in Docs or the run Docs changes tab. Do not wait for approval or claim the changes are published."} When updating an existing document, pass its last read version as expected_version to avoid overwriting a newer edit. Use list_doc_commits and get_doc_commit to inspect history; revert_doc_commit stages a safe reversal when requested. Never claim a draft is published before publication is confirmed.`,
+        ]
+      : []),
     input.execution.policy,
     ...(input.memory?.context ? [input.memory.context] : []),
     ...(integrationInstructions ? [integrationInstructions] : []),

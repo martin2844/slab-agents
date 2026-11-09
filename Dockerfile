@@ -50,6 +50,8 @@ COPY --chown=slab:slab package.json package-lock.json knexfile.cjs ./
 COPY --chown=slab:slab db ./db
 COPY --chown=slab:slab scripts/container-entrypoint.sh ./scripts/container-entrypoint.sh
 COPY --chown=slab:slab scripts/admin-bootstrap.mjs ./scripts/admin-bootstrap.mjs
+COPY --chown=slab:slab scripts/openrouter-bootstrap.mjs ./scripts/openrouter-bootstrap.mjs
+COPY --chown=slab:slab lib/local-secrets.mjs lib/openrouter-discovery.mjs ./lib/
 COPY --chown=slab:slab lib/auth/password.mjs ./lib/auth/password.mjs
 
 USER slab

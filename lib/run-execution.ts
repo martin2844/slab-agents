@@ -3,6 +3,7 @@ export type RunTrigger =
   | "manual"
   | "automation"
   | "email"
+  | "whatsapp"
   | "assignment"
   | "resumed"
   | "review_requested"
@@ -96,7 +97,7 @@ function assignmentPolicy(issueKey: string) {
 }
 
 function assertTriggerMode(trigger: RunTrigger, mode: RunMode) {
-  if (trigger === "chat" && mode !== "chat") {
+  if ((trigger === "chat" || trigger === "whatsapp") && mode !== "chat") {
     throw new Error("A chat trigger requires chat execution mode.");
   }
   if (

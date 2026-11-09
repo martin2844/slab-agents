@@ -47,6 +47,13 @@ Settings → Runtime lists the adapters registered by Slab Runner. Codex keeps
 its existing Runner-owned ChatGPT authentication. Claude uses an Anthropic API
 key entered through a write-only password field and encrypted in the control
 plane database; API and page responses expose only configured/health metadata.
+The stack installer can bootstrap OpenRouter with a private API key and an
+explicit model. `node scripts/openrouter-bootstrap.mjs provider/model < key.txt`
+verifies the key and tool-capable model, then enables the runtime using the same
+encrypted credential storage as Settings. Existing credentials are preserved on
+retries. `--status` checks the saved verification and Runner registration; it
+does not send a paid inference request. Subsequent changes belong in Settings.
+
 Testing Claude performs bounded server-side model discovery. OpenRouter is a
 first-class API runtime with a fixed provider endpoint; its test discovers only
 tool-capable models and can additionally restrict discovery to zero-data-

@@ -1,4 +1,6 @@
 import "server-only";
+import { reconcileDocsRunAccess } from "@/lib/docs-run-changes";
+import { tickWhatsAppAutomations } from "@/lib/whatsapp-automation-service";
 
 import { automationRepository } from "@/lib/repositories/automation-repository";
 
@@ -13,12 +15,17 @@ const state = globalThis as unknown as {
   slabScheduler?: NodeJS.Timeout;
   slabSchedulerBusy?: boolean;
   slabSchedulerTick?: () => Promise<void>;
+  slabWhatsAppTimer?: NodeJS.Timeout;
+  slabWhatsAppTick?: () => Promise<unknown>;
 };
 
 export async function tickScheduler() {
   if (state.slabSchedulerBusy) return;
   state.slabSchedulerBusy = true;
   try {
+    void reconcileDocsRunAccess().catch(() =>
+      console.error("[scheduler] Docs access reconciliation failed."),
+    );
     void tickEmailAutomations().catch((error) => {
       console.error("[scheduler] Email automation tick:", error);
     });
@@ -65,6 +72,17 @@ export async function tickScheduler() {
 state.slabSchedulerTick = tickScheduler;
 
 export function startScheduler() {
+  state.slabWhatsAppTick = tickWhatsAppAutomations;
+  if (!state.slabWhatsAppTimer) {
+    state.slabWhatsAppTimer = setInterval(() => {
+      void state
+        .slabWhatsAppTick?.()
+        .catch(() =>
+          console.error("[scheduler] WhatsApp automation tick failed."),
+        );
+    }, 1000);
+    state.slabWhatsAppTimer.unref();
+  }
   state.slabSchedulerTick = tickScheduler;
   if (state.slabScheduler) return;
   void state.slabSchedulerTick();

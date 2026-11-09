@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 
 import { SettingRow, SettingSection } from "@/components/settings-layout";
+import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -144,7 +145,8 @@ export function AgentToolPolicyEditor({
   );
 
   async function changePermissionMode(nextMode: AgentPermissionMode) {
-    if (savingPermissionMode || nextMode === permissionMode) return;
+    if (savingPermissionMode || savingServer || nextMode === permissionMode)
+      return;
     const previous = permissionMode;
     setPermissionMode(nextMode);
     setSavingPermissionMode(true);
@@ -168,6 +170,7 @@ export function AgentToolPolicyEditor({
   }
 
   function requestPermissionMode(nextMode: AgentPermissionMode) {
+    if (savingPermissionMode || savingServer) return;
     if (nextMode === "yolo") {
       setPendingPermissionMode(nextMode);
       return;
@@ -180,7 +183,8 @@ export function AgentToolPolicyEditor({
     toolName: string,
     requestedMode: ToolPolicyMode,
   ) {
-    if (savingServer) return;
+    if (permissionMode !== "custom" || savingPermissionMode || savingServer)
+      return;
     const tool = server.tools.find((item) => item.name === toolName);
     if (!tool) return;
     const nextMode =
@@ -272,7 +276,7 @@ export function AgentToolPolicyEditor({
             name="agent-permission-mode"
             value={mode}
             checked={permissionMode === mode}
-            disabled={savingPermissionMode}
+            disabled={savingPermissionMode || Boolean(savingServer)}
             onChange={() => requestPermissionMode(mode)}
             className="sr-only"
           />
@@ -316,9 +320,30 @@ export function AgentToolPolicyEditor({
         </SettingRow>
         <SettingRow
           title="Tool rules"
-          description="Inspect effective access by capability. Select Custom to edit individual tools."
+          description="Choose what each tool can do. Changes apply to new runs."
           layout="wide"
         >
+          {permissionMode !== "custom" && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 p-3">
+              <p className="text-sm text-muted-foreground">
+                These rules use the{" "}
+                {
+                  permissionModes.find(({ mode }) => mode === permissionMode)
+                    ?.label
+                }{" "}
+                preset. Switch to Custom to edit them.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={savingPermissionMode || Boolean(savingServer)}
+                onClick={() => void changePermissionMode("custom")}
+              >
+                <SlidersHorizontal />
+                Customize tool rules
+              </Button>
+            </div>
+          )}
           <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[0.68rem] font-medium text-muted-foreground">
             {modeOptions.map(({ mode, label, icon: Icon }) => (
               <span key={mode} className="inline-flex items-center gap-1">
@@ -373,6 +398,15 @@ export function AgentToolPolicyEditor({
                     )}
                   </summary>
                   <div className="border-t">
+                    {server.serverName === "docs" && (
+                      <p className="border-b bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+                        Docs edits are saved as a draft while the agent works.
+                        Allow all permitted editing tools to publish
+                        automatically when the run finishes. If any editing tool
+                        is set to Ask, review one complete diff and approve the
+                        merge afterward. No access still blocks that tool.
+                      </p>
+                    )}
                     {server.tools.map((tool) => {
                       const selected = modeForTool(
                         policy,
@@ -434,6 +468,7 @@ export function AgentToolPolicyEditor({
                                     checked={selected === mode}
                                     disabled={
                                       permissionMode !== "custom" ||
+                                      savingPermissionMode ||
                                       Boolean(savingServer) ||
                                       capped
                                     }

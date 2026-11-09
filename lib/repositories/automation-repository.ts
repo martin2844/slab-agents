@@ -18,6 +18,11 @@ import {
 } from "@/lib/automation-workflow";
 import { bool, type Row } from "@/lib/repositories/repository-helpers";
 import { OperationalError } from "@/lib/operational-error";
+import {
+  whatsappAutomationSchema,
+  type WhatsAppAutomationConfig,
+} from "@/lib/whatsapp-automation";
+import { whatsappAutomationBlockReason } from "@/lib/whatsapp-automation-policy";
 import type {
   Automation,
   EmailAutomationOccurrence,
@@ -25,6 +30,33 @@ import type {
 } from "@/lib/types";
 
 const MAX_EMAIL_AUTOMATION_ATTEMPTS = 8;
+
+export function assertWhatsAppRouting(
+  id: string,
+  agentId: string,
+  config: WhatsAppAutomationConfig | null | undefined,
+  enabled: boolean,
+) {
+  if (!config || !enabled) return;
+  const blocked = whatsappAutomationBlockReason(agentId, config);
+  if (blocked)
+    throw new OperationalError(blocked, "WHATSAPP_AUTOMATION_BLOCKED", 409);
+  for (const other of automationRepository.listAutomations()) {
+    if (
+      other.id !== id &&
+      other.enabled &&
+      other.whatsapp?.account === config.account &&
+      (other.whatsapp.audience === "all" ||
+        config.audience === "all" ||
+        other.whatsapp.chatIds.some((chat) => config.chatIds.includes(chat)))
+    )
+      throw new OperationalError(
+        `“${other.name}” already handles some of these chats. Pause it or choose different contacts before activating this automation.`,
+        "WHATSAPP_ROUTE_CONFLICT",
+        409,
+      );
+  }
+}
 
 function nextRunAt(
   lifecycleStatus: Automation["lifecycleStatus"],
@@ -44,7 +76,12 @@ function nextRunAt(
 }
 
 function mapAutomation(row: Row): Automation {
-  const triggerType = row.trigger_type === "email" ? "email" : "schedule";
+  const triggerType =
+    row.trigger_type === "whatsapp"
+      ? "whatsapp"
+      : row.trigger_type === "email"
+        ? "email"
+        : "schedule";
   const lifecycleStatus = ["draft", "enabled", "paused", "archived"].includes(
     String(row.lifecycle_status),
   )
@@ -81,6 +118,14 @@ function mapAutomation(row: Row): Automation {
     agentId: String(row.agent_id),
     agentName: row.agent_name ? String(row.agent_name) : undefined,
     triggerType,
+    whatsapp: row.whatsapp_config_json
+      ? whatsappAutomationSchema.parse(
+          JSON.parse(String(row.whatsapp_config_json)),
+        )
+      : null,
+    whatsappEnabledAt: row.whatsapp_enabled_at
+      ? String(row.whatsapp_enabled_at)
+      : null,
     cronExpression,
     scheduleTimezone,
     emailAccountId: row.email_account_id ? String(row.email_account_id) : null,
@@ -166,48 +211,59 @@ export const automationRepository = {
     missedRunPolicy?: Automation["missedRunPolicy"];
     emailMatch?: EmailAutomationMatch;
     steps?: AutomationWorkflowStep[];
+    whatsapp?: WhatsAppAutomationConfig;
   }) {
-    assertAutomationTriggerConfiguration(input);
-    const id = randomUUID(),
-      timestamp = now();
-    const lifecycleStatus =
-      input.lifecycleStatus ?? (input.enabled ? "enabled" : "paused");
-    const emailMatch = emailAutomationMatchSchema.parse(
-      input.emailMatch ?? EMPTY_EMAIL_AUTOMATION_MATCH,
-    );
-    const steps =
-      input.triggerType === "email"
-        ? automationWorkflowStepsSchema.parse(
-            input.steps ??
-              defaultEmailWorkflow({
-                automationId: id,
-                agentId: input.agentId,
-                prompt: input.prompt,
-              }),
-          )
-        : [];
-    db.prepare(
-      "INSERT INTO automations (id,name,agent_id,trigger_type,cron_expression,schedule_timezone,email_account_id,email_match_json,workflow_version,workflow_steps_json,prompt,mode,enabled,lifecycle_status,missed_run_policy,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    ).run(
-      id,
-      input.name,
-      input.agentId,
-      input.triggerType,
-      input.cronExpression,
-      input.scheduleTimezone ?? "UTC",
-      input.emailAccountId,
-      JSON.stringify(emailMatch),
-      1,
-      input.triggerType === "email" ? JSON.stringify(steps) : null,
-      input.prompt,
-      input.mode,
-      lifecycleStatus === "enabled" ? 1 : 0,
-      lifecycleStatus,
-      input.missedRunPolicy ?? "latest_once",
-      timestamp,
-      timestamp,
-    );
-    return automationRepository.getAutomation(id)!;
+    return withImmediateTransaction(() => {
+      assertAutomationTriggerConfiguration(input);
+      const id = randomUUID(),
+        timestamp = now();
+      const lifecycleStatus =
+        input.lifecycleStatus ?? (input.enabled ? "enabled" : "paused");
+      assertWhatsAppRouting(
+        id,
+        input.agentId,
+        input.whatsapp,
+        lifecycleStatus === "enabled",
+      );
+      const emailMatch = emailAutomationMatchSchema.parse(
+        input.emailMatch ?? EMPTY_EMAIL_AUTOMATION_MATCH,
+      );
+      const steps =
+        input.triggerType === "email"
+          ? automationWorkflowStepsSchema.parse(
+              input.steps ??
+                defaultEmailWorkflow({
+                  automationId: id,
+                  agentId: input.agentId,
+                  prompt: input.prompt,
+                }),
+            )
+          : [];
+      db.prepare(
+        "INSERT INTO automations (id,name,agent_id,trigger_type,cron_expression,schedule_timezone,email_account_id,email_match_json,workflow_version,workflow_steps_json,prompt,mode,enabled,lifecycle_status,missed_run_policy,created_at,updated_at,whatsapp_config_json,whatsapp_enabled_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      ).run(
+        id,
+        input.name,
+        input.agentId,
+        input.triggerType,
+        input.cronExpression,
+        input.scheduleTimezone ?? "UTC",
+        input.emailAccountId,
+        JSON.stringify(emailMatch),
+        1,
+        input.triggerType === "email" ? JSON.stringify(steps) : null,
+        input.prompt,
+        input.mode,
+        lifecycleStatus === "enabled" ? 1 : 0,
+        lifecycleStatus,
+        input.missedRunPolicy ?? "latest_once",
+        timestamp,
+        timestamp,
+        input.whatsapp ? JSON.stringify(input.whatsapp) : null,
+        input.whatsapp && lifecycleStatus === "enabled" ? timestamp : null,
+      );
+      return automationRepository.getAutomation(id)!;
+    });
   },
   updateAutomation(
     id: string,
@@ -228,127 +284,151 @@ export const automationRepository = {
       missedRunPolicy: Automation["missedRunPolicy"];
       emailMatch: EmailAutomationMatch;
       steps: AutomationWorkflowStep[];
+      whatsapp: WhatsAppAutomationConfig;
     }>,
   ) {
-    const current = automationRepository.getAutomation(id);
-    if (!current) return null;
-    assertAutomationTriggerConfiguration({
-      triggerType: input.triggerType ?? current.triggerType,
-      cronExpression:
+    return withImmediateTransaction(() => {
+      const current = automationRepository.getAutomation(id);
+      if (!current) return null;
+      assertAutomationTriggerConfiguration({
+        triggerType: input.triggerType ?? current.triggerType,
+        cronExpression:
+          input.cronExpression === undefined
+            ? current.cronExpression
+            : input.cronExpression,
+        emailAccountId:
+          input.emailAccountId === undefined
+            ? current.emailAccountId
+            : input.emailAccountId,
+        emailMatch: input.emailMatch,
+        steps: input.steps,
+        whatsapp: input.whatsapp ?? current.whatsapp,
+      });
+      const nextTriggerType = input.triggerType ?? current.triggerType;
+      const emailMatch = emailAutomationMatchSchema.parse(
+        input.emailMatch ?? current.emailMatch,
+      );
+      const workflowChanged =
+        input.whatsapp !== undefined ||
+        (nextTriggerType === "whatsapp" &&
+          (input.enabled !== undefined ||
+            input.lifecycleStatus !== undefined)) ||
+        input.agentId !== undefined ||
+        input.emailAccountId !== undefined ||
+        input.prompt !== undefined ||
+        input.mode !== undefined ||
+        input.emailMatch !== undefined ||
+        input.steps !== undefined ||
+        input.cronExpression !== undefined ||
+        input.scheduleTimezone !== undefined ||
+        input.missedRunPolicy !== undefined;
+      let steps =
+        nextTriggerType === "email"
+          ? input.steps
+            ? automationWorkflowStepsSchema.parse(input.steps)
+            : (workflowChanged
+                ? automationWorkflowStepsSchema
+                : persistedAutomationWorkflowStepsSchema
+              ).parse(
+                current.steps.length
+                  ? current.steps
+                  : defaultEmailWorkflow({
+                      automationId: current.id,
+                      agentId: current.agentId,
+                      prompt: current.prompt,
+                    }),
+              )
+          : [];
+      if (nextTriggerType === "email" && !input.steps && steps[0]) {
+        steps = automationWorkflowStepsSchema.parse([
+          {
+            ...steps[0],
+            ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
+            ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
+          },
+          ...steps.slice(1),
+        ]);
+      }
+      const nextAgentId = input.agentId ?? current.agentId;
+      if (nextTriggerType === "email" && steps[0]?.agentId !== nextAgentId) {
+        throw new OperationalError(
+          "The first workflow step must use the automation agent.",
+          "INVALID_AUTOMATION_TRIGGER",
+        );
+      }
+      const nextPrompt =
+        nextTriggerType === "email"
+          ? steps[0]!.prompt
+          : (input.prompt ?? current.prompt);
+      const nextLifecycleStatus =
+        input.lifecycleStatus ??
+        (input.enabled === undefined
+          ? current.lifecycleStatus
+          : input.enabled
+            ? "enabled"
+            : "paused");
+      const whatsapp = input.whatsapp ?? current.whatsapp;
+      assertWhatsAppRouting(
+        id,
+        nextAgentId,
+        whatsapp,
+        nextLifecycleStatus === "enabled",
+      );
+      const values = [
+        input.name ?? current.name,
+        nextAgentId,
+        input.triggerType ?? current.triggerType,
         input.cronExpression === undefined
           ? current.cronExpression
           : input.cronExpression,
-      emailAccountId:
+        input.scheduleTimezone ?? current.scheduleTimezone,
         input.emailAccountId === undefined
           ? current.emailAccountId
           : input.emailAccountId,
-      emailMatch: input.emailMatch,
-      steps: input.steps,
-    });
-    const nextTriggerType = input.triggerType ?? current.triggerType;
-    const emailMatch = emailAutomationMatchSchema.parse(
-      input.emailMatch ?? current.emailMatch,
-    );
-    const workflowChanged =
-      input.agentId !== undefined ||
-      input.emailAccountId !== undefined ||
-      input.prompt !== undefined ||
-      input.mode !== undefined ||
-      input.emailMatch !== undefined ||
-      input.steps !== undefined ||
-      input.cronExpression !== undefined ||
-      input.scheduleTimezone !== undefined ||
-      input.missedRunPolicy !== undefined;
-    let steps =
-      nextTriggerType === "email"
-        ? input.steps
-          ? automationWorkflowStepsSchema.parse(input.steps)
-          : (workflowChanged
-              ? automationWorkflowStepsSchema
-              : persistedAutomationWorkflowStepsSchema
-            ).parse(
-              current.steps.length
-                ? current.steps
-                : defaultEmailWorkflow({
-                    automationId: current.id,
-                    agentId: current.agentId,
-                    prompt: current.prompt,
-                  }),
-            )
-        : [];
-    if (nextTriggerType === "email" && !input.steps && steps[0]) {
-      steps = automationWorkflowStepsSchema.parse([
-        {
-          ...steps[0],
-          ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
-          ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
-        },
-        ...steps.slice(1),
-      ]);
-    }
-    const nextAgentId = input.agentId ?? current.agentId;
-    if (nextTriggerType === "email" && steps[0]?.agentId !== nextAgentId) {
-      throw new OperationalError(
-        "The first workflow step must use the automation agent.",
-        "INVALID_AUTOMATION_TRIGGER",
-      );
-    }
-    const nextPrompt =
-      nextTriggerType === "email"
-        ? steps[0]!.prompt
-        : (input.prompt ?? current.prompt);
-    const nextLifecycleStatus =
-      input.lifecycleStatus ??
-      (input.enabled === undefined
-        ? current.lifecycleStatus
-        : input.enabled
-          ? "enabled"
-          : "paused");
-    const values = [
-      input.name ?? current.name,
-      nextAgentId,
-      input.triggerType ?? current.triggerType,
-      input.cronExpression === undefined
-        ? current.cronExpression
-        : input.cronExpression,
-      input.scheduleTimezone ?? current.scheduleTimezone,
-      input.emailAccountId === undefined
-        ? current.emailAccountId
-        : input.emailAccountId,
-      JSON.stringify(emailMatch),
-      workflowChanged ? 1 : 0,
-      nextTriggerType === "email" ? JSON.stringify(steps) : null,
-      nextPrompt,
-      input.mode ?? current.mode,
-      nextLifecycleStatus === "enabled" ? 1 : 0,
-      nextLifecycleStatus,
-      input.lastRunAt === undefined ? current.lastRunAt : input.lastRunAt,
-      input.lastScheduledFor === undefined
-        ? current.lastScheduledFor
-        : input.lastScheduledFor,
-      input.missedRunPolicy ?? current.missedRunPolicy,
-      now(),
-      id,
-    ];
-    const updated = db
-      .prepare(
-        `UPDATE automations SET name=?,agent_id=?,trigger_type=?,cron_expression=?,schedule_timezone=?,email_account_id=?,email_match_json=?,workflow_version=workflow_version+?,workflow_steps_json=?,prompt=?,mode=?,enabled=?,lifecycle_status=?,last_run_at=?,last_scheduled_for=?,missed_run_policy=?,updated_at=?
+        JSON.stringify(emailMatch),
+        workflowChanged ? 1 : 0,
+        nextTriggerType === "email" ? JSON.stringify(steps) : null,
+        nextPrompt,
+        input.mode ?? current.mode,
+        nextLifecycleStatus === "enabled" ? 1 : 0,
+        nextLifecycleStatus,
+        input.lastRunAt === undefined ? current.lastRunAt : input.lastRunAt,
+        input.lastScheduledFor === undefined
+          ? current.lastScheduledFor
+          : input.lastScheduledFor,
+        input.missedRunPolicy ?? current.missedRunPolicy,
+        whatsapp ? JSON.stringify(whatsapp) : null,
+        whatsapp &&
+        nextLifecycleStatus === "enabled" &&
+        (workflowChanged || !current.enabled)
+          ? now()
+          : (current.whatsappEnabledAt ?? null),
+        now(),
+        id,
+      ];
+      const updated = db
+        .prepare(
+          `UPDATE automations SET name=?,agent_id=?,trigger_type=?,cron_expression=?,schedule_timezone=?,email_account_id=?,email_match_json=?,workflow_version=workflow_version+?,workflow_steps_json=?,prompt=?,mode=?,enabled=?,lifecycle_status=?,last_run_at=?,last_scheduled_for=?,missed_run_policy=?,whatsapp_config_json=?,whatsapp_enabled_at=?,updated_at=?
          WHERE id=?${input.expectedWorkflowVersion === undefined ? "" : " AND workflow_version=?"}`,
-      )
-      .run(
-        ...values,
-        ...(input.expectedWorkflowVersion === undefined
-          ? []
-          : [input.expectedWorkflowVersion]),
-      );
-    if (updated.changes !== 1 && input.expectedWorkflowVersion !== undefined) {
-      throw new OperationalError(
-        "Workflow changed while you were editing. Reloaded the latest version; review it before saving again.",
-        "AUTOMATION_VERSION_CONFLICT",
-        409,
-      );
-    }
-    return automationRepository.getAutomation(id);
+        )
+        .run(
+          ...values,
+          ...(input.expectedWorkflowVersion === undefined
+            ? []
+            : [input.expectedWorkflowVersion]),
+        );
+      if (
+        updated.changes !== 1 &&
+        input.expectedWorkflowVersion !== undefined
+      ) {
+        throw new OperationalError(
+          "Workflow changed while you were editing. Reloaded the latest version; review it before saving again.",
+          "AUTOMATION_VERSION_CONFLICT",
+          409,
+        );
+      }
+      return automationRepository.getAutomation(id);
+    });
   },
   getEmailFeedState() {
     const row = db

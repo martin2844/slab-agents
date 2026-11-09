@@ -8,6 +8,7 @@ import {
   CalendarClock,
   Copy,
   Mail,
+  MessageCircle,
   MoreHorizontal,
   Pause,
   Pencil,
@@ -70,6 +71,15 @@ function automationStatus(automation: Automation) {
 }
 
 function triggerSummary(automation: Automation) {
+  if (automation.triggerType === "whatsapp")
+    return {
+      icon: MessageCircle,
+      title: "WhatsApp messages",
+      detail:
+        automation.whatsapp?.audience === "all"
+          ? "Anyone who messages you · private chats"
+          : `${automation.whatsapp?.chatIds.length ?? 0} selected contacts`,
+    };
   if (automation.triggerType === "email") {
     const ruleCount = [
       automation.emailMatch.recipientAddress,
@@ -101,9 +111,14 @@ function Templates() {
         title="Start from a proven workflow"
         meta="Templates are saved as drafts until you activate them."
       />
-      <div className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-2 xl:grid-cols-3">
         {AUTOMATION_TEMPLATES.map((template, index) => {
-          const Icon = template.triggerType === "email" ? Mail : CalendarClock;
+          const Icon =
+            template.triggerType === "whatsapp"
+              ? MessageCircle
+              : template.triggerType === "email"
+                ? Mail
+                : CalendarClock;
           return (
             <Link
               key={template.id}
@@ -114,7 +129,11 @@ function Templates() {
             >
               <span className="flex items-center gap-2 font-mono text-[0.68rem] text-muted-foreground">
                 <Icon className="size-3.5" />
-                {template.triggerType === "email" ? "Inbox" : "Schedule"}
+                {template.triggerType === "whatsapp"
+                  ? "WhatsApp"
+                  : template.triggerType === "email"
+                    ? "Inbox"
+                    : "Schedule"}
               </span>
               <h3 className="mt-5 text-sm font-[650] tracking-[-0.015em]">
                 {template.name}
@@ -240,11 +259,17 @@ export function AutomationsView({
           cronExpression: automation.cronExpression,
           scheduleTimezone: automation.scheduleTimezone,
           emailAccountId: automation.emailAccountId,
-          emailMatch: automation.emailMatch,
-          steps: automation.steps.map((step) => ({
-            ...step,
-            id: crypto.randomUUID(),
-          })),
+          ...(automation.triggerType === "whatsapp"
+            ? { whatsapp: automation.whatsapp }
+            : automation.triggerType === "email"
+              ? {
+                  emailMatch: automation.emailMatch,
+                  steps: automation.steps.map((step) => ({
+                    ...step,
+                    id: crypto.randomUUID(),
+                  })),
+                }
+              : {}),
           prompt: automation.prompt,
           mode: automation.mode,
           lifecycleStatus: "draft",
@@ -412,8 +437,7 @@ export function AutomationsView({
                             variant="outline"
                             size="sm"
                             disabled={
-                              busy ||
-                              automation.lifecycleStatus === "archived"
+                              busy || automation.lifecycleStatus === "archived"
                             }
                             onClick={() => runTest(automation)}
                           >
@@ -422,9 +446,12 @@ export function AutomationsView({
                         ) : (
                           <Button asChild variant="outline" size="sm">
                             <Link
-                              href={`/automations/${automation.id}#review-test`}
+                              href={`/automations/${automation.id}${automation.triggerType === "whatsapp" ? "" : "#review-test"}`}
                             >
-                              <Sparkles /> Test match
+                              <Sparkles />{" "}
+                              {automation.triggerType === "whatsapp"
+                                ? "Manage chats"
+                                : "Test match"}
                             </Link>
                           </Button>
                         )}

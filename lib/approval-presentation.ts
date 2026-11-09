@@ -34,6 +34,11 @@ function emailWriteTool(data: Record<string, unknown>) {
 export function presentApproval(
   data: Record<string, unknown>,
 ): ApprovalPresentation {
+  if (data.approvalScope === "docs_run" && data.server === "docs")
+    return {
+      command: "Allow Docs changes for this run",
+      details: { ...data, docsRunScope: true },
+    };
   const fallback = String(
     data.command ??
       data.reason ??
@@ -109,6 +114,7 @@ export function approvalCanBeApproved(details: Record<string, unknown>) {
     details.tool === "whatsapp_send_text"
   ) {
     const action = record(details.whatsappAction);
+    if (details.writeContextRedacted === true) return false;
     return [action.account, action.recipient, action.text].every(
       (value) => typeof value === "string" && value.length > 0,
     );

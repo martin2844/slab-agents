@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { DocsHistory } from "@/components/docs-history";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { api } from "@/lib/client-api";
@@ -225,6 +226,7 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
     ),
     [searching, setSearching] = useState(false),
     [testing, setTesting] = useState(false),
+    [historyRefresh, setHistoryRefresh] = useState(0),
     skipInitialDetailLoad = useRef(true),
     selectedRef = useRef(selected);
   useEffect(() => {
@@ -282,13 +284,37 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
     };
   }, [query]);
   const visibleDocuments = searchResults ?? documents ?? [];
+  async function refreshPublished() {
+    try {
+      const items = await api<DocumentSummary[]>("/api/docs");
+      setDocuments(items);
+      const id = selectedRef.current;
+      if (id && !editing) {
+        const latest = await api<Detail>(`/api/docs/${id}`);
+        if (selectedRef.current === id) {
+          setDetail(latest);
+          setTitle(latest.document.title);
+          setBody(latest.document.body);
+          setRevision(null);
+        }
+      }
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "Could not refresh documents.",
+      );
+    }
+  }
   async function save() {
     if (!detail) return;
     const documentId = detail.document.id;
     try {
       const updated = await api<Document>(`/api/docs/${documentId}`, {
         method: "PATCH",
-        body: JSON.stringify({ title, body }),
+        body: JSON.stringify({
+          title,
+          body,
+          expected_version: detail.document.version,
+        }),
       });
       setDocuments(
         (items) =>
@@ -302,7 +328,8 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
         );
         setEditing(false);
       }
-      toast.success("Document saved");
+      setHistoryRefresh((value) => value + 1);
+      toast.success("Document saved as a commit");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Save failed");
     }
@@ -319,6 +346,7 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
       setSelected((current) =>
         current === documentId ? (remaining[0]?.id ?? null) : current,
       );
+      setHistoryRefresh((value) => value + 1);
       toast.success("Document archived");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Archive failed");
@@ -360,6 +388,7 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
     }
   }
   const addDocument = (doc: Document) => {
+    setHistoryRefresh((value) => value + 1);
     setDocuments((value) => [...(value ?? []), doc]);
     setSelected(doc.id);
   };
@@ -371,6 +400,11 @@ export function DocsWorkspace({ initialData }: { initialData: DocsPageData }) {
         actions={
           <CreateDocument documents={documents ?? []} onCreated={addDocument} />
         }
+      />
+      <DocsHistory
+        documentId={selected}
+        refreshKey={historyRefresh}
+        onPublished={() => void refreshPublished()}
       />
       {error && <ErrorState message={error} />}{" "}
       {!documents && !error && <LoadingState />}

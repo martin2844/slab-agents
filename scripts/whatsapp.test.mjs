@@ -41,6 +41,15 @@ test("WhatsApp MCP isolates read/send grants, approval policy and linked identit
     return Response.json({});
   };
   t.after(() => { globalThis.fetch = originalFetch; });
+  // WAHA retains failed sessions in memory: start is a successful no-op,
+  // whereas restart reinitializes QR pairing after its timeout.
+  for (const [status, endpoint] of [["FAILED", "restart"], ["STOPPED", "start"]]) {
+    session = { status, me: null };
+    const firstRequest = requests.length;
+    await whatsapp.changeWhatsAppSession("connect");
+    assert.deepEqual(requests.slice(firstRequest).map(({ route }) => route), ["/api/sessions/default", `/api/sessions/default/${endpoint}`]);
+  }
+  session = { status: "WORKING", me: { id: "34600000000@c.us", pushName: "Personal" } };
   let integration = whatsapp.syncWhatsAppAccount(session);
   const emptyRun = createRun();
   assert.deepEqual(service.getAgentCustomIntegrationsMcp(agent.id, emptyRun.id), []);
@@ -72,9 +81,18 @@ test("WhatsApp MCP isolates read/send grants, approval policy and linked identit
   const presentation = presentApproval({ server: sendServer.name, tool: "whatsapp_send_text", toolArguments: args });
   assert.equal(presentation.details.whatsappAction.text, args.text);
   assert.equal(approvalCanBeApproved(presentation.details), true);
+  assert.equal(approvalCanBeApproved({ ...presentation.details, writeContextRedacted: true }), false);
   assert.equal(approvalCanBeApproved(presentApproval({ server: sendServer.name, tool: "whatsapp_send_text" }).details), false);
   assert.ok((await call(sendRun, sendServer, "tools/call", { name: "whatsapp_send_text", arguments: { ...args, account: "other" } })).data.result.isError);
   assert.equal(requests.filter(({ route }) => route === "/api/sendText").length, 0);
+  const unapproved = await call(sendRun, sendServer, "tools/call", { name: "whatsapp_send_text", arguments: args });
+  assert.equal(unapproved.data.result.isError, true);
+  assert.equal(requests.filter(({ route }) => route === "/api/sendText").length, 0);
+  const { approvalRepository } = await import("../lib/repositories/approval-repository.ts");
+  const approval = approvalRepository.create(sendRun.id, "test-whatsapp-approval", presentation.command, presentation.details);
+  approvalRepository.claim(approval.id);
+  approvalRepository.recordRunnerDecision(approval.id, "approve");
+  approvalRepository.resolve(approval.id, "approved");
   const sent = await call(sendRun, sendServer, "tools/call", { name: "whatsapp_send_text", arguments: args });
   assert.equal(sent.data.result.isError, undefined);
   assert.deepEqual(requests.find(({ route }) => route === "/api/sendText").body, { session: "default", chatId: args.chatId, text: args.text, linkPreview: false });
@@ -90,9 +108,29 @@ test("WhatsApp MCP isolates read/send grants, approval policy and linked identit
   const autoRun = createRun();
   const autoServer = service.getAgentCustomIntegrationsMcp(agent.id, autoRun.id)[0].server;
   assert.equal(autoServer.approval.tools.whatsapp_send_text, "approve");
+  const linkedSession = session;
+  session = { status: "STARTING", me: null };
+  integration = whatsapp.syncWhatsAppAccount(session);
+  assert.equal(integration.status, "failed");
+  const recoveringRun = createRun();
+  const recoveringServer = service.getAgentCustomIntegrationsMcp(agent.id, recoveringRun.id)[0]?.server;
+  assert.ok(recoveringServer, "retain native tools while the service reconnects");
+  assert.equal((await call(recoveringRun, recoveringServer, "tools/call", { name: "whatsapp_list_chats", arguments: {} })).data.result.isError, true);
+  session = linkedSession;
+  assert.equal((await call(recoveringRun, recoveringServer, "tools/call", { name: "whatsapp_list_chats", arguments: {} })).data.result.isError, undefined, "recover without polling the admin UI");
+  integration = whatsapp.setWhatsAppAccess({ agentId: agent.id, read: true, write: "approval_required", expectedVersion: integration.version });
+  assert.equal(integration.status, "failed");
+  assert.throws(() => whatsapp.setWhatsAppAccess({ agentId: agent.id, read: true, write: "autonomous", expectedVersion: integration.version }), /additional access/);
+  integration = whatsapp.setWhatsAppAccess({ agentId: agent.id, read: false, write: "disabled", expectedVersion: integration.version });
+  assert.deepEqual(integration.permissions[agent.id] ?? [], []);
+  assert.equal((await call(recoveringRun, recoveringServer, "tools/list", {})).status, 409);
+  integration = whatsapp.syncWhatsAppAccount(session);
+  integration = whatsapp.setWhatsAppAccess({ agentId: agent.id, read: true, write: "autonomous", expectedVersion: integration.version });
+  const freshAutoRun = createRun();
+  const freshAutoServer = service.getAgentCustomIntegrationsMcp(agent.id, freshAutoRun.id)[0].server;
   let release;
   holdSession = new Promise((resolve) => { release = resolve; });
-  const inFlight = call(autoRun, autoServer, "tools/call", { name: "whatsapp_list_chats", arguments: {} });
+  const inFlight = call(freshAutoRun, freshAutoServer, "tools/call", { name: "whatsapp_list_chats", arguments: {} });
   await new Promise((resolve) => setTimeout(resolve, 30));
   integration = whatsapp.setWhatsAppAccess({ agentId: agent.id, read: false, write: "disabled", expectedVersion: integration.version });
   release(); holdSession = null;

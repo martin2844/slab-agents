@@ -5,7 +5,7 @@ export type AutomationTemplate = {
   id: string;
   name: string;
   description: string;
-  triggerType: "schedule" | "email";
+  triggerType: "schedule" | "email" | "whatsapp";
   mode: AutomationMode;
   cronExpression: string | null;
   prompt: string;
@@ -16,6 +16,17 @@ export type AutomationTemplate = {
 };
 
 export const AUTOMATION_TEMPLATES: AutomationTemplate[] = [
+  {
+    id: "whatsapp-replies",
+    name: "WhatsApp replies",
+    description:
+      "Choose who to reply to and when. Messages sent together get one reply.",
+    triggerType: "whatsapp",
+    mode: "task",
+    cronExpression: null,
+    prompt:
+      "Reply to questions and requests for help with concise, factual answers. Do not reply to acknowledgements, reactions, advertising, or messages that do not need an answer. If no reply is needed, do not send a message. Ask for clarification when needed. If a request needs the account owner's judgment or information you do not have, defer to them. Do not make commitments on their behalf. Follow the workflow and only share information explicitly approved for this conversation.",
+  },
   {
     id: "weekly-okr-review",
     name: "Weekly OKR review",
