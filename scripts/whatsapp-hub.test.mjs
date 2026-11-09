@@ -77,6 +77,8 @@ globalThis.fetch = async (url, init = {}) => {
     });
   if (route === "/api/sendText")
     return Response.json({ id: { _serialized: `true_manual_${++sentCount}` } });
+  if (route === "/api/contacts/all")
+    return Response.json([{ id: otherChat, name: "", pushname: "Diego" }]);
   if (route === "/api/default/chats")
     return Response.json([{ id: chatId, name: "Lucía (Acme)" }]);
   if (route.endsWith("/messages"))
@@ -327,9 +329,19 @@ test("the hub lists chats with names, status and attention, and the nav badge ma
   assert.ok(first.approval.fallbackAt, "shows when the draft auto-sends");
   const known = data.conversations.find((chat) => chat.chatId === chatId);
   assert.equal(known.contactName, "Lucía (Acme)");
+  assert.equal(known.phone, "+34611111111");
+  assert.equal(first.contactName, "Diego", "falls back to the push name");
   assert.equal(known.lastMessage.fromMe, true);
   assert.equal(known.lastMessage.body, "Gracias!");
   assert.equal(hub.getWhatsAppNavState().attention, data.attentionCount);
+
+  // Taking a chat over is deliberate: it shows as paused but needs no action.
+  turns.setPaused(automation.id, chatId, true);
+  const afterTakeover = await hub.getWhatsAppHubData();
+  const paused = afterTakeover.conversations.find((chat) => chat.chatId === chatId);
+  assert.equal(paused.paused, true);
+  assert.equal(paused.attention, null);
+  assert.equal(afterTakeover.attentionCount, data.attentionCount);
 
   const history = await hub.getWhatsAppHubMessages(chatId);
   assert.equal(history.source, "whatsapp");

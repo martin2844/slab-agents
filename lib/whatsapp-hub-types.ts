@@ -16,6 +16,8 @@ export type WhatsAppHubConversation = {
   account: string;
   chatId: string;
   contactName: string | null;
+  /** Phone number, resolved from privacy IDs (@lid) when WhatsApp knows it. */
+  phone: string | null;
   automationId: string;
   automationName: string;
   automationEnabled: boolean;
@@ -59,3 +61,13 @@ export type WhatsAppHubMessage = {
   timestamp: number;
   hasMedia: boolean;
 };
+
+/** The owner deliberately took the chat over (phone, Slab or manual pause). */
+export function ownerTookOver(reason: string | null) {
+  return (
+    !!reason &&
+    (reason.startsWith("You replied from WhatsApp.") ||
+      reason.startsWith("You replied from Slab.") ||
+      reason === "Paused by you.")
+  );
+}

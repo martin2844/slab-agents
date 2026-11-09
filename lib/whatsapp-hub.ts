@@ -17,6 +17,7 @@ import { getRunRetryState } from "@/lib/run-retry";
 import type { Automation } from "@/lib/types";
 import { whatsappDirectChatSchema } from "@/lib/whatsapp-automation";
 import {
+  ownerTookOver,
   WHATSAPP_HUB_ATTENTION_RANK,
   type WhatsAppHubAttention,
   type WhatsAppHubConversation,
@@ -33,35 +34,73 @@ export function enabledWhatsAppAccount() {
     : null;
 }
 
-// Contact names come from WhatsApp itself; cache them briefly so the hub can
-// poll without hammering WAHA. Best effort: names are cosmetic.
-const nameCache = globalThis as unknown as {
-  slabWhatsAppNames?: { at: number; names: Map<string, string> };
+type Contact = { name: string | null; phone: string | null };
+
+// Contact details come from WhatsApp itself: privacy IDs (@lid) map to phone
+// numbers, and names come from saved contacts, push names or chat titles.
+// Cached so the hub can poll without hammering WAHA. Best effort: cosmetic.
+const directoryCache = globalThis as unknown as {
+  slabWhatsAppDirectory?: { at: number; resolve: (chatId: string) => Contact };
 };
-async function contactNames() {
-  const cached = nameCache.slabWhatsAppNames;
-  if (cached && Date.now() - cached.at < 60_000) return cached.names;
-  const names = new Map<string, string>();
-  try {
-    for (let offset = 0; offset < 200; offset += 50) {
-      const rows = await wahaRequest(
-        `/api/${whatsappSession}/chats?limit=50&offset=${offset}`,
-      );
-      if (!Array.isArray(rows)) break;
-      for (const row of rows) {
-        const parsed = z
-          .object({ id: z.string(), name: z.string().max(300).nullish() })
-          .safeParse(row);
-        if (parsed.success && parsed.data.name)
-          names.set(parsed.data.id, parsed.data.name);
-      }
-      if (rows.length < 50) break;
-    }
-  } catch {
-    return cached?.names ?? names;
+
+async function pages(path: string, pageSize: number, max: number) {
+  const rows: unknown[] = [];
+  for (let offset = 0; offset < max; offset += pageSize) {
+    const page = await wahaRequest(
+      `${path}${path.includes("?") ? "&" : "?"}limit=${pageSize}&offset=${offset}`,
+    );
+    if (!Array.isArray(page)) break;
+    rows.push(...page);
+    if (page.length < pageSize) break;
   }
-  nameCache.slabWhatsAppNames = { at: Date.now(), names };
-  return names;
+  return rows;
+}
+
+async function contactDirectory(): Promise<(chatId: string) => Contact> {
+  const cached = directoryCache.slabWhatsAppDirectory;
+  if (cached && Date.now() - cached.at < 300_000) return cached.resolve;
+  const phoneByLid = new Map<string, string>();
+  const names = new Map<string, string>();
+  const pushNames = new Map<string, string>();
+  const results = await Promise.allSettled([
+    pages(`/api/${whatsappSession}/lids`, 1000, 10_000),
+    pages(`/api/contacts/all?session=${whatsappSession}`, 1000, 10_000),
+    pages(`/api/${whatsappSession}/chats`, 100, 1000),
+  ]);
+  if (results.every((result) => result.status === "rejected"))
+    return cached?.resolve ?? (() => ({ name: null, phone: null }));
+  const [lids, contacts, chats] = results.map((result) =>
+    result.status === "fulfilled" ? result.value : [],
+  );
+  const named = z.object({
+    id: z.string(),
+    name: z.string().max(300).nullish(),
+    pushname: z.string().max(300).nullish(),
+  });
+  for (const row of lids!) {
+    const parsed = z.object({ lid: z.string(), pn: z.string() }).safeParse(row);
+    if (parsed.success) phoneByLid.set(parsed.data.lid, parsed.data.pn);
+  }
+  for (const row of [...contacts!, ...chats!]) {
+    const parsed = named.safeParse(row);
+    if (!parsed.success) continue;
+    if (parsed.data.name?.trim() && !names.has(parsed.data.id))
+      names.set(parsed.data.id, parsed.data.name.trim());
+    if (parsed.data.pushname?.trim())
+      pushNames.set(parsed.data.id, parsed.data.pushname.trim());
+  }
+  const resolve = (chatId: string): Contact => {
+    const pn = chatId.endsWith("@lid") ? phoneByLid.get(chatId) : chatId;
+    const ids = pn && pn !== chatId ? [chatId, pn] : [chatId];
+    const name =
+      ids.map((id) => names.get(id)).find(Boolean) ??
+      ids.map((id) => pushNames.get(id)).find(Boolean) ??
+      null;
+    const digits = pn?.endsWith("@c.us") ? pn.split("@")[0] : null;
+    return { name, phone: digits ? `+${digits}` : null };
+  };
+  directoryCache.slabWhatsAppDirectory = { at: Date.now(), resolve };
+  return resolve;
 }
 
 function pendingApproval(runId: string, automation: Automation) {
@@ -99,12 +138,17 @@ function attentionFor(
   if (chat.approval) return "approval";
   if (chat.failedRun?.retry.status === "available") return "failed";
   if (chat.lastReplyOutcome === "uncertain") return "uncertain";
-  if (chat.paused) return "paused";
+  // The owner taking over from the phone or Slab is a deliberate state, not
+  // something to act on; system pauses (failed or uncertain turns) are.
+  if (chat.paused && !ownerTookOver(chat.pauseReason)) return "paused";
   if (chat.pendingMessages > 0 && !chat.activeRunId) return "pending";
   return null;
 }
 
-function buildConversations(account: string, names: Map<string, string>) {
+function buildConversations(
+  account: string,
+  contact: (chatId: string) => Contact,
+) {
   const automations = automationRepository
     .listAutomations()
     .filter(
@@ -134,7 +178,8 @@ function buildConversations(account: string, names: Map<string, string>) {
       const base = {
         account,
         chatId: chat.chatId,
-        contactName: names.get(chat.chatId) ?? null,
+        contactName: contact(chat.chatId).name,
+        phone: contact(chat.chatId).phone,
         automationId: automation.id,
         automationName: automation.name,
         automationEnabled: automation.enabled,
@@ -185,11 +230,11 @@ export async function getWhatsAppHubData(): Promise<WhatsAppHubData> {
       conversations: [],
       attentionCount: 0,
     };
-  const [session, names] = await Promise.all([
+  const [session, contact] = await Promise.all([
     getWhatsAppSession().catch(() => null),
-    contactNames(),
+    contactDirectory(),
   ]);
-  const conversations = buildConversations(account, names);
+  const conversations = buildConversations(account, contact);
   return {
     enabled: true,
     connected: session?.status === "WORKING" && session.me?.id === account,
@@ -205,7 +250,10 @@ export function getWhatsAppNavState() {
   if (!account) return { enabled: false, attention: 0 };
   return {
     enabled: true,
-    attention: buildConversations(account, new Map()).filter(
+    attention: buildConversations(account, () => ({
+      name: null,
+      phone: null,
+    })).filter(
       (chat) => chat.attention,
     ).length,
   };

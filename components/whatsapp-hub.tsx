@@ -23,11 +23,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/client-api";
 import { cn, formatDateTime, formatRelativePast } from "@/lib/utils";
-import type {
-  WhatsAppHubAttention,
-  WhatsAppHubConversation,
-  WhatsAppHubData,
-  WhatsAppHubMessage,
+import {
+  ownerTookOver,
+  type WhatsAppHubAttention,
+  type WhatsAppHubConversation,
+  type WhatsAppHubData,
+  type WhatsAppHubMessage,
 } from "@/lib/whatsapp-hub-types";
 
 const attentionLabel: Record<WhatsAppHubAttention, string> = {
@@ -40,8 +41,8 @@ const attentionLabel: Record<WhatsAppHubAttention, string> = {
 
 function displayName(chat: WhatsAppHubConversation) {
   if (chat.contactName) return chat.contactName;
-  const [id, server] = chat.chatId.split("@");
-  return server === "c.us" ? `+${id}` : `Contact ${id.slice(-6)}`;
+  if (chat.phone) return chat.phone;
+  return `Contact ${chat.chatId.split("@")[0]!.slice(-6)}`;
 }
 
 function errorMessage(reason: unknown, fallback: string) {
@@ -94,6 +95,7 @@ export function WhatsAppHub({
         (!needle ||
           displayName(chat).toLowerCase().includes(needle) ||
           chat.chatId.includes(needle) ||
+          chat.phone?.includes(needle) ||
           chat.lastMessage?.body.toLowerCase().includes(needle)),
     );
   }, [data.conversations, onlyAttention, query]);
@@ -206,7 +208,9 @@ export function WhatsAppHub({
                       ? `${chat.lastMessage.fromMe ? "You: " : ""}${chat.lastMessage.body || "Media"}`
                       : "No messages yet"}
                   </span>
-                  {(chat.attention || chat.activeRunId) && (
+                  {(chat.attention ||
+                    chat.activeRunId ||
+                    (chat.paused && ownerTookOver(chat.pauseReason))) && (
                     <span className="flex flex-wrap gap-1">
                       {chat.attention && (
                         <Badge
@@ -222,6 +226,9 @@ export function WhatsAppHub({
                             ? ` · ${chat.pendingMessages}`
                             : ""}
                         </Badge>
+                      )}
+                      {chat.paused && ownerTookOver(chat.pauseReason) && (
+                        <Badge variant="outline">You took over</Badge>
                       )}
                       {chat.activeRunId &&
                         chat.activeRunStatus !== "waiting_approval" && (
@@ -388,7 +395,8 @@ function ConversationPane({
               {displayName(chat)}
             </h2>
             <p className="truncate font-mono text-[0.7rem] text-muted-foreground">
-              {chat.chatId} · {chat.agentName} · {chat.automationName}
+              {chat.contactName && chat.phone ? `${chat.phone} · ` : ""}
+              {chat.agentName} · {chat.automationName}
               {!chat.automationEnabled && " (automation off)"}
             </p>
           </div>
