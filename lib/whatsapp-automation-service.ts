@@ -3,6 +3,7 @@ import { whatsappAutomationRepository } from "@/lib/repositories/whatsapp-automa
 import { createRunExecution } from "@/lib/run-service";
 import { cancelRunnerRun } from "@/lib/runner";
 import { whatsappTurnInstructions } from "@/lib/whatsapp-guardrails";
+import { sendOverdueWhatsAppReviews } from "@/lib/whatsapp-review-fallback";
 
 const state = globalThis as unknown as { slabWhatsAppTickBusy?: boolean };
 export async function tickWhatsAppAutomations(clock = new Date()) {
@@ -16,6 +17,9 @@ export async function tickWhatsAppAutomations(clock = new Date()) {
       await Promise.allSettled(
         cancellations.slice(offset, offset + 10).map(cancelRunnerRun),
       );
+    await sendOverdueWhatsAppReviews(clock).catch(() => {
+      // Best effort; the next tick retries overdue reviews.
+    });
     return whatsappAutomationRepository.claimDue(
       (automation, threadId, messages, chatId) =>
         createRunExecution({

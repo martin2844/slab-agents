@@ -51,6 +51,12 @@ export function WhatsAppAutomationEditor({
   const [automaticReplyCriteria, setAutomaticReplyCriteria] = useState(
     automation?.whatsapp?.automaticReplyCriteria ?? "",
   );
+  const [reviewCriteria, setReviewCriteria] = useState(
+    automation?.whatsapp?.reviewCriteria ?? "",
+  );
+  const [reviewFallbackHours, setReviewFallbackHours] = useState(
+    automation?.whatsapp?.reviewFallbackHours ?? 24,
+  );
   const [replySafeguards, setReplySafeguards] = useState(
     automation?.whatsapp?.replySafeguards ?? DEFAULT_WHATSAPP_REPLY_SAFEGUARDS,
   );
@@ -157,6 +163,9 @@ export function WhatsAppAutomationEditor({
       replyLanguage: language,
       replyApproval,
       automaticReplyCriteria,
+      reviewCriteria,
+      reviewFallbackHours:
+        replyApproval === "review_exceptions" ? reviewFallbackHours : 0,
       replySafeguards,
       quietSeconds: quiet,
       maxWaitSeconds: maximum,
@@ -319,6 +328,9 @@ export function WhatsAppAutomationEditor({
               }
             >
               <option value="approval_required">Always ask me</option>
+              <option value="review_exceptions">
+                Send automatically, ask me only for exceptions
+              </option>
               <option value="conditional">
                 Ask me except in certain cases
               </option>
@@ -330,6 +342,45 @@ export function WhatsAppAutomationEditor({
               </option>
             </select>
           </label>
+          {replyApproval === "review_exceptions" && (
+            <>
+              <label className="grid gap-2 text-sm sm:col-span-2">
+                Which conversations need your review?
+                <Textarea
+                  value={reviewCriteria}
+                  rows={4}
+                  maxLength={5000}
+                  placeholder="High-value business prospects: companies asking about integrations, high volume or custom pricing, or anyone asking to talk to me about a deal."
+                  onChange={(event) => setReviewCriteria(event.target.value)}
+                />
+                <span className="text-xs font-normal text-muted-foreground">
+                  Every other message gets an automatic reply. For these, the
+                  agent drafts a reply and waits for your approval.
+                </span>
+              </label>
+              <label className="grid gap-2 text-sm">
+                If I don’t review it
+                <select
+                  className={selectStyle}
+                  value={reviewFallbackHours}
+                  onChange={(event) =>
+                    setReviewFallbackHours(Number(event.target.value))
+                  }
+                >
+                  <option value={0}>Keep waiting for me</option>
+                  <option value={1}>Send the draft after 1 hour</option>
+                  <option value={4}>Send the draft after 4 hours</option>
+                  <option value={12}>Send the draft after 12 hours</option>
+                  <option value={24}>Send the draft after 1 day</option>
+                  <option value={48}>Send the draft after 2 days</option>
+                </select>
+                <span className="text-xs font-normal text-muted-foreground">
+                  Nothing is sent if the customer writes again or you reply
+                  yourself first.
+                </span>
+              </label>
+            </>
+          )}
           {replyApproval === "conditional" && (
             <label className="grid gap-2 text-sm sm:col-span-2">
               When can replies be sent without asking?

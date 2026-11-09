@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -12,6 +12,7 @@ import {
   BookOpenText,
   LayoutDashboard,
   Menu,
+  MessageCircle,
   PanelsTopLeft,
   PackageOpen,
   Plug,
@@ -78,17 +79,66 @@ function Brand() {
   );
 }
 
-function Navigation({ onNavigate }: { onNavigate?: () => void }) {
+type WhatsAppNavState = { enabled: boolean; attention: number };
+
+/** WhatsApp appears in navigation only while its integration is enabled. */
+function useWhatsAppNav(pathname: string) {
+  const [state, setState] = useState<WhatsAppNavState | null>(null);
+  useEffect(() => {
+    if (pathname === "/login") return;
+    let cancelled = false;
+    const load = () =>
+      fetch("/api/whatsapp/nav", { cache: "no-store" })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((payload) => {
+          if (!cancelled && payload?.data) setState(payload.data);
+        })
+        .catch(() => undefined);
+    void load();
+    const timer = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pathname]);
+  return state;
+}
+
+function Navigation({
+  onNavigate,
+  whatsapp,
+}: {
+  onNavigate?: () => void;
+  whatsapp: WhatsAppNavState | null;
+}) {
   const pathname = usePathname();
+  const groups = nav.map((group) =>
+    group.label === "Operate" && whatsapp?.enabled
+      ? {
+          ...group,
+          items: [
+            ...group.items,
+            {
+              href: "/whatsapp",
+              label: "WhatsApp",
+              icon: MessageCircle,
+              badge: whatsapp.attention,
+            },
+          ],
+        }
+      : group,
+  );
   return (
     <nav aria-label="Primary navigation" className="space-y-5">
-      {nav.map((group) => (
+      {groups.map((group) => (
         <div key={group.label}>
           <p className="mb-1.5 px-3 font-mono text-[0.62rem] font-medium uppercase tracking-[0.02em] text-sidebar-foreground/55">
             {group.label}
           </p>
           <div className="space-y-0.5">
-            {group.items.map(({ href, label, icon: Icon }) => {
+            {group.items.map((item) => {
+              const { href, label, icon: Icon } = item;
+              const badge = "badge" in item ? Number(item.badge) : 0;
               const active =
                 href === "/" ? pathname === href : pathname.startsWith(href);
               return (
@@ -107,6 +157,14 @@ function Navigation({ onNavigate }: { onNavigate?: () => void }) {
                   <Link href={href} onClick={onNavigate}>
                     <Icon className="size-3.5" />
                     <span>{label}</span>
+                    {badge > 0 && (
+                      <span
+                        className="ml-auto rounded-full bg-destructive/15 px-1.5 font-mono text-[0.65rem] text-destructive"
+                        aria-label={`${badge} need attention`}
+                      >
+                        {badge}
+                      </span>
+                    )}
                   </Link>
                 </Button>
               );
@@ -148,6 +206,7 @@ export function WorkspaceShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+  const whatsapp = useWhatsAppNav(pathname);
 
   if (pathname === "/login") return children;
 
@@ -168,7 +227,7 @@ export function WorkspaceShell({
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground lg:flex lg:flex-col">
           <Brand />
           <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
-            <Navigation />
+            <Navigation whatsapp={whatsapp} />
           </div>
           <div className="shrink-0 px-1 py-1">
             <span className="mb-2 block h-px bg-sidebar-border" />
@@ -207,7 +266,10 @@ export function WorkspaceShell({
               <SheetTitle className="sr-only">Navigation</SheetTitle>
               <Brand />
               <div className="mt-8 min-h-0 flex-1 overflow-y-auto">
-                <Navigation onNavigate={() => setMobileOpen(false)} />
+                <Navigation
+                  whatsapp={whatsapp}
+                  onNavigate={() => setMobileOpen(false)}
+                />
               </div>
               <div className="shrink-0 px-3 pb-2">
                 <span className="mb-3 block h-px bg-sidebar-border" />

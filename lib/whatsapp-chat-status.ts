@@ -17,7 +17,8 @@ export type WhatsAppChatStatus = WhatsAppChatStatusData & {
 };
 
 export function whatsappPauseTitle(reason: string | null) {
-  return reason?.startsWith("You replied from WhatsApp.")
+  return reason?.startsWith("You replied from WhatsApp.") ||
+    reason?.startsWith("You replied from Slab.")
     ? "Auto replies paused — you replied manually"
     : "Auto replies paused";
 }

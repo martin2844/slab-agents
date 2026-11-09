@@ -1,5 +1,6 @@
 import "server-only";
 import { conflict } from "@/lib/api";
+import { whatsappUsesReplyReview } from "@/lib/whatsapp-automation";
 import { automationRepository } from "@/lib/repositories/automation-repository";
 import { approvalRepository } from "@/lib/repositories/approval-repository";
 import { runRepository } from "@/lib/repositories/run-repository";
@@ -22,7 +23,7 @@ export function whatsappApprovalServer(
   // Once review has been requested, changing tools or text cannot bypass it.
   if (
     review ||
-    (config?.replyApproval === "conditional" &&
+    (whatsappUsesReplyReview(config) &&
       (runRepository.hasRunEvent(runId, reviewEvent) ||
         approvalRepository
           .listForRun(runId)

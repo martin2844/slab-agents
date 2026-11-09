@@ -150,7 +150,7 @@ test("provider failures are fail-open and redact configured secrets", async () =
 test("record stores one redacted operator message in a thread-scoped session", async () => {
   const observed = { peers: [], sessions: [], setPeers: [], messages: [] };
   const operator = {
-    id: "operator",
+    id: "operator-agent-coo",
     message(content, options) {
       return { content, options };
     },
@@ -170,7 +170,7 @@ test("record stores one redacted operator message in a thread-scoped session", a
       getMetadata: async () => ({}),
       async peer(id, options) {
         observed.peers.push([id, options]);
-        return id === "operator" ? operator : agent;
+        return id === "operator-agent-coo" ? operator : agent;
       },
       async session(id, options) {
         observed.sessions.push([id, options]);
@@ -194,7 +194,7 @@ test("record stores one redacted operator message in a thread-scoped session", a
   assert.equal(result.status, "recorded");
   assert.deepEqual(observed.sessions[0][0], "thread-thread-9");
   assert.deepEqual(observed.setPeers[0], [
-    ["operator", { observeMe: true, observeOthers: false }],
+    ["operator-agent-coo", { observeMe: true, observeOthers: false }],
     ["agent-coo", { observeMe: false, observeOthers: true }],
   ]);
   assert.equal(observed.messages.length, 1);
@@ -202,6 +202,64 @@ test("record stores one redacted operator message in a thread-scoped session", a
   assert.doesNotMatch(observed.messages[0].content, /hunter2|abc123/);
   assert.match(observed.messages[0].content, /\[REDACTED\]/);
   assert.equal(observed.messages[0].options.metadata.role, "user");
+});
+
+test("memory is isolated per agent: recall and record use that agent's own operator peer", async () => {
+  const recalled = [];
+  const recorded = [];
+  const memory = createMemoryModule({
+    loadConfiguration: () => enabledConfiguration,
+    createClient: () => ({
+      getMetadata: async () => ({}),
+      async peer(id, options) {
+        if (id.startsWith("operator")) recorded.push([id, options.metadata]);
+        return {
+          id,
+          message: (content, messageOptions) => ({ content, messageOptions }),
+          representation: async () => {
+            recalled.push(id);
+            return "Prefers short answers";
+          },
+        };
+      },
+      session: async () => ({
+        setPeers: async () => {},
+        addMessages: async () => {},
+      }),
+    }),
+    now: clock(1, 2),
+  });
+  for (const agentId of ["vera", "coo"]) {
+    await memory.recall({
+      agentId,
+      agentName: agentId,
+      agentRole: "Role",
+      prompt: "What should I remember?",
+      mode: "chat",
+      issueKey: null,
+    });
+    await memory.record({
+      runId: `run-${agentId}`,
+      threadId: `thread-${agentId}`,
+      agentId,
+      agentName: agentId,
+      agentRole: "Role",
+      userMessage: "Keep answers short",
+      createdAt: "2026-11-09T10:00:00.000Z",
+    });
+  }
+  assert.deepEqual(recalled, ["operator-agent-vera", "operator-agent-coo"]);
+  assert.ok(!recalled.includes("operator"), "never reads a global operator");
+  assert.deepEqual(
+    recorded.map(([id]) => id),
+    [
+      "operator-agent-vera",
+      "operator-agent-vera",
+      "operator-agent-coo",
+      "operator-agent-coo",
+    ],
+  );
+  assert.equal(recorded[0][1].agentId, "vera");
 });
 
 test("connection check does not expose API keys in failures", async () => {

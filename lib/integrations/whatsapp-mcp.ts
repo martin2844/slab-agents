@@ -11,6 +11,7 @@ import {
 } from "@/lib/integrations/whatsapp";
 import { WHATSAPP_TOOLS } from "@/lib/integrations/catalog";
 import { whatsappAutomationRepository } from "@/lib/repositories/whatsapp-automation-repository";
+import { whatsappUsesReplyReview } from "@/lib/whatsapp-automation";
 import {
   assertWhatsAppSendApproved,
   markWhatsAppReplyForReview,
@@ -86,7 +87,7 @@ export async function handleWhatsAppMcpRequest(
   if (!account || !initial.record.enabled)
     return new Response("WhatsApp is disconnected", { status: 409 });
   const replyConfig = whatsappRunReplyConfig(runId);
-  if (review && replyConfig?.replyApproval !== "conditional")
+  if (review && !whatsappUsesReplyReview(replyConfig))
     return new Response("WhatsApp reply review is unavailable for this run", {
       status: 409,
     });
@@ -131,10 +132,14 @@ export async function handleWhatsAppMcpRequest(
     const metadata = {
       description:
         tool.key === "whatsapp_send_text" &&
-        replyConfig?.replyApproval === "conditional"
-          ? review
-            ? "Ask the owner to approve the exact WhatsApp reply before sending. Use for replies outside the automatic criteria, and whenever unsure."
-            : "Send without approval only when the owner's automatic reply criteria clearly hold. Otherwise use whatsapp_send_text on the whatsapp_review_ server."
+        whatsappUsesReplyReview(replyConfig)
+          ? replyConfig?.replyApproval === "review_exceptions"
+            ? review
+              ? "Ask the owner to approve the exact WhatsApp reply before sending. Use ONLY when the owner's review criteria clearly applies."
+              : "Send the reply now. This is the default for every reply that does not match the owner's review criteria."
+            : review
+              ? "Ask the owner to approve the exact WhatsApp reply before sending. Use for replies outside the automatic criteria, and whenever unsure."
+              : "Send without approval only when the owner's automatic reply criteria clearly hold. Otherwise use whatsapp_send_text on the whatsapp_review_ server."
           : tool.description,
       annotations: {
         readOnlyHint: tool.readOnly,

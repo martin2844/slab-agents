@@ -54,9 +54,20 @@ export const whatsappAutomationSchema = z
     replyLanguage: whatsappReplyLanguageSchema.default("es"),
     audience: z.enum(["selected", "all"]).default("selected"),
     replyApproval: z
-      .enum(["inherit", "approval_required", "autonomous", "conditional"])
+      .enum([
+        "inherit",
+        "approval_required",
+        "autonomous",
+        "conditional",
+        "review_exceptions",
+      ])
       .default("inherit"),
     automaticReplyCriteria: z.string().trim().max(5000).default(""),
+    // review_exceptions: reply automatically unless these criteria match.
+    reviewCriteria: z.string().trim().max(5000).default(""),
+    // review_exceptions: send the drafted reply if the owner has not acted on
+    // its approval after this many hours. 0 keeps waiting for the owner.
+    reviewFallbackHours: z.number().int().min(0).max(168).default(0),
     replySafeguards: z
       .string()
       .trim()
@@ -85,6 +96,16 @@ export const whatsappAutomationSchema = z
   )
   .refine(
     (value) =>
+      value.replyApproval !== "review_exceptions" ||
+      value.reviewCriteria.length >= 10,
+    {
+      message:
+        "Describe which conversations need your review (at least 10 characters).",
+      path: ["reviewCriteria"],
+    },
+  )
+  .refine(
+    (value) =>
       value.audience === "all"
         ? value.chatIds.length === 0
         : value.chatIds.length > 0,
@@ -104,6 +125,16 @@ export const whatsappAutomationSchema = z
     path: ["maxWaitSeconds"],
   });
 export type WhatsAppAutomationConfig = z.infer<typeof whatsappAutomationSchema>;
+
+/** Modes that expose a separate review server for replies needing approval. */
+export function whatsappUsesReplyReview(
+  config: Pick<WhatsAppAutomationConfig, "replyApproval"> | null | undefined,
+) {
+  return (
+    config?.replyApproval === "conditional" ||
+    config?.replyApproval === "review_exceptions"
+  );
+}
 
 export function whatsappIncludesChat(
   config: WhatsAppAutomationConfig,

@@ -1,4 +1,5 @@
 import "server-only";
+import { whatsappUsesReplyReview } from "@/lib/whatsapp-automation";
 
 import { agentRepository } from "@/lib/repositories/agent-repository";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
@@ -1186,7 +1187,9 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
           : null;
       const sendWithoutApproval =
         replyConfig && replyConfig.replyApproval !== "inherit"
-          ? ["autonomous", "conditional"].includes(replyConfig.replyApproval)
+          ? ["autonomous", "conditional", "review_exceptions"].includes(
+              replyConfig.replyApproval,
+            )
           : integration.whatsappWriteModes?.[agentId] === "autonomous";
       const entries = [
         {
@@ -1227,7 +1230,7 @@ export function getAgentCustomIntegrationsMcp(agentId: string, runId: string) {
         },
       ];
       if (
-        replyConfig?.replyApproval === "conditional" &&
+        whatsappUsesReplyReview(replyConfig) &&
         effectiveAllowedTools.includes("whatsapp_send_text")
       ) {
         const base = entries[0]!;

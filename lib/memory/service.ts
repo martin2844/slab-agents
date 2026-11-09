@@ -82,6 +82,18 @@ function peerId(agentId: string) {
   return `agent-${agentId}`;
 }
 
+/**
+ * Memory is isolated per agent: each agent observes its own operator peer, so
+ * preferences given to one agent never surface in another agent's recall.
+ */
+function operatorPeerId(agentId: string) {
+  return `${OPERATOR_PEER_ID}-agent-${agentId}`;
+}
+
+function operatorPeerMetadata(agentId: string) {
+  return { kind: "operator", source: "slab-agents", agentId };
+}
+
 function sessionId(threadId: string) {
   return `thread-${threadId}`;
 }
@@ -152,8 +164,8 @@ export function createMemoryModule(
 
       try {
         const client = dependencies.createClient(configuration);
-        const operator = await client.peer(OPERATOR_PEER_ID, {
-          metadata: { kind: "operator", source: "slab-agents" },
+        const operator = await client.peer(operatorPeerId(input.agentId), {
+          metadata: operatorPeerMetadata(input.agentId),
         });
         const query = [
           redactMemoryInput(input.prompt).slice(0, 4_000),
@@ -229,8 +241,8 @@ export function createMemoryModule(
       try {
         const client = dependencies.createClient(configuration);
         const [operator, agent, session] = await Promise.all([
-          client.peer(OPERATOR_PEER_ID, {
-            metadata: { kind: "operator", source: "slab-agents" },
+          client.peer(operatorPeerId(input.agentId), {
+            metadata: operatorPeerMetadata(input.agentId),
           }),
           client.peer(peerId(input.agentId), {
             metadata: {
