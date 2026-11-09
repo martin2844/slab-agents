@@ -163,6 +163,11 @@ export const whatsappAutomationRepository = {
       );
       if (message.fromMe) {
         if (message.source === "api") return true;
+        // The owner answered from the phone: what the customer said so far no
+        // longer waits for a reply.
+        db.prepare(
+          "UPDATE whatsapp_messages SET handled=1 WHERE account=? AND chat_id=? AND from_me=0 AND handled=0 AND run_id IS NULL",
+        ).run(message.account, message.chatId);
         pause(
           message.account,
           message.chatId,

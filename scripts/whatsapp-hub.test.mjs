@@ -343,6 +343,25 @@ test("the hub lists chats with names, status and attention, and the nav badge ma
   assert.equal(paused.attention, null);
   assert.equal(afterTakeover.attentionCount, data.attentionCount);
 
+  // A customer message after the takeover is waiting on the owner again.
+  assert.ok(ingest(chatId, { text: "¿Hola? ¿Siguen ahí?" }));
+  const waiting = (await hub.getWhatsAppHubData()).conversations.find(
+    (chat) => chat.chatId === chatId,
+  );
+  assert.equal(waiting.attention, "pending");
+  // Answering from the phone marks it answered and clears the attention.
+  assert.ok(ingest(chatId, { fromMe: true, text: "Sí, decime." }));
+  assert.equal(
+    db
+      .prepare("SELECT count(*) n FROM whatsapp_messages WHERE chat_id=? AND from_me=0 AND handled=0")
+      .get(chatId).n,
+    0,
+  );
+  const answered = (await hub.getWhatsAppHubData()).conversations.find(
+    (chat) => chat.chatId === chatId,
+  );
+  assert.equal(answered.attention, null);
+
   const history = await hub.getWhatsAppHubMessages(chatId);
   assert.equal(history.source, "whatsapp");
   assert.deepEqual(

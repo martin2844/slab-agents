@@ -140,8 +140,16 @@ function attentionFor(
   if (chat.lastReplyOutcome === "uncertain") return "uncertain";
   // The owner taking over from the phone or Slab is a deliberate state, not
   // something to act on; system pauses (failed or uncertain turns) are.
-  if (chat.paused && !ownerTookOver(chat.pauseReason)) return "paused";
-  if (chat.pendingMessages > 0 && !chat.activeRunId) return "pending";
+  const takenOver = chat.paused && ownerTookOver(chat.pauseReason);
+  if (chat.paused && !takenOver) return "paused";
+  // In a chat the owner took over, only a customer message after the owner's
+  // last reply is still waiting for an answer.
+  if (
+    chat.pendingMessages > 0 &&
+    !chat.activeRunId &&
+    (!takenOver || (chat.lastMessage && !chat.lastMessage.fromMe))
+  )
+    return "pending";
   return null;
 }
 
