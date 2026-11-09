@@ -107,6 +107,22 @@ const fetchWithoutRedirect: typeof fetch = async (input, init) => {
   return response;
 };
 
+/**
+ * Closing the client alone only aborts local streams; Streamable HTTP servers
+ * keep the session (and its per-session server instance) alive until they
+ * receive DELETE. Terminate explicitly so short-lived calls do not leak
+ * server-side sessions.
+ */
+async function closeMcpSession(
+  client: Client,
+  transport: StreamableHTTPClientTransport,
+) {
+  if (transport.sessionId) {
+    await transport.terminateSession().catch(() => undefined);
+  }
+  await client.close().catch(() => undefined);
+}
+
 export async function callMcpTool<T>(
   connection: McpConnection,
   name: string,
@@ -130,8 +146,8 @@ export async function callMcpTool<T>(
     );
     return parseTextResult(result, [connection.apiKey ?? "", ...headerSecrets]) as T;
   } finally {
+    await closeMcpSession(client, transport);
     clearTimeout(timeout);
-    await client.close().catch(() => undefined);
   }
 }
 
@@ -151,8 +167,8 @@ export async function testMcp(connection: McpConnection) {
     const tools = await client.listTools();
     return { ok: true, tools: tools.tools.map((tool) => tool.name) };
   } finally {
+    await closeMcpSession(client, transport);
     clearTimeout(timeout);
-    await client.close().catch(() => undefined);
   }
 }
 
@@ -177,8 +193,8 @@ export async function discoverMcpTools(
     await client.connect(transport);
     return (await client.listTools()).tools;
   } finally {
+    await closeMcpSession(client, transport);
     clearTimeout(timeout);
-    await client.close().catch(() => undefined);
   }
 }
 
@@ -228,7 +244,7 @@ export async function inspectMcpDefinitions(
       error: "MCP tools/list probe failed.",
     };
   } finally {
+    await closeMcpSession(client, transport);
     clearTimeout(timeout);
-    await client.close().catch(() => undefined);
   }
 }
