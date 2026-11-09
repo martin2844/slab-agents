@@ -14,7 +14,7 @@ import {
 } from "@/lib/whatsapp-automation";
 import { whatsappReplyBlockReason } from "@/lib/whatsapp-guardrails";
 import { agentRepository } from "@/lib/repositories/agent-repository";
-import type { WhatsAppChatStatus } from "@/lib/whatsapp-chat-status";
+import type { WhatsAppChatStatusData } from "@/lib/whatsapp-chat-status";
 
 type Conversation = {
   account: string;
@@ -203,7 +203,7 @@ export const whatsappAutomationRepository = {
     });
   },
 
-  getChatStatusForThread(threadId: string): WhatsAppChatStatus | null {
+  getChatStatusForThread(threadId: string): WhatsAppChatStatusData | null {
     const row = db
       .prepare(
         `SELECT t.account,t.chat_id,t.agent_id,c.automation_id

@@ -36,6 +36,7 @@ const [
   { createRunExecution },
   { getRunRetryState, retryRun },
   { db },
+  { GET: chatStatusRoute },
 ] = await Promise.all([
   import("../lib/repositories/agent-repository.ts"),
   import("../lib/repositories/run-repository.ts"),
@@ -48,6 +49,7 @@ const [
   import("../lib/run-service.ts"),
   import("../lib/run-retry.ts"),
   import("../lib/db/database.ts"),
+  import("../app/api/threads/[id]/whatsapp/route.ts"),
 ]);
 
 test.after(async () => {
@@ -339,4 +341,111 @@ test("WhatsApp retries requeue an unanswered turn and never risk a duplicate rep
 
   // No duplicate requeue happened for blocked retries.
   assert.deepEqual(messagesOf(attempted.id).length, 1);
+});
+
+test("the chat window sees the retry state of its last failed turn", async (t) => {
+  const account = "34600000000@c.us",
+    chatId = "34633333333@c.us";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json([]);
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const automation = automationRepository.createAutomation({
+    name: "WhatsApp chat retry",
+    agentId: agent.id,
+    triggerType: "whatsapp",
+    cronExpression: null,
+    emailAccountId: null,
+    prompt: "Answer customers.",
+    mode: "task",
+    enabled: true,
+    lifecycleStatus: "enabled",
+    whatsapp: whatsappAutomationSchema.parse({ account, chatIds: [chatId] }),
+  });
+  let clock = Date.now() + 5000;
+  const ingest = () => {
+    clock += 1000;
+    return turns.ingest(
+      {
+        account,
+        chatId,
+        id: `chat-retry-${clock}`,
+        text: "Do you ship to Berlin?",
+        timestampMs: Math.floor(clock / 1000) * 1000,
+        fromMe: false,
+        source: "app",
+      },
+      new Date(clock),
+    );
+  };
+  const create = (current, threadId, messages, currentChat) => {
+    const run = runRepository.createRun({
+      agentId: agent.id,
+      threadId,
+      automationId: current.id,
+      trigger: "whatsapp",
+      mode: "chat",
+      runInstructions: guardrails.whatsappTurnInstructions(
+        current.whatsapp,
+        current.prompt,
+        currentChat,
+      ),
+    });
+    conversationRepository.addMessage(
+      threadId,
+      run.id,
+      "user",
+      JSON.stringify(messages.map((message) => message.message_id)),
+    );
+    return run;
+  };
+  const chatStatus = async () => {
+    const thread = db
+      .prepare(
+        "SELECT thread_id FROM whatsapp_threads WHERE account=? AND chat_id=?",
+      )
+      .get(account, chatId);
+    const response = await chatStatusRoute(new Request("http://localhost/"), {
+      params: Promise.resolve({ id: thread.thread_id }),
+    });
+    return (await response.json()).data;
+  };
+
+  assert.ok(ingest());
+  const [running] = turns.claimDue(create, new Date(clock + 3_600_000));
+  assert.ok(running, "a turn was claimed");
+  assert.equal(
+    (await chatStatus()).failedRun,
+    null,
+    "an active turn is not retryable from the chat",
+  );
+  runRepository.updateRun(running.id, "failed", {
+    error: "An allowed MCP server could not be reached",
+  });
+  turns.reconcile();
+  const failed = await chatStatus();
+  assert.equal(failed.chat.paused, true);
+  assert.match(failed.chat.pauseReason, /run failed/);
+  assert.equal(failed.failedRun.runId, running.id);
+  assert.deepEqual(failed.failedRun.retry, { status: "available" });
+
+  const result = await retryRun(running.id, {
+    tickWhatsApp: async () =>
+      turns.claimDue(create, new Date(clock + 7_200_000)),
+  });
+  assert.ok(result.runId);
+  const retried = await chatStatus();
+  assert.equal(
+    retried.failedRun,
+    null,
+    "the retry run is the last turn now, so nothing is left to retry",
+  );
+  assert.equal(retried.chat.activeRunId, result.runId);
+
+  const plain = conversationRepository.createThread(agent.id, "Plain chat");
+  const response = await chatStatusRoute(new Request("http://localhost/"), {
+    params: Promise.resolve({ id: plain.id }),
+  });
+  assert.equal((await response.json()).data, null);
 });

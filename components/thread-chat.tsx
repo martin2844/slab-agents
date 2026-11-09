@@ -329,7 +329,11 @@ export function ThreadChat({
       </header>
       <div className="flex-1 overflow-y-auto">
         <div className="sticky top-0 z-10 mx-auto max-w-3xl bg-background px-4 pt-4 sm:px-8">
-          <WhatsAppChatStatus key={threadId} threadId={threadId} />
+          <WhatsAppChatStatus
+            key={threadId}
+            threadId={threadId}
+            onRunToWatch={setBackgroundRunId}
+          />
           {docsRunId && <DocsReviewNotice key={docsRunId} runId={docsRunId} />}
         </div>
         <div className="mx-auto flex min-h-full max-w-3xl flex-col px-4 py-8 sm:px-8">

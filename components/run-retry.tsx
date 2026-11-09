@@ -29,10 +29,13 @@ export function RunRetryPanel({
   runId,
   trigger,
   retry,
+  onRetried,
 }: {
   runId: string;
   trigger: string;
   retry: RunRetryState;
+  /** Receives the retry outcome instead of navigating to the new run. */
+  onRetried?: (result: RetryResult) => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -47,6 +50,11 @@ export function RunRetryPanel({
       const result = await api<RetryResult>(`/api/runs/${runId}/retry`, {
         method: "POST",
       });
+      if (onRetried) {
+        onRetried(result);
+        setQueued(true);
+        return;
+      }
       if (result.runId) {
         router.push(`/runs/${result.runId}`);
         return;

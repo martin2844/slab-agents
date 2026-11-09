@@ -4,13 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CirclePause, Loader2, MessageCircle, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { RunRetryPanel } from "@/components/run-retry";
 import { api } from "@/lib/client-api";
 import {
   whatsappPauseTitle,
   type WhatsAppChatStatus as ChatStatus,
 } from "@/lib/whatsapp-chat-status";
 
-export function WhatsAppChatStatus({ threadId }: { threadId: string }) {
+export function WhatsAppChatStatus({
+  threadId,
+  onRunToWatch,
+}: {
+  threadId: string;
+  onRunToWatch?: (runId: string) => void;
+}) {
   const [data, setData] = useState<ChatStatus | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -134,6 +141,21 @@ export function WhatsAppChatStatus({ threadId }: { threadId: string }) {
           <p role="alert" className="mt-2 text-sm text-destructive">
             {error}
           </p>
+        )}
+        {/* The retry action only belongs here when the host follows the
+            retried run; the run page keeps its own panel. */}
+        {data.failedRun && onRunToWatch && (
+          <div className="mt-3 border-t pt-3">
+            <RunRetryPanel
+              key={data.failedRun.runId}
+              runId={data.failedRun.runId}
+              trigger="whatsapp"
+              retry={data.failedRun.retry}
+              onRetried={(result) => {
+                if (result.runId) onRunToWatch(result.runId);
+              }}
+            />
+          </div>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
