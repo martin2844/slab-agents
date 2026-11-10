@@ -1,6 +1,7 @@
 import { handleWhatsAppMcpRequest } from "@/lib/integrations/whatsapp-mcp";
 import { integrationRepository } from "@/lib/repositories/integration-repository";
 import {
+  handleLemonSqueezyMcpRequest,
   handlePostHogMcpRequest,
   routeCustomMcpRequest,
 } from "@/lib/integrations/mcp-server";
@@ -23,6 +24,10 @@ export async function POST(
     return new Response("Integration not found", { status: 404 });
   }
 
+  if (integration.provider === "lemonsqueezy") {
+    const agentId = requestUrl.searchParams.get("agent") ?? "";
+    return handleLemonSqueezyMcpRequest(request, id, agentId);
+  }
   if (integration.provider !== "posthog") {
     const runId = requestUrl.searchParams.get("run") ?? "";
     if (integration.provider === "whatsapp") return handleWhatsAppMcpRequest(request, id, runId);

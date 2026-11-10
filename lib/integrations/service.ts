@@ -17,7 +17,11 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { discoverMcpTools } from "@/lib/mcp/client";
-import { POSTHOG_TOOLS } from "@/lib/integrations/catalog";
+import {
+  LEMONSQUEEZY_TOOLS,
+  POSTHOG_TOOLS,
+} from "@/lib/integrations/catalog";
+import { testLemonSqueezyConnection } from "@/lib/integrations/lemonsqueezy";
 import {
   canReuseHttpCredential,
   extractHttpPathParameters,
@@ -37,6 +41,7 @@ import type {
   IntegrationHttpOperation,
   IntegrationOperationParameter,
   IntegrationMcpTool,
+  IntegrationTool,
 } from "@/lib/types";
 import { compileMcpInputSchema } from "@/lib/integrations/json-schema";
 import {
@@ -117,6 +122,19 @@ function normalizeAuthHeaderName(value: string | null | undefined) {
   const trimmed = (value ?? "").trim();
   if (!trimmed) return "X-API-Key";
   return trimmed.replace(/[\r\n]/g, "").slice(0, 64);
+}
+
+type LemonSqueezyCredentials = PosthogCredentials;
+
+function readLemonSqueezyCredentials(
+  record: IntegrationRecord,
+): LemonSqueezyCredentials {
+  const decrypted = decryptLocalSecret(record.credentialsCiphertext);
+  const parsed = JSON.parse(decrypted) as Partial<LemonSqueezyCredentials>;
+  if (!parsed.apiKey || !parsed.mcpToken) {
+    throw new Error("Stored Lemon Squeezy credentials could not be read.");
+  }
+  return { apiKey: parsed.apiKey, mcpToken: parsed.mcpToken };
 }
 
 function readPosthogCredentials(record: IntegrationRecord): PosthogCredentials {
@@ -278,8 +296,11 @@ function normalizePermissionTools(
   return result;
 }
 
-function normalizePosthogPermissions(permissions: Record<string, string[]>) {
-  const validTools = new Set(POSTHOG_TOOLS.map((tool) => tool.key));
+function normalizePosthogPermissions(
+  permissions: Record<string, string[]>,
+  tools: IntegrationTool[] = POSTHOG_TOOLS,
+) {
+  const validTools = new Set(tools.map((tool) => tool.key));
   const validAgentIds = new Set(
     agentRepository.listAgents().map((agent) => agent.id),
   );
@@ -505,6 +526,117 @@ export async function savePostHogIntegration(input: {
     expectedVersion: input.expectedVersion ?? current?.version,
     expectedAbsent: !current,
   });
+}
+
+export async function saveLemonSqueezyIntegration(input: {
+  id?: string;
+  expectedVersion?: number;
+  apiKey?: string;
+  permissions: Record<string, string[]>;
+  enabled?: boolean;
+}): Promise<Integration> {
+  const current = input.id
+    ? integrationRepository.getIntegrationRecord(input.id)
+    : integrationRepository.getIntegrationRecordByProvider("lemonsqueezy");
+  if (!input.id && current) throw new IntegrationVersionConflictError();
+  assertExpectedVersion(current, input.expectedVersion, Boolean(input.id));
+
+  let previous: LemonSqueezyCredentials | null = null;
+  if (current) {
+    try {
+      previous = readLemonSqueezyCredentials(current);
+    } catch {
+      previous = null;
+    }
+  }
+
+  const apiKey = input.apiKey?.trim() || previous?.apiKey;
+  if (!apiKey) {
+    throw new IntegrationConfigurationError(
+      "A Lemon Squeezy API key is required.",
+    );
+  }
+
+  const credentials: LemonSqueezyCredentials = {
+    apiKey,
+    mcpToken: previous?.mcpToken ?? randomAuthToken(),
+  };
+
+  const testedAt = new Date().toISOString();
+  let status: IntegrationRecord["status"] = "connected";
+  let lastError: string | null = null;
+  let accountName = current?.config.accountName ?? null;
+  try {
+    const result = await testLemonSqueezyConnection(apiKey);
+    accountName = result.storeNames.join(", ") || null;
+  } catch (error) {
+    status = "failed";
+    lastError = redactIntegrationText(
+      error instanceof Error ? error.message : "Lemon Squeezy connection failed.",
+      [apiKey],
+    );
+  }
+  if (input.enabled === false) status = "disabled";
+
+  return integrationRepository.saveIntegration({
+    id: current?.id,
+    provider: "lemonsqueezy",
+    name: "Lemon Squeezy",
+    config: { authType: "none", accountName },
+    credentialsCiphertext: encryptLocalSecret(JSON.stringify(credentials)),
+    status,
+    lastTestedAt: testedAt,
+    lastError,
+    permissions: normalizePosthogPermissions(
+      input.permissions,
+      LEMONSQUEEZY_TOOLS,
+    ),
+    enabled: input.enabled ?? current?.enabled ?? true,
+    expectedVersion: input.expectedVersion ?? current?.version,
+    expectedAbsent: !current,
+  });
+}
+
+export async function retestLemonSqueezyIntegration(id: string) {
+  const record = integrationRepository.getIntegrationRecord(id);
+  if (!record || record.provider !== "lemonsqueezy") {
+    throw new IntegrationNotFoundError("Lemon Squeezy integration not found.");
+  }
+  const testedAt = new Date().toISOString();
+  let apiKey: string | null = null;
+  let patch: Parameters<
+    typeof integrationRepository.updateIntegrationCheckIfVersion
+  >[2];
+  try {
+    apiKey = readLemonSqueezyCredentials(record).apiKey;
+    await testLemonSqueezyConnection(apiKey);
+    patch = {
+      status: record.enabled ? "connected" : "disabled",
+      lastTestedAt: testedAt,
+      lastError: null,
+    };
+  } catch (error) {
+    patch = {
+      status: "failed",
+      lastTestedAt: testedAt,
+      lastError: redactIntegrationText(
+        error instanceof Error
+          ? error.message
+          : "Lemon Squeezy connection failed.",
+        apiKey ? [apiKey] : [],
+      ),
+    };
+  }
+  const updated = integrationRepository.updateIntegrationCheckIfVersion(
+    id,
+    record.version,
+    patch,
+  );
+  if (!updated)
+    throw new IntegrationVersionConflictError(
+      "Integration changed while the connection test was running. Test the current configuration again.",
+    );
+  return updated;
 }
 
 export async function saveCustomHttpIntegration(input: {
@@ -1004,6 +1136,46 @@ export function getPostHogRuntimeAccess(
     record,
     credentials: readPosthogCredentials(record),
     allowedTools,
+  };
+}
+
+export function getLemonSqueezyRuntimeAccess(
+  integrationId: string,
+  agentId: string,
+) {
+  const record = integrationRepository.getIntegrationRecord(integrationId);
+  if (
+    !record ||
+    record.provider !== "lemonsqueezy" ||
+    record.status !== "connected" ||
+    !record.enabled
+  ) {
+    return null;
+  }
+  const allowedTools =
+    integrationRepository.listIntegrationPermissions(record.id)[agentId] ?? [];
+  if (allowedTools.length === 0) return null;
+  return {
+    record,
+    credentials: readLemonSqueezyCredentials(record),
+    allowedTools,
+  };
+}
+
+export function getAgentLemonSqueezyMcp(agentId: string) {
+  const record =
+    integrationRepository.getIntegrationRecordByProvider("lemonsqueezy");
+  if (!record || record.status !== "connected" || !record.enabled) return null;
+  const allowedTools =
+    integrationRepository.listIntegrationPermissions(record.id)[agentId] ?? [];
+  if (allowedTools.length === 0) return null;
+  const credentials = readLemonSqueezyCredentials(record);
+  return {
+    name: "work_lemonsqueezy" as const,
+    url: internalRoute(
+      `/api/integrations/${encodeURIComponent(record.id)}/mcp?agent=${encodeURIComponent(agentId)}`,
+    ),
+    credentials: { bearerToken: credentials.mcpToken },
   };
 }
 

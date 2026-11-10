@@ -65,6 +65,11 @@ export const posthogIntegrationSchema = z.object({
   ...baseSchema,
 });
 
+export const lemonSqueezyIntegrationSchema = z.object({
+  apiKey: z.string().trim().min(1).max(16_384).optional(),
+  ...baseSchema,
+});
+
 export const customHttpIntegrationSchema = z.object({
   name: z.string().trim().min(1).max(160),
   baseUrl: z.string().url(),
@@ -89,6 +94,10 @@ export const customMcpIntegrationSchema = z.object({
 export const posthogIntegrationUpdateSchema = posthogIntegrationSchema.extend({
   expectedVersion: expectedVersionSchema,
 });
+export const lemonSqueezyIntegrationUpdateSchema =
+  lemonSqueezyIntegrationSchema.extend({
+    expectedVersion: expectedVersionSchema,
+  });
 export const customHttpIntegrationUpdateSchema =
   customHttpIntegrationSchema.extend({
     expectedVersion: expectedVersionSchema,
@@ -98,6 +107,7 @@ export const customMcpIntegrationUpdateSchema =
 
 export const integrationCreateSchema = z.discriminatedUnion("provider", [
   posthogIntegrationSchema.extend({ provider: z.literal("posthog") }),
+  lemonSqueezyIntegrationSchema.extend({ provider: z.literal("lemonsqueezy") }),
   customHttpIntegrationSchema.extend({ provider: z.literal("custom_http") }),
   customMcpIntegrationSchema.extend({ provider: z.literal("custom_mcp") }),
 ]);

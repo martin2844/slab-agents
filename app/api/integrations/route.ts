@@ -3,6 +3,7 @@ import { apiError, badRequest } from "@/lib/api";
 import {
   saveCustomHttpIntegration,
   saveCustomMcpIntegration,
+  saveLemonSqueezyIntegration,
   savePostHogIntegration,
 } from "@/lib/integrations/service";
 import {
@@ -26,6 +27,14 @@ export async function POST(request: Request) {
       const integration = await savePostHogIntegration({
         apiKey,
         datacenter: input.datacenter,
+        enabled: input.enabled,
+        permissions: input.permissions,
+      });
+      return Response.json({ data: integration }, { status: 201 });
+    } else if (input.provider === "lemonsqueezy") {
+      if (!input.apiKey) throw badRequest("Lemon Squeezy apiKey is required.");
+      const integration = await saveLemonSqueezyIntegration({
+        apiKey: input.apiKey,
         enabled: input.enabled,
         permissions: input.permissions,
       });

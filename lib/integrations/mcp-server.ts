@@ -12,7 +12,15 @@ import {
   queryPostHogAnalytics,
 } from "@/lib/integrations/posthog";
 import {
+  findLemonSqueezyCustomer,
+  lemonSqueezySalesSummary,
+  listLemonSqueezyOrders,
+  listLemonSqueezyProducts,
+  listLemonSqueezySubscriptions,
+} from "@/lib/integrations/lemonsqueezy";
+import {
   getRunCustomIntegrationRuntimeAccess,
+  getLemonSqueezyRuntimeAccess,
   getPostHogRuntimeAccess,
 } from "@/lib/integrations/service";
 import type { IntegrationHttpOperation } from "@/lib/types";
@@ -386,6 +394,161 @@ export async function handlePostHogMcpRequest(
             query,
           ),
         ),
+    );
+  }
+
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
+  await server.connect(transport);
+  return transport.handleRequest(request);
+}
+
+const lemonSqueezyDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
+  .optional();
+const lemonSqueezyStoreId = z
+  .string()
+  .trim()
+  .regex(/^\d+$/, "Numeric store ID")
+  .optional()
+  .describe("Numeric Lemon Squeezy store ID; omit to include every store");
+const lemonSqueezyLimit = z.number().int().min(1).max(100).optional();
+const readOnlyAnnotations = { readOnlyHint: true, destructiveHint: false };
+
+async function lemonSqueezyResult(
+  apiKey: string,
+  action: () => Promise<unknown>,
+) {
+  try {
+    return toolResult(await action(), [apiKey]);
+  } catch (error) {
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text" as const,
+          text: redactIntegrationText(
+            error instanceof Error ? error.message : "Lemon Squeezy request failed.",
+            [apiKey],
+          ),
+        },
+      ],
+    };
+  }
+}
+
+export async function handleLemonSqueezyMcpRequest(
+  request: Request,
+  integrationId: string,
+  agentId: string,
+) {
+  const access = getLemonSqueezyRuntimeAccess(integrationId, agentId);
+  const token = resolveToken(request);
+  if (!access || !token || token !== access.credentials.mcpToken) {
+    return unauthorizedResponse();
+  }
+  const apiKey = access.credentials.apiKey;
+  const allowed = new Set(access.allowedTools);
+  const server = new McpServer({ name: "lemonsqueezy", version: "0.1.0" });
+
+  if (allowed.has("sales_summary")) {
+    server.registerTool(
+      "sales_summary",
+      {
+        title: "Lemon Squeezy sales summary",
+        description:
+          "Aggregate sales for a date range: orders by status, product and week, revenue and refunds, renewals, subscriptions by status, estimated MRR, and new customers by country. Defaults to the last 30 days. Contains no personal data.",
+        inputSchema: {
+          from: lemonSqueezyDate.describe("Start date (YYYY-MM-DD, UTC)"),
+          to: lemonSqueezyDate.describe("End date (YYYY-MM-DD, UTC, inclusive)"),
+          storeId: lemonSqueezyStoreId,
+        },
+        annotations: readOnlyAnnotations,
+      },
+      async (args) =>
+        lemonSqueezyResult(apiKey, () => lemonSqueezySalesSummary(apiKey, args)),
+    );
+  }
+
+  if (allowed.has("list_orders")) {
+    server.registerTool(
+      "list_orders",
+      {
+        title: "List Lemon Squeezy orders",
+        description:
+          "List orders in a date range (newest first) with product, status, amounts and refund state. Customer names and emails are omitted.",
+        inputSchema: {
+          from: lemonSqueezyDate.describe("Start date (YYYY-MM-DD, UTC)"),
+          to: lemonSqueezyDate.describe("End date (YYYY-MM-DD, UTC, inclusive)"),
+          status: z
+            .enum(["pending", "failed", "paid", "refunded", "partial_refund", "fraudulent"])
+            .optional(),
+          storeId: lemonSqueezyStoreId,
+          limit: lemonSqueezyLimit.describe("Maximum orders to return (default 50)"),
+        },
+        annotations: readOnlyAnnotations,
+      },
+      async (args) =>
+        lemonSqueezyResult(apiKey, () => listLemonSqueezyOrders(apiKey, args)),
+    );
+  }
+
+  if (allowed.has("list_subscriptions")) {
+    server.registerTool(
+      "list_subscriptions",
+      {
+        title: "List Lemon Squeezy subscriptions",
+        description:
+          "List subscriptions (newest first) with plan, status, cancellation, renewal and end dates. Customer names and emails are omitted.",
+        inputSchema: {
+          status: z
+            .enum(["on_trial", "active", "paused", "past_due", "unpaid", "cancelled", "expired"])
+            .optional(),
+          storeId: lemonSqueezyStoreId,
+          limit: lemonSqueezyLimit.describe("Maximum subscriptions to return (default 50)"),
+        },
+        annotations: readOnlyAnnotations,
+      },
+      async (args) =>
+        lemonSqueezyResult(apiKey, () =>
+          listLemonSqueezySubscriptions(apiKey, args),
+        ),
+    );
+  }
+
+  if (allowed.has("list_products")) {
+    server.registerTool(
+      "list_products",
+      {
+        title: "List Lemon Squeezy products",
+        description:
+          "List store products with their variants, prices, billing intervals and checkout links.",
+        inputSchema: { storeId: lemonSqueezyStoreId },
+        annotations: readOnlyAnnotations,
+      },
+      async (args) =>
+        lemonSqueezyResult(apiKey, () => listLemonSqueezyProducts(apiKey, args)),
+    );
+  }
+
+  if (allowed.has("find_customer")) {
+    server.registerTool(
+      "find_customer",
+      {
+        title: "Find a Lemon Squeezy customer",
+        description:
+          "Look up the orders and subscriptions of the customer with this exact email. Use only for a customer who contacted you from that address; never copy the result into Docs or Work.",
+        inputSchema: {
+          email: z.string().trim().min(3).max(320).describe("Exact customer email"),
+          storeId: lemonSqueezyStoreId,
+        },
+        annotations: readOnlyAnnotations,
+      },
+      async (args) =>
+        lemonSqueezyResult(apiKey, () => findLemonSqueezyCustomer(apiKey, args)),
     );
   }
 

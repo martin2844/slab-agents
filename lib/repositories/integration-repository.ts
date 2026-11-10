@@ -90,7 +90,11 @@ export const integrationRepository = {
       )
       .all(provider) as Row[];
     if (!rows.length) return null;
-    if (rows.length === 1 || provider === "posthog") {
+    if (
+      rows.length === 1 ||
+      provider === "posthog" ||
+      provider === "lemonsqueezy"
+    ) {
       return mapIntegrationRecord(rows[0]);
     }
     return null;
@@ -237,7 +241,7 @@ export const integrationRepository = {
   }) {
     const current = input.id
       ? integrationRepository.getIntegrationRecord(input.id)
-      : input.provider === "posthog"
+      : input.provider === "posthog" || input.provider === "lemonsqueezy"
         ? integrationRepository.getIntegrationRecordByProvider(input.provider)
         : null;
     const id = current?.id ?? input.id ?? randomUUID();

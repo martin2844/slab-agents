@@ -766,6 +766,7 @@ export type CalendarProvider =
   | "calendar_ics";
 export type IntegrationProvider =
   | "posthog"
+  | "lemonsqueezy"
   | "google_analytics"
   | "google_search_console"
   | "custom_http"

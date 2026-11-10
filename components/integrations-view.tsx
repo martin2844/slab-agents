@@ -5,6 +5,7 @@ import { WhatsAppIntegrationEditor } from "@/components/whatsapp-integration-edi
 import { useMemo, useState } from "react";
 import {
   Check,
+  Citrus,
   MessageCircle,
   CircleAlert,
   FileJson2,
@@ -225,6 +226,7 @@ export function IntegrationsView({
             const active =
               [
                 "posthog",
+                "lemonsqueezy",
                 "google_analytics",
                 "google_search_console",
               ].includes(item.provider) && activeProviders.has(item.provider);
@@ -241,9 +243,11 @@ export function IntegrationsView({
       </section>
 
       {editor?.catalog.provider === "whatsapp" && <WhatsAppIntegrationEditor agents={initialData.agents} onSaved={updateIntegration} onOpenChange={(open) => !open && setEditor(null)} />}
-      {editor?.catalog.provider === "posthog" && (
+      {(editor?.catalog.provider === "posthog" ||
+        editor?.catalog.provider === "lemonsqueezy") && (
         <PostHogEditor
-          key={editor.integration?.id ?? "new-posthog"}
+          key={editor.integration?.id ?? `new-${editor.catalog.provider}`}
+          provider={editor.catalog.provider}
           open
           integration={editor.integration}
           agents={initialData.agents}
@@ -341,9 +345,18 @@ function BrandMark() {
   );
 }
 
+function LemonSqueezyMark() {
+  return (
+    <div className="grid size-8 place-items-center rounded-md bg-yellow-400/15 text-yellow-600">
+      <Citrus className="size-4" />
+    </div>
+  );
+}
+
 function ProviderMark({ provider }: { provider: Integration["provider"] }) {
   if (provider === "whatsapp") return <div className="grid size-8 place-items-center rounded-md bg-emerald-600/10 text-emerald-600"><MessageCircle className="size-4" /></div>;
   if (provider === "posthog") return <BrandMark />;
+  if (provider === "lemonsqueezy") return <LemonSqueezyMark />;
   if (provider === "google_analytics") {
     return (
       <div className="grid size-8 place-items-center rounded-md border bg-background">
@@ -424,6 +437,8 @@ function ActiveCard({
               ? integration.datacenter === "us"
                 ? "US Cloud"
                 : "EU Cloud"
+              : integration.provider === "lemonsqueezy"
+                ? integration.accountName ?? "Store"
               : integration.provider === "google_analytics"
                 ? "Google · GA4"
                 : integration.provider === "google_search_console"
@@ -535,6 +550,7 @@ function AvailableCard({
 }
 
 function PostHogEditor({
+  provider = "posthog",
   open,
   integration,
   agents,
@@ -543,6 +559,7 @@ function PostHogEditor({
   onSaved,
   onDeleted,
 }: {
+  provider?: "posthog" | "lemonsqueezy";
   open: boolean;
   integration?: Integration;
   agents: Agent[];
@@ -551,6 +568,8 @@ function PostHogEditor({
   onSaved: (integration: Integration) => void;
   onDeleted: (id: string) => void;
 }) {
+  const lemon = provider === "lemonsqueezy";
+  const label = lemon ? "Lemon Squeezy" : "PostHog";
   const [apiKey, setApiKey] = useState("");
   const [datacenter, setDatacenter] = useState<"us" | "eu">(
     integration?.datacenter ?? "us",
@@ -592,10 +611,10 @@ function PostHogEditor({
         {
           method: integration ? "PATCH" : "POST",
           body: JSON.stringify({
-            ...(integration ? {} : { provider: "posthog" }),
+            ...(integration ? {} : { provider }),
             expectedVersion: integration?.version,
             apiKey: apiKey || undefined,
-            datacenter,
+            ...(lemon ? {} : { datacenter }),
             enabled,
             permissions,
           }),
@@ -603,13 +622,13 @@ function PostHogEditor({
       );
       onSaved(next);
       if (next.status === "connected") {
-        toast.success("PostHog connected and agent tools updated");
+        toast.success(`${label} connected and agent tools updated`);
       } else {
         toast.error(`Saved, but the connection failed: ${next.lastError}`);
       }
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not save PostHog",
+        error instanceof Error ? error.message : `Could not save ${label}`,
       );
     } finally {
       setSaving(false);
@@ -621,13 +640,15 @@ function PostHogEditor({
       <DialogContent className="h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:h-auto sm:max-w-2xl">
         <DialogHeader className="border-b p-5 pr-14">
           <div className="flex items-center gap-3">
-            <BrandMark />
+            {lemon ? <LemonSqueezyMark /> : <BrandMark />}
             <div>
               <DialogTitle className="text-2xl">
-                {integration ? "Edit PostHog" : "Connect PostHog"}
+                {integration ? `Edit ${label}` : `Connect ${label}`}
               </DialogTitle>
               <DialogDescription>
-                Personal API access, scoped to the agent tools you enable below.
+                {lemon
+                  ? "Read-only store access, scoped to the agent tools you enable below."
+                  : "Personal API access, scoped to the agent tools you enable below."}
               </DialogDescription>
             </div>
           </div>
@@ -645,9 +666,13 @@ function PostHogEditor({
                 <Switch checked={enabled} onCheckedChange={setEnabled} />
               </label>
             ) : null}
-            <div className="grid gap-4 sm:grid-cols-[1fr_11rem]">
+            <div
+              className={
+                lemon ? "grid gap-4" : "grid gap-4 sm:grid-cols-[1fr_11rem]"
+              }
+            >
               <label className="grid gap-2 text-sm font-semibold">
-                Personal API key
+                {lemon ? "API key" : "Personal API key"}
                 <Input
                   type="password"
                   value={apiKey}
@@ -655,11 +680,14 @@ function PostHogEditor({
                   placeholder={
                     integration?.hasApiKey
                       ? "Configured · enter to replace"
-                      : "phx_…"
+                      : lemon
+                        ? "eyJ0eXAiOiJKV1Qi…"
+                        : "phx_…"
                   }
                   autoComplete="off"
                 />
               </label>
+              {lemon ? null : (
               <label className="grid gap-2 text-sm font-semibold">
                 Datacenter
                 <Select
@@ -675,18 +703,28 @@ function PostHogEditor({
                   </SelectContent>
                 </Select>
               </label>
+              )}
             </div>
             <div className="mt-3 flex items-start gap-2 rounded-lg bg-muted/60 p-3 text-xs leading-5 text-muted-foreground">
               <LockKeyhole className="mt-0.5 size-4 shrink-0" />
-              <span>
-                The key is encrypted locally, used only by the Next.js server,
-                and verified when you save. Use the least-privilege scopes
-                <strong className="font-semibold text-foreground">
-                  {" "}
-                  organization:read, project:read, and query:read
-                </strong>
-                .
-              </span>
+              {lemon ? (
+                <span>
+                  The key is encrypted locally, used only by the Next.js server,
+                  and verified when you save. Create it in Lemon Squeezy under
+                  Settings → API. Slab only sends read requests: agents cannot
+                  refund, cancel or change anything.
+                </span>
+              ) : (
+                <span>
+                  The key is encrypted locally, used only by the Next.js server,
+                  and verified when you save. Use the least-privilege scopes
+                  <strong className="font-semibold text-foreground">
+                    {" "}
+                    organization:read, project:read, and query:read
+                  </strong>
+                  .
+                </span>
+              )}
             </div>
           </section>
 
@@ -727,7 +765,7 @@ function PostHogEditor({
                             onCheckedChange={(checked) =>
                               setAllTools(agent.id, checked)
                             }
-                            aria-label={`Give ${agent.name} all PostHog tools`}
+                            aria-label={`Give ${agent.name} all ${label} tools`}
                           />
                         </label>
                       </div>
@@ -762,7 +800,7 @@ function PostHogEditor({
                 })
               ) : (
                 <div className="p-5 text-sm text-muted-foreground">
-                  Create an agent first, then return here to assign PostHog
+                  Create an agent first, then return here to assign {label}{" "}
                   tools.
                 </div>
               )}

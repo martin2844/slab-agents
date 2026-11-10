@@ -4,6 +4,7 @@ import { apiError, conflict, notFound } from "@/lib/api";
 import {
   retestCustomHttpIntegration,
   retestCustomMcpIntegration,
+  retestLemonSqueezyIntegration,
   retestPostHogIntegration,
 } from "@/lib/integrations/service";
 import { isGoogleDataProvider } from "@/lib/integrations/google-data-contract";
@@ -26,6 +27,9 @@ export async function POST(
     if (integration.provider === "whatsapp") return Response.json({ data: (await getWhatsAppState()).integration }, { headers: { "Cache-Control": "no-store" } });
     if (integration.provider === "posthog") {
       return Response.json({ data: await retestPostHogIntegration(id) });
+    }
+    if (integration.provider === "lemonsqueezy") {
+      return Response.json({ data: await retestLemonSqueezyIntegration(id) });
     }
     if (integration.provider === "custom_http") {
       return Response.json({ data: await retestCustomHttpIntegration(id) });

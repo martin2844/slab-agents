@@ -3,12 +3,14 @@ import { apiError, badRequest, notFound } from "@/lib/api";
 import {
   saveCustomHttpIntegration,
   saveCustomMcpIntegration,
+  saveLemonSqueezyIntegration,
   savePostHogIntegration,
 } from "@/lib/integrations/service";
 import {
   asIntegrationAuthType,
   customHttpIntegrationUpdateSchema,
   customMcpIntegrationUpdateSchema,
+  lemonSqueezyIntegrationUpdateSchema,
   posthogIntegrationUpdateSchema,
 } from "@/lib/api-schemas/integration";
 import { z } from "zod";
@@ -32,6 +34,17 @@ export async function PATCH(
       data = await savePostHogIntegration({
         id,
         datacenter: input.datacenter,
+        apiKey: input.apiKey,
+        permissions: input.permissions,
+        enabled: input.enabled,
+        expectedVersion: input.expectedVersion,
+      });
+    } else if (current.provider === "lemonsqueezy") {
+      const input = lemonSqueezyIntegrationUpdateSchema.parse(
+        await request.json(),
+      );
+      data = await saveLemonSqueezyIntegration({
+        id,
         apiKey: input.apiKey,
         permissions: input.permissions,
         enabled: input.enabled,

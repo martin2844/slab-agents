@@ -346,6 +346,7 @@ function emailTools(access: AgentEmailAccess | null): AgentToolCatalogTool[] {
 
 export function integrationServerName(integration: Integration) {
   if (integration.provider === "posthog") return "work_posthog";
+  if (integration.provider === "lemonsqueezy") return "work_lemonsqueezy";
   if (integration.provider.startsWith("calendar_")) {
     return `calendar_${integration.slug}`;
   }

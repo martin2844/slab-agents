@@ -13,6 +13,7 @@ import {
   EMAIL_AGENT_PROMPT,
   CALENDAR_AGENT_PROMPT,
   GOOGLE_DATA_AGENT_PROMPT,
+  LEMONSQUEEZY_AGENT_PROMPT,
   POSTHOG_AGENT_PROMPT,
 } from "@/lib/integrations/catalog";
 import { getAgentEmailMcp } from "@/lib/integrations/email-service";
@@ -20,6 +21,7 @@ import { getAgentCalendarIntegrationsMcp } from "@/lib/integrations/calendar-ser
 import { getAgentGoogleDataIntegrationsMcp } from "@/lib/integrations/google-data-service";
 import {
   getAgentCustomIntegrationsMcp,
+  getAgentLemonSqueezyMcp,
   getAgentPostHogMcp,
 } from "@/lib/integrations/service";
 import { inspectMcpDefinitions } from "@/lib/mcp/client";
@@ -501,6 +503,7 @@ export async function startRunnerRun(
     input.agent.id,
   );
   const posthogMcp = getAgentPostHogMcp(input.agent.id);
+  const lemonSqueezyMcp = getAgentLemonSqueezyMcp(input.agent.id);
   const emailMcp = getAgentEmailMcp(input.agent.id);
   const customIntegrations = getAgentCustomIntegrationsMcp(
     input.agent.id,
@@ -598,6 +601,7 @@ export async function startRunnerRun(
       ? []
       : [
           ...(posthogMcp ? [posthogMcp] : []),
+          ...(lemonSqueezyMcp ? [lemonSqueezyMcp] : []),
           ...(emailServer ? [emailServer] : []),
           ...calendarMcpServers,
           ...googleDataMcpServers,
@@ -679,6 +683,9 @@ export async function startRunnerRun(
   const integrationInstructions = [
     ...(posthogMcp && availableServerNames.has(posthogMcp.name)
       ? [POSTHOG_AGENT_PROMPT]
+      : []),
+    ...(lemonSqueezyMcp && availableServerNames.has(lemonSqueezyMcp.name)
+      ? [LEMONSQUEEZY_AGENT_PROMPT]
       : []),
     ...(emailMcp && availableServerNames.has(emailMcp.name)
       ? [EMAIL_AGENT_PROMPT]

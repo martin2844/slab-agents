@@ -23,6 +23,43 @@ export const POSTHOG_TOOLS: IntegrationTool[] = [
   },
 ];
 
+export const LEMONSQUEEZY_TOOLS: IntegrationTool[] = [
+  {
+    key: "sales_summary",
+    name: "Sales summary",
+    description:
+      "Aggregate orders, revenue, renewals, subscriptions, MRR and new customers by country for a date range. No personal data.",
+    readOnly: true,
+  },
+  {
+    key: "list_orders",
+    name: "List orders",
+    description:
+      "List orders in a date range with product, status and amounts. Customer names and emails are omitted.",
+    readOnly: true,
+  },
+  {
+    key: "list_subscriptions",
+    name: "List subscriptions",
+    description:
+      "List subscriptions with plan, status, renewal and end dates. Customer names and emails are omitted.",
+    readOnly: true,
+  },
+  {
+    key: "list_products",
+    name: "List products and prices",
+    description: "List store products, variants, prices and checkout links.",
+    readOnly: true,
+  },
+  {
+    key: "find_customer",
+    name: "Find customer by email",
+    description:
+      "Look up one customer's orders and subscriptions by exact email. Returns personal data; give it only to support agents.",
+    readOnly: true,
+  },
+];
+
 export const GOOGLE_ANALYTICS_TOOLS: IntegrationTool[] = [
   {
     key: "google_analytics_list_properties",
@@ -95,6 +132,14 @@ export const INTEGRATION_CATALOG: IntegrationCatalogItem[] = [
     tools: POSTHOG_TOOLS,
   },
   {
+    provider: "lemonsqueezy",
+    name: "Lemon Squeezy",
+    description:
+      "Give agents read-only access to sales, subscriptions, products and customer lookups.",
+    available: true,
+    tools: LEMONSQUEEZY_TOOLS,
+  },
+  {
     provider: "google_analytics",
     name: "Google Analytics",
     description:
@@ -145,6 +190,15 @@ export const POSTHOG_AGENT_PROMPT = `PostHog analytics is available through a re
 - Never invent event names, properties, project identifiers, or results. If the schema is unknown, inspect it with a small query first.
 - State the project, date range, filters, and important limitations when summarizing results.
 - These tools cannot mutate PostHog.`;
+
+export const LEMONSQUEEZY_AGENT_PROMPT = `Lemon Squeezy sales data is available through a restricted, read-only MCP server.
+
+- Use sales_summary for questions about sales, revenue, renewals, subscriptions, MRR or conversions. Pass an explicit from/to date range (YYYY-MM-DD) whenever time matters.
+- Use list_orders, list_subscriptions or list_products when you need individual records; customer names and emails are never included there.
+- Use find_customer only to help a specific customer who contacted you, with the exact email they wrote from. Never search for people speculatively.
+- Never copy customer names, emails or order details into Docs, Work items, public copy or messages to anyone other than that customer. Report aggregates.
+- State the date range and the notes returned by the tool when summarizing results. Never invent or extrapolate sales figures.
+- These tools cannot refund, cancel, discount or change anything in Lemon Squeezy.`;
 
 export const GOOGLE_DATA_AGENT_PROMPT = `Google Analytics and Search Console may be available through scoped, read-only MCP servers.
 

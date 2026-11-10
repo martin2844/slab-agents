@@ -11,6 +11,7 @@ import type {
 import {
   GOOGLE_ANALYTICS_TOOLS,
   GOOGLE_SEARCH_CONSOLE_TOOLS,
+  LEMONSQUEEZY_TOOLS,
   POSTHOG_TOOLS,
   WHATSAPP_TOOLS,
 } from "@/lib/integrations/catalog";
@@ -163,6 +164,8 @@ export function mapIntegration(
       ? WHATSAPP_TOOLS
       : record.provider === "posthog"
         ? POSTHOG_TOOLS
+        : record.provider === "lemonsqueezy"
+          ? LEMONSQUEEZY_TOOLS
         : record.provider === "google_analytics"
           ? GOOGLE_ANALYTICS_TOOLS
           : record.provider === "google_search_console"
@@ -224,9 +227,12 @@ export function mapIntegration(
       isCalendar ||
       record.provider === "google_analytics" ||
       record.provider === "google_search_console" ||
-      (record.provider !== "posthog" && record.authType !== "none"),
+      (record.provider !== "posthog" &&
+        record.provider !== "lemonsqueezy" &&
+        record.authType !== "none"),
     hasApiKey:
-      record.provider === "posthog" && Boolean(record.credentialsCiphertext),
+      (record.provider === "posthog" || record.provider === "lemonsqueezy") &&
+      Boolean(record.credentialsCiphertext),
     status: record.status,
     operations: record.provider === "custom_http" ? operations : undefined,
     mcpTools: record.provider === "custom_mcp" ? mcpTools : undefined,

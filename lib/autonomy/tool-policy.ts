@@ -21,7 +21,7 @@ export const RED_LINE_TOOLS = new Set([
  */
 function knownServer(serverName: string) {
   return (
-    ["work", "docs", "email", "work_posthog"].includes(serverName) ||
+    ["work", "docs", "email", "work_posthog", "work_lemonsqueezy"].includes(serverName) ||
     serverName.startsWith("calendar_") ||
     serverName.startsWith("google_")
   );
