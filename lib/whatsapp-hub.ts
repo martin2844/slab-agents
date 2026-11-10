@@ -18,7 +18,6 @@ import type { Automation } from "@/lib/types";
 import { whatsappDirectChatSchema } from "@/lib/whatsapp-automation";
 import {
   ownerTookOver,
-  WHATSAPP_HUB_ATTENTION_RANK,
   type WhatsAppHubAttention,
   type WhatsAppHubConversation,
   type WhatsAppHubData,
@@ -136,6 +135,8 @@ function attentionFor(
   chat: Omit<WhatsAppHubConversation, "attention">,
 ): WhatsAppHubAttention | null {
   if (chat.approval) return "approval";
+  // The owner archived the chat and the customer has not written since.
+  if (chat.archived) return null;
   if (chat.failedRun?.retry.status === "available") return "failed";
   if (chat.lastReplyOutcome === "uncertain") return "uncertain";
   // The owner taking over from the phone or Slab is a deliberate state, not
@@ -164,6 +165,7 @@ function buildConversations(
         item.triggerType === "whatsapp" && item.whatsapp?.account === account,
     );
   const lastMessages = whatsappAutomationRepository.lastMessages(account);
+  const archived = whatsappAutomationRepository.archivedChats(account);
   const byChat = new Map<string, WhatsAppHubConversation>();
   for (const automation of automations) {
     const agent = agentRepository.getAgent(automation.agentId);
@@ -183,6 +185,10 @@ function buildConversations(
       const retry = lastRun
         ? getRunRetryState(lastRun, runRepository.listRunEvents(lastRun.id))
         : null;
+      const approval =
+        activeRun?.status === "waiting_approval"
+          ? pendingApproval(activeRun.id, automation)
+          : null;
       const base = {
         account,
         chatId: chat.chatId,
@@ -205,10 +211,9 @@ function buildConversations(
         activeRunStatus: activeRun?.status ?? null,
         lastRunId: chat.lastRunId,
         lastReplyOutcome: chat.lastReplyOutcome,
-        approval:
-          activeRun?.status === "waiting_approval"
-            ? pendingApproval(activeRun.id, automation)
-            : null,
+        approval,
+        // A draft waiting for approval always surfaces, even in an archived chat.
+        archived: archived.has(chat.chatId) && !approval,
         failedRun: lastRun && retry ? { runId: lastRun.id, retry } : null,
         lastMessage: lastMessages.get(chat.chatId) ?? null,
         updatedAt: chat.updatedAt,
@@ -216,11 +221,14 @@ function buildConversations(
       byChat.set(chat.chatId, { ...base, attention: attentionFor(base) });
     }
   }
+  // Most recent activity first. Only drafts waiting for approval are pinned:
+  // other attention states show as badges and in the "Needs attention" filter,
+  // so stale ones do not bury new chats.
   return [...byChat.values()].sort((a, b) => {
-    const rank = (chat: WhatsAppHubConversation) =>
-      chat.attention ? WHATSAPP_HUB_ATTENTION_RANK[chat.attention] : 9;
+    const pinned = (chat: WhatsAppHubConversation) =>
+      chat.attention === "approval" ? 0 : 1;
     return (
-      rank(a) - rank(b) ||
+      pinned(a) - pinned(b) ||
       (b.lastMessage?.at ?? b.updatedAt).localeCompare(
         a.lastMessage?.at ?? a.updatedAt,
       )
@@ -317,6 +325,12 @@ export async function getWhatsAppHubMessages(
       source: "stored",
     };
   }
+}
+
+export function setWhatsAppChatArchived(chatId: string, archived: boolean) {
+  const account = assertHubChat(chatId);
+  whatsappAutomationRepository.setArchived(account, chatId, archived);
+  return { chatId, archived };
 }
 
 export async function sendManualWhatsAppReply(input: {

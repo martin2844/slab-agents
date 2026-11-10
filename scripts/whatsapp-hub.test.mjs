@@ -372,6 +372,37 @@ test("the hub lists chats with names, status and attention, and the nav badge ma
     ],
   );
 
+  // A customer message waiting on the owner, then archived: hidden from
+  // attention until the customer writes again. Approvals are never archived.
+  assert.ok(ingest(chatId, { text: "Otra cosa más" }));
+  const before = await hub.getWhatsAppHubData();
+  assert.equal(before.conversations.find((chat) => chat.chatId === chatId).attention, "pending");
+  hub.setWhatsAppChatArchived(chatId, true);
+  hub.setWhatsAppChatArchived(otherChat, true);
+  const archivedData = await hub.getWhatsAppHubData();
+  const archivedChat = archivedData.conversations.find((chat) => chat.chatId === chatId);
+  assert.equal(archivedChat.archived, true);
+  assert.equal(archivedChat.attention, null);
+  assert.equal(archivedData.attentionCount, before.attentionCount - 1);
+  assert.equal(hub.getWhatsAppNavState().attention, archivedData.attentionCount);
+  const withApproval = archivedData.conversations.find((chat) => chat.chatId === otherChat);
+  assert.equal(withApproval.archived, false, "a pending approval keeps the chat visible");
+  assert.equal(archivedData.conversations[0].chatId, otherChat, "approvals stay pinned");
+  clock += 60_000;
+  assert.ok(ingest(chatId, { text: "¿Me ayudan?" }));
+  const reopened = (await hub.getWhatsAppHubData()).conversations.find(
+    (chat) => chat.chatId === chatId,
+  );
+  assert.equal(reopened.archived, false, "a new customer message unarchives the chat");
+  assert.equal(reopened.attention, "pending");
+  hub.setWhatsAppChatArchived(chatId, true);
+  hub.setWhatsAppChatArchived(chatId, false);
+  assert.equal(
+    (await hub.getWhatsAppHubData()).conversations.find((chat) => chat.chatId === chatId).archived,
+    false,
+  );
+  assert.throws(() => hub.setWhatsAppChatArchived("34699999999@c.us", true), /not found/i);
+
   db.prepare("UPDATE integrations SET enabled=0 WHERE provider='whatsapp'").run();
   assert.deepEqual(hub.getWhatsAppNavState(), { enabled: false, attention: 0 });
   assert.equal((await hub.getWhatsAppHubData()).enabled, false);

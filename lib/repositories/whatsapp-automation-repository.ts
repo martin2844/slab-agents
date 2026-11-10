@@ -566,6 +566,33 @@ export const whatsappAutomationRepository = {
     return existingThread(account, chatId, agentId)?.thread_id ?? null;
   },
 
+  /** Archive a chat in the hub until the customer writes again. */
+  setArchived(account: string, chatId: string, archived: boolean) {
+    if (archived)
+      db.prepare(
+        `INSERT INTO whatsapp_archived_chats (account,chat_id,archived_at,last_sequence)
+        VALUES (?,?,?,(SELECT COALESCE(max(sequence),0) FROM whatsapp_messages WHERE account=? AND chat_id=?))
+        ON CONFLICT(account,chat_id) DO UPDATE SET archived_at=excluded.archived_at,
+          last_sequence=excluded.last_sequence`,
+      ).run(account, chatId, now(), account, chatId);
+    else
+      db.prepare(
+        "DELETE FROM whatsapp_archived_chats WHERE account=? AND chat_id=?",
+      ).run(account, chatId);
+  },
+
+  /** Chats still archived: no customer message arrived after archiving. */
+  archivedChats(account: string) {
+    const rows = db
+      .prepare(
+        `SELECT a.chat_id FROM whatsapp_archived_chats a WHERE a.account=?
+        AND NOT EXISTS (SELECT 1 FROM whatsapp_messages m WHERE m.account=a.account
+          AND m.chat_id=a.chat_id AND m.from_me=0 AND m.sequence > a.last_sequence)`,
+      )
+      .all(account) as Array<{ chat_id: string }>;
+    return new Set(rows.map((row) => row.chat_id));
+  },
+
   /** Latest stored message per chat (customer or owner) for an account. */
   lastMessages(account: string) {
     const rows = db

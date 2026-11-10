@@ -9,9 +9,6 @@ export type WhatsAppHubAttention =
   | "paused"
   | "pending";
 
-export const WHATSAPP_HUB_ATTENTION_RANK: Record<WhatsAppHubAttention, number> =
-  { approval: 0, failed: 1, uncertain: 2, paused: 3, pending: 4 };
-
 export type WhatsAppHubConversation = {
   account: string;
   chatId: string;
@@ -41,6 +38,8 @@ export type WhatsAppHubConversation = {
     fallbackAt: string | null;
   } | null;
   failedRun: { runId: string; retry: RunRetryState } | null;
+  /** Archived by the owner; it comes back when the customer writes again. */
+  archived: boolean;
   lastMessage: { body: string; fromMe: boolean; at: string } | null;
   attention: WhatsAppHubAttention | null;
   updatedAt: string;

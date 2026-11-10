@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
   Check,
   CirclePause,
@@ -62,7 +64,9 @@ export function WhatsAppHub({
     initialChatId ?? initialData.conversations[0]?.chatId ?? null,
   );
   const [query, setQuery] = useState("");
-  const [onlyAttention, setOnlyAttention] = useState(false);
+  const [filter, setFilter] = useState<"all" | "attention" | "archived">(
+    "all",
+  );
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
@@ -91,14 +95,19 @@ export function WhatsAppHub({
     const needle = query.trim().toLowerCase();
     return data.conversations.filter(
       (chat) =>
-        (!onlyAttention || chat.attention) &&
+        (filter === "archived"
+          ? chat.archived
+          : !chat.archived && (filter === "all" || chat.attention)) &&
         (!needle ||
           displayName(chat).toLowerCase().includes(needle) ||
           chat.chatId.includes(needle) ||
           chat.phone?.includes(needle) ||
           chat.lastMessage?.body.toLowerCase().includes(needle)),
     );
-  }, [data.conversations, onlyAttention, query]);
+  }, [data.conversations, filter, query]);
+  const archivedCount = data.conversations.filter(
+    (chat) => chat.archived,
+  ).length;
 
   const current =
     data.conversations.find((chat) => chat.chatId === selected) ?? null;
@@ -124,7 +133,7 @@ export function WhatsAppHub({
     <>
       <PageHeader
         title="WhatsApp"
-        description={`${data.conversations.length} chats · ${data.attentionCount} need attention${data.account ? ` · +${data.account.split("@")[0]}` : ""}`}
+        description={`${data.conversations.length - archivedCount} chats · ${data.attentionCount} need attention${data.account ? ` · +${data.account.split("@")[0]}` : ""}`}
         actions={
           <Button variant="outline" asChild>
             <Link href="/automations">Automation settings</Link>
@@ -167,17 +176,24 @@ export function WhatsAppHub({
             <div className="flex gap-1" role="group" aria-label="Filter">
               <Button
                 size="sm"
-                variant={onlyAttention ? "ghost" : "secondary"}
-                onClick={() => setOnlyAttention(false)}
+                variant={filter === "all" ? "secondary" : "ghost"}
+                onClick={() => setFilter("all")}
               >
                 All
               </Button>
               <Button
                 size="sm"
-                variant={onlyAttention ? "secondary" : "ghost"}
-                onClick={() => setOnlyAttention(true)}
+                variant={filter === "attention" ? "secondary" : "ghost"}
+                onClick={() => setFilter("attention")}
               >
                 Needs attention ({data.attentionCount})
+              </Button>
+              <Button
+                size="sm"
+                variant={filter === "archived" ? "secondary" : "ghost"}
+                onClick={() => setFilter("archived")}
+              >
+                Archived ({archivedCount})
               </Button>
             </div>
           </div>
@@ -241,7 +257,9 @@ export function WhatsAppHub({
             ))}
             {!visible.length && (
               <li className="p-4 text-sm text-muted-foreground">
-                {data.conversations.length
+                {filter === "archived" && !query.trim()
+                  ? "No archived chats. Archived chats come back when the customer writes again."
+                  : data.conversations.length
                   ? "No chats match."
                   : "No conversations yet. Chats appear here when someone messages your automated WhatsApp."}
               </li>
@@ -352,6 +370,13 @@ function ConversationPane({
     }
   }
 
+  const setArchived = (archived: boolean) =>
+    act(archived ? "archive" : "unarchive", () =>
+      api(`/api/whatsapp/hub/${encodeURIComponent(chat.chatId)}/archive`, {
+        method: archived ? "POST" : "DELETE",
+      }),
+    );
+
   const setPaused = (paused: boolean) =>
     act(paused ? "pause" : "resume", () =>
       api(`/api/automations/${chat.automationId}/whatsapp/conversations`, {
@@ -416,6 +441,26 @@ function ConversationPane({
               </Link>
             </Button>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!!busy || (!chat.archived && !!chat.approval)}
+            title={
+              chat.archived
+                ? "Show this chat in the main list again"
+                : "Hide this chat until the customer writes again"
+            }
+            onClick={() => void setArchived(!chat.archived)}
+          >
+            {busy === "archive" || busy === "unarchive" ? (
+              <Loader2 className="animate-spin" />
+            ) : chat.archived ? (
+              <ArchiveRestore />
+            ) : (
+              <Archive />
+            )}
+            {chat.archived ? "Unarchive" : "Archive"}
+          </Button>
           {chat.paused ? (
             <Button
               size="sm"
