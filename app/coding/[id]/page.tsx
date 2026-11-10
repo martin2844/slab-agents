@@ -6,9 +6,15 @@ import { getCodingRunDetail } from "@/lib/coding/service";
 export const metadata: Metadata = { title: "Coding run" };
 export const dynamic = "force-dynamic";
 
-export default async function CodingRunPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function CodingRunPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ stage?: string }>;
+}) {
+  const [{ id }, { stage }] = await Promise.all([params, searchParams]);
   const data = getCodingRunDetail(id);
   if (!data) notFound();
-  return <CodingRunDetailView initialData={data} />;
+  return <CodingRunDetailView initialData={data} initialStage={stage === "chat" ? "chat" : null} />;
 }

@@ -475,17 +475,26 @@ function DiffDialog({
   );
 }
 
-export function CodingRunDetailView({ initialData }: { initialData: CodingRunDetail }) {
+export function CodingRunDetailView({
+  initialData,
+  initialStage = null,
+}: {
+  initialData: CodingRunDetail;
+  /** Opens this stage first, for example "chat" from a Work item. */
+  initialStage?: CodingStage | null;
+}) {
   const [data, setData] = useState(initialData);
   const run = data.run;
-  const [selected, setSelected] = useState<CodingStage>(run.currentStage);
-  const [tab, setTab] = useState<"output" | "conversation" | "activity">("output");
+  const [selected, setSelected] = useState<CodingStage>(initialStage ?? run.currentStage);
+  const [tab, setTab] = useState<"output" | "conversation" | "activity">(
+    initialStage === "chat" ? "conversation" : "output",
+  );
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [diffRepository, setDiffRepository] = useState<CodeRunRepository | null>(null);
   const [artifact, setArtifact] = useState<CodeRunArtifact | null>(null);
   const [stageOutput, setStageOutput] = useState<CodeRunArtifact | null>(null);
-  const followCurrent = useRef(true);
+  const followCurrent = useRef(!initialStage);
 
   const refresh = useCallback(async () => {
     const next = await api<CodingRunDetail>(`/api/coding/runs/${initialData.run.id}`);

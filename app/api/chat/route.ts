@@ -3,6 +3,7 @@ import { conversationRepository } from "@/lib/repositories/conversation-reposito
 import { z } from "zod";
 import { createRunExecution, executeRun } from "@/lib/run-service";
 import { apiError, conflict, notFound } from "@/lib/api";
+import { workChatInstructions } from "@/lib/work-chat";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,12 +20,15 @@ export async function POST(request: Request) {
     if (!agent) throw notFound("Agent not found");
     if (!agent.enabled)
       throw conflict("This agent is disabled.", "AGENT_DISABLED");
+    // A Work item's thread: the agent talks about that item.
+    const issueKey = conversationRepository.getWorkThreadIssueKey(threadId);
     const run = createRunExecution({
       agentId: agent.id,
       threadId,
       trigger: "chat",
       mode: "chat",
       prompt: message,
+      ...(issueKey ? { eventInstructions: workChatInstructions(issueKey) } : {}),
     });
     const encoder = new TextEncoder();
     const stream = new ReadableStream({

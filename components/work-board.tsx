@@ -246,6 +246,41 @@ function CreateIssue({
   );
 }
 
+function sameAgent(agent: Agent, value: string | null | undefined) {
+  const target = value?.trim().toLowerCase().replace(/^@/, "");
+  return Boolean(target) && [agent.id, agent.slug, agent.name].some((item) => item.toLowerCase() === target);
+}
+
+/** Opens the conversation with the agent assigned to the item (or its coding run chat). */
+function AssigneeChatButton({ issueKey, agent }: { issueKey: string; agent: Agent }) {
+  const [opening, setOpening] = useState(false);
+  async function open() {
+    if (opening) return;
+    setOpening(true);
+    try {
+      const target = await api<{ url: string }>(`/api/work/issues/${issueKey}/chat`, { method: "POST" });
+      window.location.assign(new URL(target.url, window.location.origin).href);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not open the chat");
+      setOpening(false);
+    }
+  }
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="shrink-0"
+      disabled={opening || !agent.enabled}
+      onClick={open}
+      title={`Talk with ${agent.name} about ${issueKey}`}
+    >
+      {opening ? <LoaderCircle className="animate-spin" /> : <MessageSquare />}
+      Chat with {agent.name}
+    </Button>
+  );
+}
+
 function IssueDialog({
   issueKey,
   agents,
@@ -445,6 +480,10 @@ function IssueDialog({
             </DialogTitle>
             {detail && !editing && (
               <div className="flex shrink-0 items-center gap-2">
+                {(() => {
+                  const assignee = agents.find((agent) => sameAgent(agent, detail.issue.assignee));
+                  return assignee ? <AssigneeChatButton issueKey={detail.issue.key} agent={assignee} /> : null;
+                })()}
                 <StartCodingRunDialog
                   issueKey={detail.issue.key}
                   projectKey={detail.issue.project_key ?? null}

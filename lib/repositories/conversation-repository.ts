@@ -41,6 +41,13 @@ export const conversationRepository = {
       .get(issueKey, agentId) as Row | undefined;
     return row ? mapThread(row) : null;
   },
+  /** The Work item a thread belongs to, when it is the thread of an item and its agent. */
+  getWorkThreadIssueKey(threadId: string) {
+    const row = db
+      .prepare("SELECT issue_key FROM work_agent_threads WHERE thread_id=?")
+      .get(threadId) as { issue_key: string } | undefined;
+    return row?.issue_key ?? null;
+  },
   getOrCreateWorkAgentThread(issueKey: string, agentId: string, title: string) {
     const existing = conversationRepository.getWorkAgentThread(
       issueKey,

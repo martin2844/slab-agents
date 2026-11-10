@@ -813,3 +813,40 @@ test("at autonomy level 3 a code review that is not ready still waits for the hu
     scriptOverride = null;
   }
 });
+
+test("a Work item opens a chat with its assignee: the item thread, or the coding run chat for coding agents", async () => {
+  const { openWorkChat, workChatInstructions } = await import("../lib/work-chat.ts");
+  const { ensureCodingAgents } = await import("../lib/coding/agents.ts");
+  ensureCodingAgents();
+  const helper = agentRepository.createAgent({
+    name: "Chat Helper",
+    slug: "chat-helper",
+    role: "Helps",
+    instructions: "Help with Work items.",
+    runtime: "codex",
+    model: "default",
+    enabled: true,
+    fullAccess: false,
+  });
+  const issue = (assignee) => async (key) => ({ key, title: "Unblock the launch", assignee });
+
+  const plain = await openWorkChat("CC-30", issue("chat-helper"));
+  assert.equal(plain.kind, "thread");
+  const threadId = plain.url.split("/").pop();
+  assert.equal(conversationRepository.getWorkThreadIssueKey(threadId), "CC-30");
+  const again = await openWorkChat("CC-30", issue("@Chat Helper"));
+  assert.equal(again.url, plain.url, "the same item thread is reused");
+  assert.match(workChatInstructions("CC-30"), /Work item CC-30/);
+
+  await assert.rejects(() => openWorkChat("CC-31", issue(null)), /not assigned to an agent/);
+  await assert.rejects(() => openWorkChat("CC-31", issue("code-engineer")), /Start a coding run/);
+
+  const repository = codingRepository.listRepositories()[0];
+  const run = await service.startCodingRun({ issueKey: "CC-31", repositoryIds: [repository.id] });
+  await until(() => codingRepository.getRun(run.id).workspaceStatus === "ready", "workspace ready");
+  const coding = await openWorkChat("CC-31", issue("code-engineer"));
+  assert.equal(coding.kind, "coding");
+  assert.equal(coding.url, `/coding/${run.id}?stage=chat`);
+  await service.cancelCodingRun(run.id);
+  assert.equal(helper.enabled, true);
+});
