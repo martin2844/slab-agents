@@ -114,6 +114,11 @@ export function stageAgentMapping() {
   });
 }
 
+/** True when the agent works one of the coding stages (it needs a coding run's checkout). */
+export function isCodingStageAgent(agentId: string) {
+  return AGENT_STAGES.some((stage) => agentForStage(stage)?.id === agentId);
+}
+
 export function agentForStage(stage: AgentStage) {
   const reference =
     getStageAgentOverrides()[stage] ?? DEFAULT_STAGE_AGENT_SLUGS[stage];

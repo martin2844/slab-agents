@@ -773,3 +773,38 @@ test("recovery rolls back queue and approval changes when audit persistence fail
   assert.equal(runRepository.getRun(run.id)?.status, "waiting_approval");
   assert.equal(approvalRepository.get(approval.id)?.status, "resolving");
 });
+
+test("Work events never start a plain run for a coding agent", async () => {
+  const [{ repository }, , { triggerAgent }] = modules;
+  const engineer = createAgent(repository, "code-engineer");
+  const dispatched = [];
+  for (const type of ["mention", "blocked", "review_requested"]) {
+    await triggerAgent(
+      {
+        type,
+        agent: engineer,
+        dedupeKey: `${type}:PROD-9:v1`,
+        comment: type === "mention" ? { id: "comment-9", author: "ceo", body: "@code-engineer rerun the tests" } : undefined,
+        issue: {
+          id: "issue-9",
+          key: "PROD-9",
+          title: "License refresh",
+          description: "",
+          type: "task",
+          status: "blocked",
+          priority: "high",
+          assignee: "code-engineer",
+          labels: [],
+          version: 1,
+          created_at: "2026-11-10T00:00:00.000Z",
+          updated_at: "2026-11-10T00:01:00.000Z",
+        },
+      },
+      async (runId) => {
+        dispatched.push(runId);
+      },
+    );
+  }
+  assert.equal(dispatched.length, 0);
+  assert.equal(runRepository.listRuns().filter((run) => run.agentId === engineer.id).length, 0);
+});

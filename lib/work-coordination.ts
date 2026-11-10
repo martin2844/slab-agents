@@ -170,6 +170,9 @@ export async function triggerAgent(
   // Autonomy (coding runs "on assignment"): assigning a Work item to the Engineer
   // of coding runs starts a coding run instead of a plain agent run.
   if (input.type === "assignment" && (await startCodingRunOnAssignment(input.issue, input.agent))) return;
+  // Coding agents only work inside coding runs, which have the repository checkout and
+  // toolchain. A plain run would have neither and could only report itself blocked.
+  if (await skipForCodingAgent(input)) return;
   try {
     const run = withImmediateTransaction(() => {
       const eventId = workCoordinationRepository.claimEvent({
@@ -214,6 +217,21 @@ export async function triggerAgent(
     console.error(`[work-coordination] ${input.issue.key}:`, error);
     throw error;
   }
+}
+
+async function skipForCodingAgent(input: { type: TriggerType; issue: Issue; agent: Agent }) {
+  const { isCodingStageAgent } = await import("@/lib/coding/agents");
+  if (!isCodingStageAgent(input.agent.id)) return false;
+  // Comments are read once, so a mention logs once. State events repeat every poll: skip them quietly.
+  if (input.type === "mention") {
+    logAutonomyEvent({
+      kind: "work_event_skipped",
+      actor: "system",
+      summary: `${input.agent.name} works only in coding runs, so the mention on ${input.issue.key} started no run. Use start_coding_run for code changes.`,
+      payload: { issueKey: input.issue.key, type: input.type },
+    });
+  }
+  return true;
 }
 
 async function startCodingRunOnAssignment(issue: Issue, agent: Agent) {
