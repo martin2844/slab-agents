@@ -491,6 +491,50 @@ test("the planning loop runs the lead agent every N hours, only above level 1", 
   setLevel(null);
 });
 
+test("an agent paces itself: a chain of follow-ups never hits the delegation depth limit", () => {
+  setLevel(3, { limits: { maxDelegationDepth: 1, maxAutonomousRunsPerDay: 1000 } });
+  const owner = agent("pacer");
+  let source = runningRun(owner.id);
+  for (let hop = 0; hop < 4; hop += 1) {
+    const next = followups.scheduleFollowup({ agentId: owner.id, runId: source.id, dueAt: new Date(Date.now() + 3_600_000), note: `Round ${hop}` });
+    db.prepare("UPDATE agent_wakeups SET due_at=? WHERE id=?").run(new Date(Date.now() - 1_000).toISOString(), next.id);
+    followups.fireDueFollowups();
+    const fired = autonomyRepository.getFollowup(next.id);
+    assert.equal(fired.status, "fired", `hop ${hop} fired`);
+    assert.equal(autonomyRepository.runDepth(fired.firedRunId), 0);
+    source = runRepository.getRun(fired.firedRunId);
+  }
+  setLevel(null);
+});
+
+test("the lead schedules its own planning loops; the fixed loop is only a fallback", () => {
+  const lead = agent("ceo-paced");
+  setLevel(3, { limits: { planningEveryHours: 6, maxAutonomousRunsPerDay: 1000 } });
+  autonomy.updateAutonomyPolicy({ leadAgentId: lead.id });
+  const finishRuns = () => db.prepare("UPDATE runs SET status='completed' WHERE status NOT IN ('completed','failed','cancelled','skipped')").run();
+  finishRuns();
+  const start = Date.now() + 30 * 3_600_000;
+  const first = loops.tickPlanning(new Date(start));
+  assert.ok(first, "no loop yet: the fallback starts one");
+  assert.match(conversationRepository.getRunInput(first.id).body, /Planning loop:/);
+  // The lead chose to look again in 8 hours: no fallback loop at 7 hours.
+  const planned = followups.scheduleFollowup({ agentId: lead.id, runId: first.id, dueAt: new Date(Date.now() + 8 * 3_600_000), note: "Planning loop: check the PR reviews" });
+  finishRuns();
+  assert.equal(loops.tickPlanning(new Date(start + 7 * 3_600_000)), null);
+  db.prepare("UPDATE agent_wakeups SET due_at=? WHERE id=?").run(new Date(Date.now() - 1_000).toISOString(), planned.id);
+  followups.fireDueFollowups();
+  const fired = autonomyRepository.getFollowup(planned.id);
+  const body = conversationRepository.getRunInput(fired.firedRunId).body;
+  assert.match(body, /Run the planning loop/);
+  assert.match(body, /check the PR reviews/);
+  assert.equal(runRepository.getRun(fired.firedRunId).mode, "review");
+  // A loop scheduled far away does not stop the fallback.
+  finishRuns();
+  followups.scheduleFollowup({ agentId: lead.id, runId: null, dueAt: new Date(Date.now() + 80 * 86_400_000), note: "Planning loop: much later" });
+  assert.ok(loops.tickPlanning(new Date(Date.now() + 7 * 3_600_000)));
+  setLevel(null);
+});
+
 test("approvals that wait too long get a Telegram reminder, then a denial when the policy says so", async () => {
   const owner = agent("finance");
   setLevel(3, { limits: { approvalRemindMinutes: 5, approvalDenyHours: 1 } });

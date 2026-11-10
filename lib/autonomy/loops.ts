@@ -13,7 +13,7 @@ import {
   listAutonomyEvents,
   logAutonomyEvent,
 } from "@/lib/autonomy/service";
-import { fireDueFollowups } from "@/lib/autonomy/followups";
+import { fireDueFollowups, nextScheduledPlanning } from "@/lib/autonomy/followups";
 import { expireHumanRequests, listHumanRequests } from "@/lib/autonomy/human-requests";
 import { startAutonomyRun } from "@/lib/autonomy/runs";
 import { getTelegramStatus, remindApproval, sendToOperator, statusText } from "@/lib/telegram/service";
@@ -27,13 +27,20 @@ function planningRunActive() {
   });
 }
 
-/** The lead agent reviews the business every `planningEveryHours`. */
+/**
+ * Fallback planning loop. The lead schedules its own loops ("Planning loop:" follow-ups);
+ * Slab starts one only after `planningEveryHours` without a loop and with none scheduled
+ * within the next `planningEveryHours`.
+ */
 export function tickPlanning(current = new Date()) {
   const policy = getAutonomyPolicy();
   const lead = policy.leadAgentId ? agentRepository.getAgent(policy.leadAgentId) : null;
   if (!lead?.enabled || !allows("planning", lead.id)) return null;
   const last = autonomyState.get("last_planning_at");
-  if (last && current.getTime() - Date.parse(last) < policy.limits.planningEveryHours * 3_600_000) return null;
+  const fallbackMs = policy.limits.planningEveryHours * 3_600_000;
+  if (last && current.getTime() - Date.parse(last) < fallbackMs) return null;
+  const scheduled = nextScheduledPlanning(lead.id);
+  if (scheduled && Date.parse(scheduled.dueAt) - current.getTime() < fallbackMs) return null;
   if (planningRunActive()) return null;
   autonomyState.set("last_planning_at", current.toISOString());
   try {

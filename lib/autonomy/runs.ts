@@ -21,7 +21,10 @@ export function autonomousRunsLastDay() {
 
 /** Checks the guards for a new autonomous run. Throws a clear error when a guard stops it. */
 export function assertAutonomyGuards(input: { agentId: string; parentRunId?: string | null; origin: AutonomyOrigin }) {
-  const depth = input.parentRunId ? runDepth(input.parentRunId) + 1 : 0;
+  // A follow-up is the same agent waking up later, not a new hop: it keeps the depth
+  // of the run that scheduled it, so an agent can keep pacing itself day after day.
+  const parentDepth = input.parentRunId ? runDepth(input.parentRunId) : -1;
+  const depth = input.origin === "followup" ? Math.max(parentDepth, 0) : parentDepth + 1;
   if (!allows("guards", input.agentId)) return depth;
   const limits = autonomyLimits();
   // Answers and Telegram tasks come from the human: only self-started runs count.

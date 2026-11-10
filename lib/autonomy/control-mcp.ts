@@ -42,7 +42,7 @@ export const CONTROL_TOOLS: ToolSpec[] = [
   },
   {
     name: "schedule_followup",
-    description: "Schedule a run of yourself later to check something. Give `in_hours` or an ISO `at` time, and a note that says exactly what to check.",
+    description: "Schedule a run of yourself later. This is how you set your own pace: before you finish ongoing work, schedule when you should act next. Give `in_hours` or an ISO `at` time, and a note that says exactly what to do or check.",
     enabled: on("followups"),
   },
   { name: "list_followups", description: "List your pending follow-ups.", enabled: on("followups") },

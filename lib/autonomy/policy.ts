@@ -59,7 +59,7 @@ export const CAPABILITY_INFO: Record<Capability, { label: string; description: s
   },
   planning: {
     label: "Planning loop",
-    description: "The lead agent reviews the business every few hours, decides, and assigns work.",
+    description: "The lead agent reviews the business, assigns work, and chooses when to look again. Slab starts a loop itself only after the fallback hours without one.",
     values: { off: "Off", on: "On" },
   },
   followups: {
@@ -183,7 +183,7 @@ export const LEVEL_PRESETS: Record<AutonomyLevel, Capabilities> = {
 };
 
 export type AutonomyLimits = {
-  /** Hours between planning loops of the lead agent. */
+  /** Fallback: hours without a planning loop before Slab starts one. The lead schedules its own loops. */
   planningEveryHours: number;
   /** Local hour (0-23) for the daily Telegram digest; null turns it off. */
   digestHour: number | null;
@@ -339,6 +339,9 @@ export function capabilitiesForAgent(policy: AutonomyPolicy, agentId: string | n
   return result;
 }
 
+/** A lead follow-up whose note starts with this runs as the next planning loop. */
+export const PLANNING_NOTE_PREFIX = "Planning loop:";
+
 export const DEFAULT_PLANNING_PROMPT = [
   "Run the planning loop of the business.",
   "1. Review Slab Work: open items, blocked items, items waiting for review, and what changed since your last loop.",
@@ -347,5 +350,7 @@ export const DEFAULT_PLANNING_PROMPT = [
   "4. Schedule follow-ups for anything that needs a later check.",
   "5. Ask the human only when a decision needs them. Group questions.",
   "6. Write a short log of this loop (what you saw, what you decided) as a comment on your planning Work item or in Docs.",
-  "If nothing needs action, finish without changes.",
+  "7. Check that every agent with ongoing work has a next step: an assigned Work item or a follow-up it scheduled. Wake an idle agent with start_agent_run.",
+  `8. Choose when the next planning loop should run and schedule it with schedule_followup. Start the note with "${PLANNING_NOTE_PREFIX}" and say what to look at. Come back sooner when work is moving or an answer is expected, later when everyone is waiting. Without one, Slab starts a loop after the fallback hours.`,
+  "If nothing needs action, finish without changes, but still schedule the next loop.",
 ].join("\n");

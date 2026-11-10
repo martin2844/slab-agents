@@ -3,7 +3,8 @@ import "server-only";
 import { badRequest, conflict, notFound } from "@/lib/api";
 import { autonomyRepository, type Followup } from "@/lib/repositories/autonomy-repository";
 import { agentRepository } from "@/lib/repositories/agent-repository";
-import { allows, logAutonomyEvent } from "@/lib/autonomy/service";
+import { allows, autonomyState, getAutonomyPolicy, logAutonomyEvent } from "@/lib/autonomy/service";
+import { DEFAULT_PLANNING_PROMPT, PLANNING_NOTE_PREFIX } from "@/lib/autonomy/policy";
 import { runDepth, startAutonomyRun } from "@/lib/autonomy/runs";
 
 const MAX_PENDING_PER_AGENT = 25;
@@ -49,6 +50,55 @@ export function scheduleFollowup(input: {
   return followup;
 }
 
+/** A follow-up of the lead agent that it scheduled as its next planning loop. */
+export function isPlanningFollowup(followup: Pick<Followup, "agentId" | "note">) {
+  const policy = getAutonomyPolicy();
+  return (
+    followup.agentId === policy.leadAgentId &&
+    followup.note.trim().toLowerCase().startsWith(PLANNING_NOTE_PREFIX.toLowerCase())
+  );
+}
+
+/** The next planning loop the lead scheduled for itself, if any. */
+export function nextScheduledPlanning(leadAgentId: string) {
+  return listFollowups({ agentId: leadAgentId, status: "pending" })
+    .filter((followup) => isPlanningFollowup(followup))
+    .sort((a, b) => a.dueAt.localeCompare(b.dueAt))[0] ?? null;
+}
+
+function followupRunInput(followup: Followup) {
+  if (isPlanningFollowup(followup)) {
+    autonomyState.set("last_planning_at", new Date().toISOString());
+    const policy = getAutonomyPolicy();
+    return {
+      prompt: [
+        policy.planningPrompt.trim() || DEFAULT_PLANNING_PROMPT,
+        "",
+        `You scheduled this loop at ${followup.createdAt} with this note:`,
+        followup.note,
+      ].join("\n"),
+      mode: "review" as const,
+      origin: "planning" as const,
+      parentRunId: null,
+      title: `Planning loop ${new Date().toISOString().slice(0, 16).replace("T", " ")}`,
+    };
+  }
+  return {
+    prompt: [
+      "This is a follow-up you scheduled for yourself.",
+      `Scheduled at: ${followup.createdAt}`,
+      "",
+      followup.note,
+      "",
+      "Check the current state and act. Before you finish, schedule your next follow-up if your work goes on.",
+    ].join("\n"),
+    mode: undefined,
+    origin: "followup" as const,
+    parentRunId: followup.sourceRunId,
+    title: `Follow-up: ${followup.note.slice(0, 80)}`,
+  };
+}
+
 export function cancelFollowup(id: string, actor: string, agentId?: string) {
   const followup = autonomyRepository.getFollowup(id);
   if (!followup || (agentId && followup.agentId !== agentId)) throw notFound("Follow-up not found.");
@@ -67,20 +117,15 @@ export function fireDueFollowups() {
       continue;
     }
     try {
+      const input = followupRunInput(followup);
       const run = startAutonomyRun({
         agentId: followup.agentId,
-        prompt: [
-          "This is a follow-up you scheduled for yourself.",
-          `Scheduled at: ${followup.createdAt}`,
-          "",
-          followup.note,
-          "",
-          "Check the current state, act if needed, and schedule another follow-up only if it is still useful.",
-        ].join("\n"),
+        prompt: input.prompt,
+        mode: input.mode,
         issueKey: followup.issueKey,
-        parentRunId: followup.sourceRunId,
-        origin: "followup",
-        title: `Follow-up: ${followup.note.slice(0, 80)}`,
+        parentRunId: input.parentRunId,
+        origin: input.origin,
+        title: input.title,
         actor: "system",
       });
       autonomyRepository.setFollowupRun(followup.id, run.id);
