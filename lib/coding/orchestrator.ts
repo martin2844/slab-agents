@@ -811,7 +811,8 @@ export async function publishRun(run: CodeRun, options: { commitMessage: string 
             pullRequestFooter(codingRepository.getRun(run.id)!, updated),
           ].join("\n"),
         },
-        token,
+        // Not the push token: that one only has contents permission, and
+        // GitHub answers "Resource not accessible by integration" for PRs.
       );
       updated = codingRepository.updateRunRepository(item.id, {
         prNumber: pull.number,
