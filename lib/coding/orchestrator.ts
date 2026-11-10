@@ -496,12 +496,22 @@ function pullRequestFooter(run: CodeRun, current: CodeRunRepository | null) {
   ].join("\n");
 }
 
+/**
+ * The part of a report section for one repository: reviewers of multi-repository
+ * runs split sections into `### owner/name` subsections. Without subsections,
+ * the whole section applies to every repository.
+ */
+function sectionFor(section: string, run: CodeRun, fullName: string) {
+  const parts = splitSetupNotes(section, run.repositories.map((item) => item.fullName));
+  return parts.size ? (parts.get(fullName) ?? "") : section.trim();
+}
+
 async function applyPullRequestBody(run: CodeRun, body: string) {
   const text = body.replace(/\n---\nWork item: [^\n]*Slab coding run #\d+[\s\S]*$/, "").trim();
   for (const { item, repository } of runRepositories(run)) {
     if (!item.prNumber) continue;
     await updatePullRequest(repository, item.prNumber, {
-      body: `${text}\n\n${pullRequestFooter(run, item)}`,
+      body: `${sectionFor(text, run, repository.fullName) || text}\n\n${pullRequestFooter(run, item)}`,
     });
   }
 }
@@ -772,10 +782,15 @@ export type RepositoryPublishResult = {
 export async function publishRun(run: CodeRun, options: { commitMessage: string }) {
   const results: RepositoryPublishResult[] = [];
   const review = codingRepository.latestArtifact(run.id, "code-review.md")?.content ?? "";
-  const title =
-    markdownSection(review, "PR title").split("\n")[0]?.trim() || `[${run.issueKey}] ${run.title}`;
-  const summary = markdownSection(review, "PR summary");
+  const titleSection = markdownSection(review, "PR title");
+  const summarySection = markdownSection(review, "PR summary");
   for (const { item, repository } of runRepositories(run)) {
+    const title =
+      sectionFor(titleSection, run, repository.fullName)
+        .split("\n")
+        .map((line) => line.trim())
+        .find((line) => line && !line.startsWith("#")) || `[${run.issueKey}] ${run.title}`;
+    const summary = sectionFor(summarySection, run, repository.fullName);
     if (!item.baseSha)
       throw new Error(`The base commit of ${repository.fullName} is unknown; prepare the workspace again.`);
     if (!item.prNumber) {

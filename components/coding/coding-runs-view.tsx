@@ -22,7 +22,7 @@ import {
   stageTone,
 } from "@/components/coding/coding-ui";
 import { api } from "@/lib/client-api";
-import { PIPELINE_STAGES, RUN_STATUS_LABELS, STAGE_DEFINITIONS } from "@/lib/coding/stages";
+import { PIPELINE_STAGES, RUN_STATUS_LABELS, STAGE_DEFINITIONS, runBadgeStatus } from "@/lib/coding/stages";
 import type { CodeRunSummary } from "@/lib/coding/types";
 import { cn, formatDateTime } from "@/lib/utils";
 
@@ -161,7 +161,7 @@ export function CodingRunsView({ initialRuns }: { initialRuns: CodeRunSummary[] 
                 </td>
                 <td className={denseTableCell}>
                   <div className="flex flex-col gap-0.5">
-                    <StatusBadge status={run.status === "active" ? "running" : run.status === "waiting" ? "waiting_approval" : run.status} />
+                    <StatusBadge status={runBadgeStatus(run, run.stages)} />
                     <span className="text-xs text-muted-foreground">
                       {run.status === "done"
                         ? RUN_STATUS_LABELS.done

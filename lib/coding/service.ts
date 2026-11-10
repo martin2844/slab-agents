@@ -169,6 +169,13 @@ export function approveStage(runId: string, stageId: string) {
   const run = requireRun(runId);
   assertOpen(run);
   const stage = requireStage(run, stageId);
+  if (stage.stage === "publish" && stage.status === "failed" && !stage.superseded) {
+    // Publishing is idempotent (force push of the run branch, an open PR is reused): try again.
+    queueStage(stage, { autoRetries: 0 });
+    codingRepository.updateStage(stage.id, { summary: "", finishedAt: null });
+    codingRepository.updateRun(run.id, { status: "active", finishedAt: null });
+    return codingRepository.getRun(run.id)!;
+  }
   if (stage.status !== "waiting_approval") throw conflict("This stage is not waiting for approval.");
   if (stage.stage === "pr_feedback") throw badRequest("Use the PR feedback actions for this stage.");
   codingRepository.updateStage(stage.id, { status: "done", finishedAt: now() });

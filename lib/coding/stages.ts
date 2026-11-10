@@ -205,3 +205,21 @@ export const RUN_STATUS_LABELS: Record<CodeRunStatus, string> = {
   failed: "Failed",
   cancelled: "Cancelled",
 };
+
+/**
+ * Badge for a run: a waiting run is not always waiting for an approval. When
+ * its current stage failed (for example publishing), show that instead.
+ */
+export function runBadgeStatus(
+  run: { status: CodeRunStatus; currentStage: string },
+  stages: Array<{ stage: string; status: CodeStageStatus; attempt: number; superseded?: boolean }>,
+) {
+  if (run.status === "active") return "running";
+  if (run.status !== "waiting") return run.status;
+  const current = stages
+    .filter((item) => item.stage === run.currentStage && !item.superseded)
+    .sort((a, b) => b.attempt - a.attempt)[0];
+  if (current?.status === "failed") return "failed";
+  if (current?.status === "needs_input") return "needs_input";
+  return "waiting_approval";
+}

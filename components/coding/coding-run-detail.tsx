@@ -56,6 +56,7 @@ import { api } from "@/lib/client-api";
 import {
   PIPELINE_STAGES,
   RUN_STATUS_LABELS,
+  runBadgeStatus,
   SIDE_STAGES,
   STAGE_DEFINITIONS,
   STAGE_STATUS_LABELS,
@@ -590,7 +591,7 @@ export function CodingRunDetailView({ initialData }: { initialData: CodingRunDet
               <span className="text-muted-foreground">#{run.number}</span> {run.issueKey} — {run.title}
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <StatusBadge status={run.status === "active" ? "running" : run.status === "waiting" ? "waiting_approval" : run.status} />
+              <StatusBadge status={runBadgeStatus(run, data.stages)} />
               <span>{RUN_STATUS_LABELS[run.status]}</span>
               <Link href="/work" className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-xs hover:bg-muted">
                 {run.issueKey}
@@ -746,6 +747,11 @@ export function CodingRunDetailView({ initialData }: { initialData: CodingRunDet
                 <Button size="sm" disabled={Boolean(busy) || !actionable} onClick={() => void action("approve", `/api/coding/runs/${run.id}/stages/${stageDetail.id}/approve`)}>
                   {busy === "approve" ? <LoaderCircle className="animate-spin" /> : <Check />}
                   {APPROVE_LABELS[selected] ?? "Approve"}
+                </Button>
+              )}
+              {stageDetail?.status === "failed" && selected === "publish" && (
+                <Button size="sm" disabled={Boolean(busy) || !actionable} onClick={() => void action("approve", `/api/coding/runs/${run.id}/stages/${stageDetail.id}/approve`)}>
+                  {busy === "approve" ? <LoaderCircle className="animate-spin" /> : <RotateCcw />} Retry publish
                 </Button>
               )}
               {stageDetail && running && (
